@@ -294,18 +294,32 @@ class DeliveryHistory:
             return False
         return (node.id, _content_digest(node.content)) in self._versions
 
-    def covers(self, node: Node, excerpt: str) -> bool:
+    def _excerpt_digests(self, node: Node) -> set[str] | tuple[()] | None:
+        """None means the full current body was delivered, otherwise match excerpts."""
         if not self._versions:
             node.content.encode("utf-8")
-            excerpt.encode("utf-8")
-            return False
+            return ()
         source = _content_digest(node.content)
         bodies = self._versions.get((node.id, source), ())
+        return None if source in bodies else bodies
+
+    def covers(self, node: Node, excerpt: str) -> bool:
+        bodies = self._excerpt_digests(node)
+        if bodies is None:
+            return True
         if not bodies:
-            # No proof can match, but an invalid excerpt must still fail.
             excerpt.encode("utf-8")
             return False
-        return source in bodies or _content_digest(excerpt) in bodies
+        return _content_digest(excerpt) in bodies
+
+    def uncovered_excerpt(
+        self, node: Node, budget: int, query: str | None, passage: SourcePassage | None,
+    ) -> str | None:
+        bodies = self._excerpt_digests(node)
+        if bodies is None:
+            return None
+        excerpt = _relevant_excerpt(node.content, budget, query, passage)
+        return None if bodies and _content_digest(excerpt) in bodies else excerpt
 
 
 def recall_delivery_records(
@@ -391,16 +405,21 @@ def shape_recall_results(
             # Preserve the whole schema recipe so no step or condition is lost.
             # Case records can instead be excerpted for the current task.
             if result.node.level != "schema" and LADDER_COMPLETE < budget < full_chars:
+                if session_dedup:
+                    offered = delivery_history.uncovered_excerpt(
+                        result.node, budget, query, result.semantic_passage,
+                    )
+                else:
+                    offered = _relevant_excerpt(content, budget, query, result.semantic_passage)
                 delivery = DELIVERY_SNIPPET
-                node_dict["content"] = _relevant_excerpt(
-                    content, budget, query, result.semantic_passage,
-                )
             else:
+                offered = None if session_dedup and delivery_history.covers(result.node, content) else content
                 delivery = DELIVERY_FULL
-            if session_dedup and delivery_history.covers(result.node, node_dict["content"]):
+            if offered is None:
                 delivery = DELIVERY_SESSION_DUPLICATE
                 node_dict["content"] = _one_line_preview(content)
             else:
+                node_dict["content"] = offered
                 bearer_position += 1
 
         if view == "knowledge":

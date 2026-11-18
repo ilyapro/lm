@@ -27,6 +27,10 @@ class EagerHistory(delivery.DeliveryHistory):
         bodies = self._versions.get((node.id, source), ())
         return source in bodies or delivery._content_digest(excerpt) in bodies
 
+    def uncovered_excerpt(self, node, budget, query, passage):
+        excerpt = delivery._relevant_excerpt(node.content, budget, query, passage)
+        return None if self.covers(node, excerpt) else excerpt
+
 
 def evidence(node, excerpt=None):
     return {"node_id": node.id, "delivery": {
