@@ -164,3 +164,50 @@ def test_failed_lookup_or_receipt_cannot_authorize_a_mark(runtime):
             dropped = await recall(client, "amber", used=[args["node_id"]])
             assert dropped["feedback_marks"]["by_reason"] == {"not_delivered": 1}
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("policy", ["audit", "off"])
+def test_observation_obeys_explicit_policy_without_map_click_credit(runtime, monkeypatch, policy):
+    mcp, store, _ = runtime
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", policy)
+
+    async def scenario():
+        async with Client(mcp) as client:
+            response = await recall(client)
+            node_id = member(response)
+            score = store.get_node(node_id).usefulness_score
+            read = await call(client, "memory_lookup", map_event_id=response["recall_event_id"],
+                              node_id=node_id)
+            entry, = read["results"]
+            if policy == "audit":
+                result = await recall(client, "amber", used=[entry["feedback_ref"]])
+                assert result["feedback_marks"]["accepted"] == 1
+            else:
+                assert "feedback_ref" not in entry
+                assert not store.connection.execute("SELECT * FROM recall_map_reads").fetchall()
+            assert not store.connection.execute("SELECT * FROM recall_explicit_credit").fetchall()
+            assert not store.connection.execute("SELECT * FROM recall_credit_ledger").fetchall()
+            assert store.get_node(node_id).usefulness_score == score
+    asyncio.run(scenario())
+
+
+def test_recall_rechecks_version_after_resolving_earlier_event(runtime, monkeypatch):
+    mcp, store, _ = runtime
+
+    async def scenario():
+        async with Client(mcp) as client:
+            shown = await recall(client)
+            node_id = member(shown)
+            read = await call(client, "memory_lookup", node_id=node_id, map_event_id=shown["recall_event_id"])
+            record = store.record_recall
+
+            def change_then_record(**kwargs):
+                store.update_node(node_id, level="concept")
+                store.update_node(node_id, content="Changed while forming the carrier.")
+                return record(**kwargs)
+
+            monkeypatch.setattr(store, "record_recall", change_then_record)
+            marked = await recall(client, "amber", used=[read["results"][0]["feedback_ref"]])
+            assert marked["feedback_marks"]["by_reason"] == {"not_delivered": 1}
+            assert not store.connection.execute("SELECT * FROM recall_explicit_credit").fetchall()
+    asyncio.run(scenario())
