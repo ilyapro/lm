@@ -102,7 +102,7 @@ _SQL_WHITESPACE = "' ' || CHAR(9) || CHAR(10) || CHAR(11) || CHAR(12) || CHAR(13
 # their revision so deleting and repopulating a scope cannot reuse an identity.
 _CHUNK_SCOPE_REVISION_PREFIX = "chunk_scope_revision:"
 _CHUNK_SCOPE_REVISION_FORMAT = "chunk_scope_revision_format"
-_CHUNK_SCOPE_REVISION_VERSION = "3"
+_CHUNK_SCOPE_REVISION_VERSION = "4"
 
 
 def _chunk_scope_revision_write(scopes: str) -> str:
@@ -117,33 +117,32 @@ def _chunk_scope_revision_write(scopes: str) -> str:
 _CHUNK_CORPUS_TRIGGERS = (
     f"""CREATE TRIGGER chunk_corpus_insert
     BEFORE INSERT ON node_chunk_embeddings BEGIN
-        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id = NEW.node_id OR id IN (SELECT node_id FROM node_chunk_embeddings WHERE id = NEW.id)")}
+        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id = NEW.node_id OR id IN (SELECT node_id FROM node_chunk_embeddings WHERE id = NEW.id OR rowid = NEW.rowid)")}
     END""",
     f"""CREATE TRIGGER chunk_corpus_delete
     AFTER DELETE ON node_chunk_embeddings BEGIN
         {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id = OLD.node_id")}
     END""",
     f"""CREATE TRIGGER chunk_corpus_update
-    BEFORE UPDATE OF id, node_id, chunk_index, embedding, encoder_id, content_fingerprint ON node_chunk_embeddings
-    WHEN OLD.id IS NOT NEW.id OR OLD.node_id IS NOT NEW.node_id
+    BEFORE UPDATE OF id, rowid, oid, _rowid_, node_id, chunk_index, embedding, encoder_id, content_fingerprint ON node_chunk_embeddings
+    WHEN OLD.id IS NOT NEW.id OR OLD.rowid IS NOT NEW.rowid OR OLD.node_id IS NOT NEW.node_id
         OR OLD.content_fingerprint IS NOT NEW.content_fingerprint
         OR OLD.encoder_id IS NOT NEW.encoder_id
         OR OLD.chunk_index IS NOT NEW.chunk_index
         OR OLD.embedding IS NOT NEW.embedding
     BEGIN
-        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id IN (OLD.node_id, NEW.node_id) OR id IN (SELECT node_id FROM node_chunk_embeddings WHERE id = NEW.id)")}
+        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id IN (OLD.node_id, NEW.node_id) OR id IN (SELECT node_id FROM node_chunk_embeddings WHERE id = NEW.id OR rowid = NEW.rowid)")}
     END""",
 )
 
 _CHUNK_MEMBERSHIP_TRIGGERS = (
     f"""CREATE TRIGGER chunk_corpus_membership
-    BEFORE UPDATE OF id, scope, decayed, content_fingerprint ON nodes
-    WHEN (OLD.id IS NOT NEW.id OR OLD.scope IS NOT NEW.scope
-          OR OLD.decayed IS NOT NEW.decayed OR OLD.content_fingerprint IS NOT NEW.content_fingerprint)
-        AND EXISTS (SELECT 1 FROM node_chunk_embeddings
-                    WHERE node_id IN (OLD.id, NEW.id))
+    BEFORE UPDATE OF id, rowid, oid, _rowid_, scope, decayed, content_fingerprint, content ON nodes
+    WHEN OLD.id IS NOT NEW.id OR OLD.rowid IS NOT NEW.rowid OR OLD.scope IS NOT NEW.scope
+        OR OLD.decayed IS NOT NEW.decayed OR OLD.content_fingerprint IS NOT NEW.content_fingerprint
+        OR OLD.content IS NOT NEW.content
     BEGIN
-        {_chunk_scope_revision_write("SELECT OLD.scope AS scope UNION SELECT NEW.scope UNION SELECT scope FROM nodes WHERE id = NEW.id")}
+        {_chunk_scope_revision_write("SELECT OLD.scope AS scope UNION SELECT NEW.scope UNION SELECT scope FROM nodes WHERE id = NEW.id OR rowid = NEW.rowid")}
     END""",
     f"""CREATE TRIGGER chunk_corpus_node_delete
     BEFORE DELETE ON nodes
@@ -153,9 +152,8 @@ _CHUNK_MEMBERSHIP_TRIGGERS = (
     END""",
     f"""CREATE TRIGGER chunk_corpus_node_insert
     BEFORE INSERT ON nodes
-    WHEN EXISTS (SELECT 1 FROM node_chunk_embeddings WHERE node_id = NEW.id)
     BEGIN
-        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id = NEW.id UNION SELECT NEW.scope")}
+        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id = NEW.id OR rowid = NEW.rowid UNION SELECT NEW.scope")}
     END""",
 )
 
