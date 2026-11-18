@@ -383,3 +383,94 @@ def test_recall_keeps_selected_knowledge_consistent_across_teach(tmp_path, monke
         for mcp in (reader, writer):
             mcp.auto_consolidation.close()
             mcp.memory_store.close()
+
+
+def test_broad_recall_reuses_windows_across_lookup_and_scope_move(tmp_path, monkeypatch):
+    for key, value in {
+        "LIVING_MEMORY_EMBEDDING_BACKEND": "hash",
+        "LIVING_MEMORY_CHUNK_TOKENIZER": "heuristic",
+        "LM_AUTO_CONSOLIDATE_POLICY": "off",
+        "LM_RECALL_MAP": "0",
+        "LM_DELIVERY_SESSION_DEDUP": "0",
+    }.items():
+        monkeypatch.setenv(key, value)
+    db = tmp_path / "memory.sqlite3"
+    reader, writer = create_mcp_server(db), create_mcp_server(db)
+    store = reader.memory_store
+    peer = writer.memory_store
+    query = "amber hatch pressure release"
+    target = "window-000"
+    counts = []
+    on_validity = None
+    rows = store.iter_chunk_embedding_rows
+    pairs = store.list_supersedes_pairs
+    record = store.record_recall
+
+    def counted_rows(**kwargs):
+        for row in rows(**kwargs):
+            counts[-1][1] += 1
+            yield row
+
+    def validity(ids):
+        counts[-1][0] += 1
+        if counts[-1][0] == 1 and on_validity:
+            on_validity()
+        return pairs(ids)
+
+    def checkpoint_then_record(**kwargs):
+        # The consumption savepoint has not yet touched the database. A pinned
+        # selection snapshot here would block a complete checkpoint on the peer.
+        assert tuple(peer.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()) == (0, 0, 0)
+        return record(**kwargs)
+
+    async def lookup():
+        async with Client(writer) as client:
+            response = await client.call_tool("memory_lookup", {"node_id": target})
+            assert response.data["results"][0]["content"] == query
+
+    async def scenario():
+        nonlocal on_validity
+        for i in range(128):
+            store.create_node(node_id=f"window-{i:03}", level="trace",
+                              content=query if i == 0 else f"spare parts inventory {i}",
+                              context={"scope": f"project:s{i % 4}"})
+        monkeypatch.setattr(store, "list_supersedes_pairs", validity)
+        monkeypatch.setattr(store, "iter_chunk_embedding_rows", counted_rows)
+        monkeypatch.setattr(store, "record_recall", checkpoint_then_record)
+        peer.connection.execute("PRAGMA busy_timeout = 0")
+        async with Client(reader) as client:
+            async def recall():
+                counts.append([0, 0])
+                result = (await client.call_tool("memory_recall", {
+                    "query": query, "depth": 0, "max_results": 1,
+                })).data
+                entry, = result["results"]
+                assert (entry["id"], entry["content"], entry["delivery"]) == (target, query, "full")
+                assert not entry["superseded"]
+                assert store.get_recall_event(result["recall_event_id"]).result_ids == [target]
+                assert store.get_node(target).access_count == len(counts)
+                assert len(store.list_recall_events()) == len(counts)
+                return entry["scope"]
+
+            assert await recall() == "project:s0"
+            assert await recall() == "project:s0"
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                on_validity = lambda: executor.submit(asyncio.run, lookup()).result(timeout=30)
+                assert await recall() == "project:s0"
+            on_validity = None
+            assert peer.connection.execute("SELECT count(*) FROM recall_lookup_events").fetchone()[0] == 1
+            assert await recall() == "project:s0"
+            assert counts == [[1, 128], [1, 0], [1, 0], [1, 0]]
+
+            on_validity = lambda: peer.update_node(target, context={"scope": "project:s1"})
+            assert await recall() == "project:s0"
+            on_validity = None
+            assert await recall() == "project:s1"
+            assert counts[-2:] == [[1, 0], [1, 64]]
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        for mcp in (reader, writer):
+            mcp.auto_consolidation.close()
+            mcp.memory_store.close()
