@@ -304,6 +304,64 @@ def test_lookup_keeps_one_snapshot_across_teach(tmp_path, monkeypatch, selectors
             mcp.memory_store.close()
 
 
+@pytest.mark.parametrize("uri,scope,key", [
+    ("memory://recent", "project:read-validity", "traces"),
+    ("memory://global/concepts", "global", "concepts"),
+    ("memory://project/read-validity/concepts", "project:read-validity", "concepts"),
+])
+def test_resource_keeps_one_snapshot_across_teach(tmp_path, monkeypatch, uri, scope, key):
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LIVING_MEMORY_CHUNK_TOKENIZER", "heuristic")
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
+    db = tmp_path / "memory.sqlite3"
+    reader, writer = create_mcp_server(db), create_mcp_server(db)
+    store = reader.memory_store
+    original = store.create_node(
+        level="trace" if key == "traces" else "concept",
+        content="Open the hatch first.", context={"scope": scope},
+    )
+
+    async def teach():
+        async with Client(writer) as client:
+            result = await client.call_tool("memory_teach", {
+                "trace_id": original.id, "correction": "Release pressure first.",
+                "context": {"scope": scope},
+            })
+            return result.data["corrective_trace"]["id"]
+
+    async def scenario():
+        async with Client(reader) as client:
+            async def read():
+                return json.loads((await client.read_resource(uri))[0].text)
+
+            before = await read()
+            read_pairs = store.list_supersedes_pairs
+            with ThreadPoolExecutor(max_workers=1) as executor, monkeypatch.context() as patch:
+                corrections = []
+
+                def teach_then_read_pairs(ids):
+                    corrections.append(executor.submit(asyncio.run, teach()).result(timeout=30))
+                    return read_pairs(ids)
+
+                patch.setattr(store, "list_supersedes_pairs", teach_then_read_pairs)
+                during = await read()
+            assert during == before
+            correction, = corrections
+            after = await read()
+            for response, expected in [(before, []), (after, [correction])]:
+                row = next(item for item in response[key] if item["id"] == original.id)
+                assert len(row["provenance"]["corrections"]) == len(expected)
+                assert row["superseded"] == bool(expected)
+                assert row["superseded_by"] == expected
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        for mcp in (reader, writer):
+            mcp.auto_consolidation.close()
+            mcp.memory_store.close()
+
+
 @pytest.mark.parametrize("view", ["knowledge", "full"])
 @pytest.mark.parametrize("threshold", ["off", "0.35"])
 def test_recall_keeps_selected_knowledge_consistent_across_teach(tmp_path, monkeypatch, view, threshold):
