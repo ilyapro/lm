@@ -1868,24 +1868,30 @@ class MemoryStore:
 
     def schema_triggers(
         self, scope: str | None, *, strategy: str | None = None,
+        node_ids: list[str] | None = None,
     ) -> list[tuple[str, str]]:
         """``(id, trigger)`` of live triggered schemas and group carriers in ``scope`` (``None``: all).
 
-        Reads two columns instead of whole nodes: a recall compares every
-        trigger in its scopes and fetches only the schemas it matched.
-        A strategy selector also reads provenance with the node decoder, so a
-        materializer can discover its owners before hydrating their bodies.
+        Name matching can restrict the read to ranked identities. A strategy
+        selector also reads provenance to discover materializer owners.
         """
 
         projection = ", provenance" if strategy is not None else ""
+        filters = ["level IN ('schema', 'concept')", "decayed = 0"]
+        params = []
+        if scope is not None:
+            filters.append("scope = ?")
+            params.append(scope)
+        if node_ids is not None:
+            filters.append("id IN (SELECT value FROM json_each(?))")
+            params.append(_json_dumps(node_ids))
         rows = self._conn.execute(
             f"""
             SELECT id, JSON_EXTRACT(context, '$.trigger') {projection}
-            FROM nodes
-            WHERE level IN ('schema', 'concept') AND (? IS NULL OR scope = ?) AND decayed = 0
+            FROM nodes WHERE {" AND ".join(filters)}
               AND JSON_EXTRACT(context, '$.trigger') IS NOT NULL
             """,
-            (scope, scope),
+            params,
         ).fetchall()
         result = []
         for row in rows:

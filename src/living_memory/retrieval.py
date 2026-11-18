@@ -1580,10 +1580,11 @@ class MemoryRecallService:
         query_tokens = frozenset(tokenize(query, evidence=True))
         if not query_tokens or not ranked:
             return ranked
+        ranked_ids = [result.node.id for result in ranked]
         named_ids = {
             node_id
             for scope in plan.search_scopes
-            for node_id, trigger in self.store.schema_triggers(scope)
+            for node_id, trigger in self.store.schema_triggers(scope, node_ids=ranked_ids)
             if frozenset(tokenize(trigger, evidence=True)) == query_tokens
         }
         threshold = min_score_from_env()
