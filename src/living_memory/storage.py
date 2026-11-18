@@ -174,14 +174,14 @@ _QUERY_ANCHOR_CORPUS_TRIGGERS = (
     END
     """.strip(),
     """CREATE TRIGGER query_anchor_corpus_update
-    AFTER UPDATE OF id, scope, query, dimensions, embedding, encoder_id, decayed ON query_anchors
-    WHEN (OLD.decayed = 0 OR NEW.decayed = 0) AND (
-        OLD.id IS NOT NEW.id OR OLD.scope IS NOT NEW.scope
-        OR OLD.query IS NOT NEW.query OR OLD.encoder_id IS NOT NEW.encoder_id
-        OR OLD.dimensions IS NOT NEW.dimensions
-        OR OLD.embedding IS NOT NEW.embedding
-        OR OLD.decayed IS NOT NEW.decayed
-    )
+    AFTER UPDATE OF id, rowid, oid, _rowid_, scope, fingerprint, query, dimensions, embedding,
+                    encoder_id, decayed ON query_anchors
+    WHEN OLD.id IS NOT NEW.id OR OLD.rowid IS NOT NEW.rowid OR OLD.scope IS NOT NEW.scope
+        OR OLD.fingerprint IS NOT NEW.fingerprint OR ((OLD.decayed = 0 OR NEW.decayed = 0) AND (
+            OLD.query IS NOT NEW.query OR OLD.encoder_id IS NOT NEW.encoder_id
+            OR OLD.dimensions IS NOT NEW.dimensions OR OLD.embedding IS NOT NEW.embedding
+            OR OLD.decayed IS NOT NEW.decayed
+        ))
     BEGIN
         UPDATE metadata SET value = value + 1 WHERE key = 'query_anchor_revision';
     END
@@ -6189,9 +6189,12 @@ class MemoryStore:
                 self._conn.execute(
                     "INSERT OR IGNORE INTO metadata (key, value) VALUES ('query_anchor_revision', '0')"
                 )
-                self._conn.execute(
+                initialized = self._conn.execute(
                     "INSERT OR IGNORE INTO metadata (key, value) VALUES (?, '0')", (_ANCHOR_TEXT_PREFIX,)
                 )
+                if initialized.rowcount:
+                    # Unique-key updates can displace a live vector via OR REPLACE.
+                    self._conn.execute("DROP TRIGGER IF EXISTS query_anchor_corpus_update")
                 for trigger in (*_QUERY_ANCHOR_CORPUS_TRIGGERS, *_ANCHOR_TEXT_TRIGGERS):
                     self._conn.execute(trigger.replace("CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ", 1))
             self._anchor_tables_cache = None
