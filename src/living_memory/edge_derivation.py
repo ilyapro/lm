@@ -20,6 +20,7 @@ import json
 import re
 import sqlite3
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from living_memory.file_evidence import file_citations, file_key, file_owner
@@ -360,18 +361,24 @@ def _file_citation_candidates(
         batch = keys[start:start + _FILE_CITATION_BATCH_SIZE]
         remaining = dict.fromkeys(batch, MAX_FILE_FANOUT + 1)
 
-        def admit(name, scope, repo, worktree, project):
-            key = file_key(file_owner(scope, repo, worktree, project), name)
+        tails = {key.rsplit("\0", 1)[-1].rsplit("/", 1)[-1] for key in batch}
+
+        @lru_cache(maxsize=128)
+        def owner(scope, fields):
+            return file_owner(scope, *json.loads(fields))
+
+        def admit(name, scope, fields):
+            if name.rsplit("/", 1)[-1] not in tails:
+                return False
+            key = file_key(owner(scope, fields), name)
             if remaining.get(key, 0):
                 remaining[key] -= 1
-                return key
-            return None
+                return True
+            return False
 
-        # MATERIALIZED would scan the whole corpus even after saturation.
-        # Keep admission in WHERE and project only the accepted source facts.
-        facts = """entry.value, n.scope, json_extract(n.context, '$.repo'),
-                   json_extract(n.context, '$.worktree'), json_extract(n.context, '$.project')"""
-        store.connection.create_function("_lm_file_citation_admit", 5, admit)
+        facts = """entry.value, n.scope,
+                   json_extract(n.context, '$.repo', '$.worktree', '$.project')"""
+        store.connection.create_function("_lm_file_citation_admit", 3, admit)
         try:
             rows = store.connection.execute(
                 f"""
@@ -380,17 +387,17 @@ def _file_citation_candidates(
                 FROM nodes AS n, json_each(n.context, '$.files') AS entry
                 WHERE json_extract(n.context, '$.files') IS NOT NULL
                   AND n.decayed = 0 AND json_type(n.context, '$.files') = 'array'
-                  AND entry.type = 'text' AND _lm_file_citation_admit({facts}) IS NOT NULL
+                  AND entry.type = 'text' AND _lm_file_citation_admit({facts})
                 LIMIT ?
                 """,
                 (len(batch) * (MAX_FILE_FANOUT + 1),),
             )
             try:
                 for row in rows:
-                    key = file_key(file_owner(*row[3:7]), row[2])
+                    key = file_key(owner(row["scope"], row[4]), row["value"])
                     citing[key].append(_candidate_from_row(row))
             finally:
                 rows.close()
         finally:
-            store.connection.create_function("_lm_file_citation_admit", 5, None)
+            store.connection.create_function("_lm_file_citation_admit", 3, None)
     return citing

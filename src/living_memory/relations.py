@@ -13,7 +13,7 @@ import json
 import sqlite3
 from typing import Any
 
-from living_memory.file_evidence import file_citations
+from living_memory.file_evidence import file_key, file_owner
 
 
 _NON_CORRECTION_KINDS = ("drain_near_duplicate", "duplicate_content", "content_correction")
@@ -90,16 +90,25 @@ def _checked_file_weight(metadata_json, weight, left_scope, left_json, right_sco
     metadata = json.loads(metadata_json)
     files = metadata.get("files")
     names = {f for f in files if isinstance(f, str)} if isinstance(files, list) else set()
-    left = dict(file_citations(left_scope, json.loads(left_json)))
-    right = dict(file_citations(right_scope, json.loads(right_json)))
-    shared = {key for key in left.keys() & right.keys() if left[key] in names or right[key] in names}
+    def citations(scope, fields):
+        repo, worktree, project, paths = json.loads(fields)
+        owner = file_owner(scope, repo, worktree, project)
+        if not isinstance(paths, list):
+            return set()
+        return {(key, path) for path in paths if (key := file_key(owner, path)) is not None}
+
+    left = citations(left_scope, left_json)
+    right = citations(right_scope, right_json)
+    recorded = {key for key, name in left | right if name in names}
+    shared = recorded.intersection((k for k, _ in left), (k for k, _ in right))
     count = len(shared)
     if count and count == len(files) and not source_only:
         return weight
     contributions = []
     if count:
         contributions.append(shared_files_weight(shared))
-    if metadata.get("commit") or metadata.get("kind") == "content_reference":
+    commit = metadata.get("commit")
+    if (isinstance(commit, str) and len(commit) == 7) or metadata.get("kind") == "content_reference":
         contributions.append(CONTENT_REFERENCE_WEIGHT)
     if metadata.get("kind") == "derived_from":
         contributions.append(DERIVED_FROM_WEIGHT)
@@ -124,12 +133,13 @@ def checked_weight_sql(alias: str = "connections", *, source_only: bool = False)
     meta = f"{alias}.metadata"
     weight = f"{alias}.weight"
     other = source_relation_weight_sql(alias) if source_only else weight
+    fields = "'$.repo', '$.worktree', '$.project', '$.files'"
     return (
         f"CASE WHEN {alias}.type = 'related' AND (json_extract({meta}, '$.rule') = 'R4b'"
         f" OR json_extract({meta}, '$.basis') = 'shared_files'"
         f" OR json_extract({meta}, '$.rule_basis') = 'shared_files') THEN ("
-        f"SELECT lm_checked_file_weight({meta}, {weight}, a.scope, a.context,"
-        f" b.scope, b.context, {int(source_only)}) FROM nodes a JOIN nodes b"
+        f"SELECT lm_checked_file_weight({meta}, {weight}, a.scope, json_extract(a.context, {fields}),"
+        f" b.scope, json_extract(b.context, {fields}), {int(source_only)}) FROM nodes a JOIN nodes b"
         f" ON b.id = {alias}.target_id WHERE a.id = {alias}.source_id)"
         f" ELSE {other} END"
     )

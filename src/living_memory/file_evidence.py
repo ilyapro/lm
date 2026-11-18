@@ -1,6 +1,6 @@
 """Lexical file identity from recorded source fields, without filesystem access."""
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 import posixpath
 from typing import Any
 
@@ -41,7 +41,8 @@ def file_owner(scope: str, repo: Any, worktree: Any, project: Any) -> str | None
     if project is not None:
         if not isinstance(project, str) or not project.strip():
             return None
-        return "project:" + project.removeprefix("project:")
+        name = project.removeprefix("project:")
+        return "project:" + name if name.strip() and "\0" not in name else None
     return scope if scope.startswith("project:") and scope[8:].strip() else None
 
 
@@ -50,6 +51,9 @@ def file_key(owner: str | None, name: Any) -> str | None:
     if path is None:
         return None
     if path.startswith("/"):
+        root, marker, checkout = path.partition("/.worktrees/")
+        if marker and root and "/" in checkout:
+            return root + "/" + checkout.split("/", 1)[1]
         return path
     if owner is None:
         return None
@@ -58,7 +62,7 @@ def file_key(owner: str | None, name: Any) -> str | None:
     return owner + "\0" + path
 
 
-def file_citations(scope: str, context: Mapping[str, Any]):
+def file_citations(scope: str, context: Mapping[str, Any]) -> Iterator[tuple[str, str]]:
     """Yield (identity, recorded spelling) once per genuine file occurrence."""
     files = context.get("files")
     if isinstance(files, list):
