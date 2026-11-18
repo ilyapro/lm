@@ -44,6 +44,16 @@ shared protocol producer in `server.py`. Caller/session attribution and the
 once-only credit shared by lookup, explicit use and grounded feedback retain
 their ordinary boundaries.
 
+To mark knowledge read from a recall map, pass the medoid's `node_id` and
+the originating response's `recall_event_id` as `map_event_id` to
+`memory_lookup` on the same transport. Pass the returned entry's
+`feedback_ref` in `used` or `irrelevant`. The reference identifies the
+selected query even when two maps show the same node. It requires the same
+content and scope at marking time and follows the usual caller, reconnect,
+time and event-count limits. Map reads have no rank. Under credit policy
+explicit use can reinforce the query anchor once, without changing rank-based
+scores. Plain node IDs retain ordinary ranked-result attribution.
+
 Positive usefulness feedback has diminishing returns: higher usefulness and
 more recorded accesses reduce the next increment. Sustained evidence can still
 reach usefulness 1.0, and the ranking multiplier remains capped at 1.4; negative

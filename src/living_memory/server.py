@@ -81,6 +81,7 @@ from living_memory.feedback import (
     apply_lookup_credit,
     apply_pending_recall_feedback,
     has_explicit_marks,
+    map_feedback_refs,
     prepared_feedback,
     prepared_lookup_credit,
     resolve_explicit_marks,
@@ -1517,6 +1518,7 @@ def _register_tools(
         node_ids: list[str] | None = None,
         view: str = "knowledge",
         context_key: str | None = None,
+        map_event_id: str | None = None,
     ) -> dict[str, Any]:
         """Return memory nodes by exact context-field match, or knowledge by id.
 
@@ -1532,6 +1534,8 @@ def _register_tools(
         ``superseded`` reports known replacement even without a readable
         correction; ``superseded_by`` lists direct correction ids allowed by
         scope (including decayed history). These fields accompany both views.
+        When following a map medoid, pass its recall_event_id as map_event_id.
+        Use the returned entry's feedback_ref for later used/irrelevant marks.
         """
 
         normalized_scope = normalize_scope(scope) if scope is not None else None
@@ -1658,6 +1662,18 @@ def _register_tools(
                         len(requested_ids),
                     )
                     return response
+                if map_event_id and lookup_event_id and results:
+                    try:
+                        refs = map_feedback_refs(store, map_event_id, lookup_event_id, results,
+                                                 transport_session_id, occurred_at)
+                    except Exception as error:
+                        logging.getLogger(__name__).warning(
+                            "could not record map read (%s)", type(error).__name__[:80],
+                        )
+                    else:
+                        for entry in results:
+                            if entry["id"] in refs:
+                                entry["feedback_ref"] = refs[entry["id"]]
                 if lookup_event_id is not None and feedback_preparation is not None:
                     apply_lookup_credit(
                         store,

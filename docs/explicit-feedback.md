@@ -36,8 +36,24 @@ attribution boundaries and window below.
 - `memory_lookup` does **not** get the fields. A lookup of a delivered id
   already earns numeric lookup credit through `apply_lookup_credit`; it does
   not confirm relevance for that question. The agent can mark a previously
-  fetched node `used` or `irrelevant` on a later recall or write. Keeping
-  lookup's schema unchanged keeps the re-fetch path small.
+  fetched node `used` or `irrelevant` on a later recall or write. For a map medoid use the returned reference below.
+
+### Knowledge read from a map
+
+Supply the originating recall's `recall_event_id` as `map_event_id` on the
+exact-id lookup. A matching entry includes a `feedback_ref` usable in either
+mark list in place of its node id. The named event must have shown that medoid
+on the lookup transport. The lookup still performs its ordinary content and
+validity reads. Optional receipt failure leaves the knowledge available.
+
+Mark resolution checks the receipt's query event within the usual caller
+window and checks the returned content fingerprint and scope against the
+current node. A plain lookup or mark cannot select among maps. The receipt
+identifies the version read at lookup time. Old requests have no receipts.
+If the optional receipt-mark batch cannot confirm its write, the response
+reports `unconfirmed` for otherwise eligible marks. Map reads carry no retrieval rank or component scores. Under credit policy
+their explicit marks maintain query-relative negatives and the once-only
+positive anchor edge, without rank-weighted reinforcement.
 
 ### Response
 
@@ -89,7 +105,7 @@ attributable. Supplying identity only after reconnect cannot recover it. Do not
 copy an old `transport_session_id`, replay writes/marks or widen the window to
 compensate. A call without transport still receives `no_transport`.
 
-The event is the newest delivering event that is no later than the mark and
+For a plain node id the event is the newest delivering event that is no later than the mark and
 within `LM_LOOKUP_CREDIT_WINDOW_SECONDS` (default 24 h), among the newest 200
 eligible caller events. Storage's `recall_deliveries` supplies one selection
 to explicit marks, lookup credit and missing-anchor preparation. Lookup omits
@@ -140,7 +156,7 @@ keys, no `SCHEMA_VERSION` bump.
 | `source_id` | the trace id for remember/teach, the *new* recall event id for recall |
 | `transport_session_id` | NULL without transport |
 | `agent` | `context.agent` / `ambient_context.agent` |
-| `rank` | 0-based rank in the delivering event; NULL when dropped |
+| `rank` | 0-based result rank; NULL for a map read or dropped mark |
 | `marked_at` | storage clock |
 
 Index `idx_recall_feedback_marks_event(recall_event_id, mark, accepted)`

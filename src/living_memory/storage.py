@@ -2888,6 +2888,109 @@ class MemoryStore:
         ).fetchall()
         return {str(row["node_id"]) for row in rows}
 
+    def _recent_delivery_events(
+        self, transport_session_id: str, context: Mapping[str, Any] | None, limit: int,
+    ) -> list[sqlite3.Row]:
+        params = {
+            **_recall_identity(context),
+            "transport_session_id": str(transport_session_id),
+            "limit": int(limit),
+        }
+        predicates = ["transport_session_id = :transport_session_id"]
+        if params["session_id"] and params["session_id"].strip():
+            params["scope"] = resolve_scope(ambient_context=context, store=self).requested_scope
+            params["all_scopes"] = ALL_SCOPES
+            # Breadth relaxes only scope equality, never caller identity or
+            # delivered-id membership. Named resolved scopes are preferences
+            # or read fallbacks, not permission to join a different scope.
+            scope_match = f"""({_recall_scope_match_sql(params, allow_transport=False)}
+                OR EXISTS (SELECT 1 FROM json_each(resolved_scopes)
+                           WHERE value = :all_scopes))"""
+            predicates.append(" AND ".join([
+                "session_id = :session_id",
+                "COALESCE(transport_session_id, '') != :transport_session_id",
+                scope_match,
+                *(_compatible_recall_identity_sql(field) for field in ("task", "agent")
+                  if params[field]),
+            ]))
+        # Separate indexed probes avoid an OR scan. They are disjoint, capped
+        # independently, then share one newest-event cap before result/time tests.
+        probes = " UNION ALL ".join(
+            f"""SELECT * FROM (
+                SELECT rowid AS event_rowid, id, created_at FROM recall_events
+                WHERE {predicate}
+                ORDER BY created_at DESC, rowid DESC LIMIT :limit
+            )"""
+            for predicate in predicates
+        )
+        return self._conn.execute(
+            f"""
+            WITH recent AS MATERIALIZED (
+                SELECT * FROM ({probes})
+                ORDER BY created_at DESC, event_rowid DESC LIMIT :limit
+            )
+            SELECT * FROM recent ORDER BY created_at DESC, event_rowid DESC
+            """,
+            params,
+        ).fetchall()
+
+    def record_map_reads(
+        self, event_id: str, lookup_id: str, entries: Sequence[Mapping[str, Any]],
+        transport: str, earliest: datetime, latest: datetime, limit: int,
+    ) -> dict[str, str]:
+        """Bind formed exact reads to the map explicitly named on this transport."""
+        with self.transaction():
+            events = self._recent_delivery_events(transport, None, limit)
+            if not any(row["id"] == event_id and _in_delivery_window(row, earliest, latest)
+                       for row in events):
+                return {}
+            event = self._conn.execute(
+                "SELECT recall_map, resolved_scopes FROM recall_events WHERE id = ?", (event_id,)
+            ).fetchone()
+            medoids = set(_recall_map_medoid_ids(_json_loads(event["recall_map"], None)))
+            scopes = _json_loads(event["resolved_scopes"], [])
+            refs = {}
+            for entry in entries:
+                node_id, scope = entry["id"], entry["scope"]
+                if node_id not in medoids or (scope not in scopes and ALL_SCOPES not in scopes):
+                    continue
+                self._conn.execute(
+                    """INSERT INTO recall_map_reads
+                       (lookup_id, node_id, event_id, scope, content_fingerprint)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (lookup_id, node_id, event_id, scope, _content_fingerprint(entry["content"])),
+                )
+                refs[node_id] = f"map-read:{lookup_id}:{node_id}"
+        return refs
+
+    def map_read_deliveries(
+        self, reads: Mapping[str, str], transport: str, context: Mapping[str, Any] | None,
+        earliest: datetime, latest: datetime, limit: int,
+    ) -> dict[str, dict[str, Any]]:
+        """Resolve returned references against eligible events and the exact read version."""
+        with self.transaction():
+            eligible = {row["id"] for row in self._recent_delivery_events(transport, context, limit)
+                        if _in_delivery_window(row, earliest, latest)}
+            return {
+                row["node_id"]: {**dict(row), "rank": None, "result": {}}
+                for row in self.current_map_reads(reads)
+                if row["event_id"] in eligible and _in_delivery_window(row, earliest, latest)
+            }
+
+    def current_map_reads(self, reads: Mapping[str, str]) -> list[sqlite3.Row]:
+        """Read only receipts whose scope and content version still match."""
+        return self._conn.execute(
+            f"""SELECT r.node_id, r.event_id, e.query, e.scope, l.occurred_at AS created_at
+                FROM json_each(?) AS request
+                JOIN recall_map_reads AS r ON r.node_id = request.key AND r.lookup_id = request.value
+                JOIN {RECALL_LOOKUP_EVENT_TABLE} AS l
+                  ON l.lookup_event_id = r.lookup_id AND l.node_id = r.node_id
+                JOIN recall_events AS e ON e.id = r.event_id AND e.transport_session_id = l.transport_session_id
+                JOIN nodes AS n ON n.id = r.node_id AND n.scope = r.scope
+                               AND n.content_fingerprint = r.content_fingerprint""",
+            (_json_dumps(reads),),
+        ).fetchall()
+
     def recall_deliveries(
         self,
         transport_session_id: str | None,
@@ -2945,54 +3048,12 @@ class MemoryStore:
                           WHERE credit.recall_event_id = event.id
                             AND credit.node_id = json_extract(result.value, '$.node_id'))
                 AS credited"""
-        params = {
-            **_recall_identity(context),
-            "transport_session_id": str(transport_session_id),
-            "limit": int(limit),
-        }
-        predicates = ["transport_session_id = :transport_session_id"]
-        if params["session_id"] and params["session_id"].strip():
-            params["scope"] = resolve_scope(ambient_context=context, store=self).requested_scope
-            params["all_scopes"] = ALL_SCOPES
-            # Breadth relaxes only scope equality, never caller identity or
-            # delivered-id membership. Named resolved scopes are preferences
-            # or read fallbacks, not permission to join a different scope.
-            scope_match = f"""({_recall_scope_match_sql(params, allow_transport=False)}
-                OR EXISTS (SELECT 1 FROM json_each(resolved_scopes)
-                           WHERE value = :all_scopes))"""
-            predicates.append(" AND ".join([
-                "session_id = :session_id",
-                "COALESCE(transport_session_id, '') != :transport_session_id",
-                scope_match,
-                *(_compatible_recall_identity_sql(field) for field in ("task", "agent")
-                  if params[field]),
-            ]))
-        # Separate indexed probes avoid an OR scan. They are disjoint, capped
-        # independently, then share one newest-event cap before result/time tests.
-        probes = " UNION ALL ".join(
-            f"""SELECT * FROM (
-                SELECT rowid AS event_rowid, id, created_at FROM recall_events
-                WHERE {predicate}
-                ORDER BY created_at DESC, rowid DESC LIMIT :limit
-            )"""
-            for predicate in predicates
-        )
         # Candidate identity and membership must come from the same read snapshot.
         with self.transaction():
-            events = self._conn.execute(
-                f"""
-                WITH recent AS MATERIALIZED (
-                    SELECT * FROM ({probes})
-                    ORDER BY created_at DESC, event_rowid DESC LIMIT :limit
-                )
-                SELECT * FROM recent ORDER BY created_at DESC, event_rowid DESC
-                """,
-                params,
-            ).fetchall()
+            events = self._recent_delivery_events(transport_session_id, context, limit)
             hits: dict[str, dict[str, Any]] = {}
             for event in events:
-                instant = parse_timestamp(event["created_at"])
-                if instant is None or not earliest <= instant.replace(microsecond=0) <= latest:
+                if not _in_delivery_window(event, earliest, latest):
                     continue
                 # Keep the ordered event choice outside the JSON query: sorting a
                 # session-wide join can evaluate older bodies before its first hit.
@@ -5860,6 +5921,15 @@ class MemoryStore:
                     task_pattern TEXT
                 );
 
+                CREATE TABLE IF NOT EXISTS recall_map_reads (
+                    lookup_id TEXT NOT NULL,
+                    node_id TEXT NOT NULL,
+                    event_id TEXT NOT NULL,
+                    scope TEXT NOT NULL,
+                    content_fingerprint TEXT NOT NULL,
+                    PRIMARY KEY (lookup_id, node_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS retrieval_weights (
                     scope TEXT PRIMARY KEY,
                     bm25 REAL NOT NULL,
@@ -6677,6 +6747,11 @@ def _scope_family(scope: str) -> str:
 
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+
+def _in_delivery_window(row: sqlite3.Row, earliest: datetime, latest: datetime) -> bool:
+    instant = parse_timestamp(row["created_at"])
+    return instant is not None and earliest <= instant.replace(microsecond=0) <= latest
 
 
 def _normalize_recall_history_instant(value: str | datetime | Any) -> str | None:
