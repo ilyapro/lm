@@ -7,6 +7,7 @@ from threading import RLock
 from fastmcp import Client
 import pytest
 
+from living_memory.embeddings import EncodedVector
 from living_memory import feedback, retrieval, server
 from living_memory.chunking import chunk_text
 from living_memory.irrelevance import list_query_irrelevance
@@ -352,7 +353,7 @@ def test_new_delivery_during_feedback_preparation_owns_credit_event_map_and_deli
         for i in range(4):
             r.store.create_node(level="concept", content=f"Cobalt certificate logistics note {i}.",
                                 context={"scope": SCOPE, "topic": "certificate logistics"},
-                                embedding=[0.6, 0.8, 0.0])
+                                embedding=EncodedVector([0.6, 0.8, 0.0], "hash:3"))
 
     async def scenario():
         async with Client(r.mcp) as owner, Client(r.mcp) as peer:

@@ -54,7 +54,6 @@ def runtime(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "RLock", lambda: state.guard)
     monkeypatch.setattr(server, "MemoryRecallService", build)
     state.mcp = server.create_mcp_server(tmp_path / "memory.sqlite3")
-    # Tools register before prompts, which have an independent recall service.
     state.service = services[0]
     state.store = state.mcp.memory_store
     state.node = legacy(state.store)

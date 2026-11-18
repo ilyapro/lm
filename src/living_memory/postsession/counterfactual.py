@@ -143,6 +143,7 @@ from living_memory.replay import (
     build_label_data,
     open_readonly,
 )
+from living_memory.embeddings import EncodedVector
 from living_memory.retrieval import MemoryRecallService
 from living_memory.retrieval_harness import (
     GoldsetItem,
@@ -308,14 +309,14 @@ def _chunk_rows(connection: sqlite3.Connection, node_id: str) -> tuple[tuple[Any
         f"PRAGMA table_info({CHUNK_EMBEDDING_TABLE})"
     )}
     # Capture also reads frozen snapshots before the working store migrates them.
-    coordinates = ", ".join(
+    optional_columns = ", ".join(
         column if column in columns else f"NULL AS {column}"
-        for column in ("char_start", "char_end")
+        for column in ("char_start", "char_end", "encoder_id")
     )
     rows = connection.execute(
         f"""
         SELECT chunk_index, dimensions, embedding, token_start, token_end,
-               content_fingerprint, {coordinates}
+               content_fingerprint, {optional_columns}
         FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ? ORDER BY chunk_index
         """,
         (node_id,),
@@ -330,6 +331,7 @@ def _chunk_rows(connection: sqlite3.Connection, node_id: str) -> tuple[tuple[Any
             str(row["content_fingerprint"] or ""),
             row["char_start"],
             row["char_end"],
+            row["encoder_id"],
         )
         for row in rows
     )
@@ -514,7 +516,7 @@ def _restore_chunks(store: MemoryStore, snapshot: NodeSnapshot) -> int:
     source_fingerprint = hashlib.sha256(content.encode("utf-8")).hexdigest()
     for (
         index, dimensions, blob, token_start, token_end, chunk_fingerprint,
-        char_start, char_end,
+        char_start, char_end, encoder_id,
     ) in snapshot.chunks:
         if char_start is None and char_end is None:
             # The chunk API keeps this unaddressed; token offsets cannot recover it.
@@ -528,6 +530,9 @@ def _restore_chunks(store: MemoryStore, snapshot: NodeSnapshot) -> int:
             raise CoherenceError(f"invalid chunk source address: {snapshot.node_id}/{index}")
         else:
             text = content[char_start:char_end]
+        vector = unpack_chunk_embedding(blob, dimensions)
+        if encoder_id is not None:
+            vector = EncodedVector(vector, encoder_id)
         chunks.append(
             (
                 TextChunk(
@@ -538,7 +543,7 @@ def _restore_chunks(store: MemoryStore, snapshot: NodeSnapshot) -> int:
                     char_start=char_start,
                     char_end=char_end,
                 ),
-                unpack_chunk_embedding(blob, dimensions),
+                vector,
             )
         )
         fingerprint = chunk_fingerprint or fingerprint

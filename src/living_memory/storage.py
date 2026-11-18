@@ -4664,7 +4664,7 @@ class MemoryStore:
         if not chunks or (max_chunks is not None and len(chunks) > max_chunks):
             return []
         if len(chunks) == 1 and node_embedding:
-            return [(chunks[0], node_embedding)]
+            return [(chunks[0], copy_vector(node_embedding))]
         # Preparation uses only immutable text and encoder-owned state. Keep
         # injected encoders and their replacement serialized too; never consult
         # SQLite, session state or the current knowledge projection here.

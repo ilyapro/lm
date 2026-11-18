@@ -25,7 +25,7 @@ from typing import Any
 
 import pytest
 
-from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
+from living_memory.embeddings import EncodedVector, LocalEmbeddingModel, cosine_similarity
 from living_memory.feedback import feedback_weighted_score
 from living_memory.models import Node
 from living_memory.server import create_mcp_server
@@ -216,7 +216,7 @@ def test_fresh_write_reaches_default_top10_against_boosted_competitors(
                 "access_count": COMPETITOR_ACCESS_COUNT,
             },
         )
-        store.update_node(rival.id, embedding=rival_embedding)
+        store.update_node(rival.id, embedding=EncodedVector(rival_embedding, query_embedding.encoder_id))
 
     remembered = mcp.tools["memory_remember"](
         FRESH_CONTENT,

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory.retrieval import MemoryRecallService
 from living_memory.storage import MemoryStore
 
@@ -17,10 +18,10 @@ class ControlledEmbeddingModel:
     def embed(self, text: str) -> list[float]:
         lowered = text.lower()
         if BM25_PRESSURE_QUERY in lowered:
-            return [0.0, 0.0, 1.0]
+            return fixture_vector([0.0, 0.0, 1.0])
         if lowered in {SEMANTIC_EVAL_QUERY, SEMANTIC_HOLDOUT_QUERY}:
-            return [1.0, 0.0, 0.0]
-        return [0.0, 1.0, 0.0]
+            return fixture_vector([1.0, 0.0, 0.0])
+        return fixture_vector([0.0, 1.0, 0.0])
 
 
 @pytest.mark.parametrize(
@@ -42,7 +43,7 @@ def test_semantic_recall_survives_repeated_bm25_positive_feedback(
             level="trace",
             content=f"{BM25_PRESSURE_QUERY} exact lexical anchor",
             context={"scope": scope, "agent": "agent-a"},
-            embedding=[0.0, 0.0, 1.0],
+            embedding=fixture_vector([0.0, 0.0, 1.0]),
         )
         semantic = store.create_node(
             level="trace",
@@ -50,7 +51,7 @@ def test_semantic_recall_survives_repeated_bm25_positive_feedback(
             context={"scope": scope, "agent": "agent-b"},
             # 0.6 is below STRONG_VECTOR_MATCH, so the result depends on
             # the persisted vector weight remaining nonzero.
-            embedding=[0.6, 0.8, 0.0],
+            embedding=fixture_vector([0.6, 0.8, 0.0]),
         )
         service = MemoryRecallService(store, embedder=ControlledEmbeddingModel())
 

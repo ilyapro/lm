@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from fixture_vectors import fixture_vector
 from living_memory.models import Node
 from living_memory.retrieval import (
     CROSS_SCOPE_GRAPH_ADMIT,
@@ -340,10 +341,10 @@ def test_memory_recall_gates_weak_global_and_keeps_strong_global(tmp_path: Path)
     strong_global = "Deploy release checklist template used across teams"
     weak_global = "Grafana palette conventions for dashboard tiles"
     planted = {
-        query: [1.0, 0.0, 0.0],
-        project_content: [0.5, 0.8660254, 0.0],
-        strong_global: [0.8, 0.6, 0.0],
-        weak_global: [0.25, 0.9682458, 0.0],
+        query: fixture_vector([1.0, 0.0, 0.0]),
+        project_content: fixture_vector([0.5, 0.8660254, 0.0]),
+        strong_global: fixture_vector([0.8, 0.6, 0.0]),
+        weak_global: fixture_vector([0.25, 0.9682458, 0.0]),
     }
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         project_node = store.create_node(
