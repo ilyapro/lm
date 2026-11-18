@@ -4332,6 +4332,29 @@ class MemoryStore:
             scope=scope, level=level, limit=limit, after=after, positions_only=False,
         )]
 
+    def unknown_chunk_batches(
+        self, scope: str | None, dimension: int,
+    ) -> Iterator[list[sqlite3.Row]]:
+        """Stream same-width historical windows for repair selection in node order."""
+        scope_clause = "AND n.scope = ?" if scope is not None else ""
+        params = (dimension, dimension * CHUNK_EMBEDDING_ITEMSIZE)
+        cursor = self._conn.execute(
+            f"""
+            SELECT c.node_id, c.embedding FROM {CHUNK_EMBEDDING_TABLE} c
+            JOIN nodes n ON n.id = c.node_id
+            WHERE c.encoder_id IS NULL AND c.dimensions = ? AND length(c.embedding) = ?
+              AND n.decayed = 0 AND c.content_fingerprint = n.content_fingerprint
+              {scope_clause}
+            ORDER BY c.node_id
+            """,
+            (*params, scope) if scope is not None else params,
+        )
+        try:
+            while batch := cursor.fetchmany(512):
+                yield batch
+        finally:
+            cursor.close()
+
     def list_unchunked_node_positions(
         self,
         *,

@@ -21,7 +21,9 @@ from collections import OrderedDict, deque
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
-from heapq import heappush, heapreplace
+from heapq import heappush, heapreplace, nlargest
+from itertools import groupby, zip_longest
+from operator import itemgetter
 from math import log2, sqrt
 from typing import Any, Callable
 
@@ -32,6 +34,7 @@ from living_memory.embeddings import (
     LocalEmbeddingModel,
     cosine_similarity,
     cyrillic_prefix_terms,
+    repair_search_terms,
     tokenize,
 )
 from living_memory.feedback import (
@@ -503,7 +506,7 @@ class MemoryRecallService:
         query_embedding = prepared.embedding
 
         if repair_pending:
-            self.refresh_pending_chunks(scope=scope, ambient_context=ambient_context, encoder_id=prepared.encoder_id)
+            self.refresh_pending_chunks(scope=scope, ambient_context=ambient_context, query=prepared)
 
         plan = self.scope_resolver.resolve(
             scope=scope,
@@ -646,6 +649,7 @@ class MemoryRecallService:
     def refresh_pending_chunks(
         self, *, scope: str | None = None,
         encoder_id: str | None = None,
+        query: _PreparedQuery | None = None,
         ambient_context: dict[str, Any] | None = None,
         guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
     ) -> None:
@@ -655,6 +659,8 @@ class MemoryRecallService:
         Restart or LRU eviction starts at the oldest pending source again;
         positions never certify index validity or suppress later retries.
         """
+        if query is not None:
+            encoder_id = query.encoder_id
         with guard():
             plan = self.scope_resolver.resolve(scope=scope, ambient_context=ambient_context,
                                                store=self.store)
@@ -662,22 +668,30 @@ class MemoryRecallService:
             after = self._pending_chunk_positions.get(scopes)
             pending = sorted(
                 (position for item in scopes for position in self.store.list_unchunked_node_positions(
-                    scope=item, limit=LAZY_CHUNK_NODE_LIMIT, after=after, encoder_id=encoder_id,
+                    scope=item, limit=LAZY_CHUNK_NODE_LIMIT + 1, after=after, encoder_id=encoder_id,
                 )),
                 key=lambda position: (after is not None and position <= after, *position),
-            )[:LAZY_CHUNK_NODE_LIMIT]
+            )
             if not pending:
                 self._pending_chunk_positions.pop(scopes, None)
                 return
             # Advance under the selection guard before model work releases it,
             # even when a selected source fails or changes before application.
-            self._pending_chunk_positions[scopes] = pending[-1]
+            selected: dict[str, None] = {}
+            if (len(pending) > LAZY_CHUNK_NODE_LIMIT and query is not None
+                    and encoder_id and query.embedding and LAZY_CHUNK_NODE_LIMIT > 1):
+                selected.update(dict.fromkeys(self._repair_candidates(query, scopes, LAZY_CHUNK_NODE_LIMIT - 1)))
+            for position in pending:
+                selected[position[1]] = None
+                if len(selected) == LAZY_CHUNK_NODE_LIMIT:
+                    break
+            self._pending_chunk_positions[scopes] = position
             self._pending_chunk_positions.move_to_end(scopes)
             if len(self._pending_chunk_positions) > LAZY_CHUNK_PLAN_LIMIT:
                 self._pending_chunk_positions.popitem(last=False)
             self._share_embedder_with_store()
         deferred_errors: list[str] = []
-        for _, node_id in pending:
+        for node_id in selected:
             try:
                 with guard():
                     node = self.store.get_node(node_id)
@@ -694,8 +708,35 @@ class MemoryRecallService:
         if deferred_errors:
             logging.getLogger(__name__).warning(
                 "lazy chunk indexing deferred for %d/%d nodes (first error: %s); using available index",
-                len(deferred_errors), len(pending), deferred_errors[0],
+                len(deferred_errors), len(selected), deferred_errors[0],
             )
+
+    def _repair_candidates(
+        self, query: _PreparedQuery, scopes: tuple[str | None, ...], limit: int,
+    ) -> list[str]:
+        """Nominate sources only. Freshly encoded chunks supply all vector evidence."""
+        def historical_scores() -> Iterator[tuple[float, str]]:
+            for scope in scopes:
+                batches = self.store.unknown_chunk_batches(scope, len(query.embedding))
+                rows = _historical_window_scores(batches, query.embedding)
+                for node_id, windows in groupby(rows, key=itemgetter(0)):
+                    best = max(score for _, score in windows)
+                    if best >= VECTOR_MATCH_THRESHOLD:
+                        yield best, node_id
+
+        historical = [node_id for _, node_id in nlargest(limit, historical_scores())]
+        # When the historical coordinates come from another backend, the
+        # fallback encoder's aliases can still find the source through FTS.
+        terms = repair_search_terms(query.text)
+        lexical = []
+        if terms:
+            matches = sorted((score, node_id) for scope in scopes for node_id, score
+                             in self.store.search_content_ids(terms, scope=scope, limit=limit))
+            lexical = [node_id for _, node_id in matches
+                       if self.store.node_chunks_are_current(node_id)
+                       and not self.store.node_chunks_are_current(node_id, encoder_id=query.encoder_id)]
+        return list(dict.fromkeys(node_id for pair in zip_longest(historical, lexical)
+                                  for node_id in pair if node_id is not None))[:limit]
 
     def refresh_legacy_passages(
         self, snippets: Sequence[RecallResult], *,
@@ -2183,6 +2224,24 @@ def _is_rejected_alternative_connection(connection: Connection) -> bool:
 
 def _is_rejected_alternative_node(node: Node) -> bool:
     return bool(node.context.get("is_rejected_alternative"))
+
+
+def _historical_window_scores(
+    batches: Any, query: Sequence[float],
+) -> Iterator[tuple[str, float]]:
+    """Stream provisional cosines with bounded scratch space."""
+    direction = _as_query_array(query)
+    for batch in batches:
+        if _np is None:
+            for node_id, blob in batch:
+                yield node_id, cosine_similarity(query, unpack_chunk_embedding(blob, len(query)))
+        elif direction is not None:
+            matrix = _np.frombuffer(b"".join(row[1] for row in batch),
+                                    dtype=CHUNK_EMBEDDING_DTYPE).reshape(-1, len(query))
+            norms = _np.sqrt(_np.einsum("ij,ij->i", matrix, matrix))
+            scores = _np.einsum("ij,j->i", matrix, direction) / _np.where(norms > 0, norms, 1)
+            for row, score in zip(batch, scores, strict=True):
+                yield row[0], float(score)
 
 
 def _as_query_array(query_embedding: Sequence[float]) -> Any:

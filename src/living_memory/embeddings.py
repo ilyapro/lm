@@ -915,6 +915,12 @@ def tokenize(text: str, *, evidence: bool = False) -> list[str]:
     return tokens
 
 
+def repair_search_terms(query: str) -> str:
+    """Surface forms of the fallback encoder's features for source discovery."""
+    tokens = set(tokenize(query))
+    return " ".join(form for form, canonical in _SYNONYMS.items() if canonical in tokens)
+
+
 def cosine_similarity(left: Iterable[float] | None, right: Iterable[float] | None) -> float:
     """Compute cosine similarity for two embedding vectors."""
 

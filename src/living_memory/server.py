@@ -1322,7 +1322,7 @@ def _register_tools(
             auto_decay = _maybe_decay_sweep(store)
         if prepared_query.text:
             recall_service.refresh_pending_chunks(
-                encoder_id=prepared_query.encoder_id, scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
+                query=prepared_query, scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
             )
         with prepared_feedback(
             store, guard=lambda: runtime_lock, used=used, irrelevant=irrelevant,
@@ -1803,7 +1803,7 @@ def _register_prompts(
         prepared_query = recall_service.prepare_query(str(task or ""))
         if prepared_query.text:
             recall_service.refresh_pending_chunks(
-                encoder_id=prepared_query.encoder_id, scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
+                query=prepared_query, scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
             )
         with runtime_lock:
             return retrieval_context_prompt(
