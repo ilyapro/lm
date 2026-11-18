@@ -1188,3 +1188,18 @@ def test_stale_fingerprint_source_replaced_during_encoding(stale_source):
         )
     assert run_in_process(path).pending_after == 0
     assert stored_chunks_for(path, target) == expected_chunks_for(winner)
+
+
+def test_failed_chunk_replacement_rolls_back_fingerprint(stale_source):
+    path, target, _ = stale_source
+    ids = chunk_identities(path)
+    stamps = fingerprints_per_node(path)[target]
+    with sqlite3.connect(path) as conn:
+        conn.execute("""CREATE TRIGGER reject_chunk BEFORE INSERT ON node_chunk_embeddings
+                        BEGIN SELECT RAISE(ABORT, 'fixture rejected a chunk'); END""")
+    with pytest.raises(sqlite3.IntegrityError, match="fixture rejected a chunk"):
+        run_in_process(path)
+    with sqlite3.connect(path) as conn:
+        digest, = conn.execute("SELECT content_fingerprint FROM nodes WHERE id=?", (target,)).fetchone()
+    assert {digest} == stamps
+    assert chunk_identities(path) == ids
