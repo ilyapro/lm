@@ -214,7 +214,8 @@ _ANCHOR_TEXT_TRIGGERS = (
     f"""CREATE TRIGGER anchor_text_delete BEFORE DELETE ON query_anchors BEGIN
         {_anchor_text_revision_write(_LIVE_OLD_ENCODER)}
     END""",
-    f"""CREATE TRIGGER anchor_text_update BEFORE UPDATE ON query_anchors
+    f"""CREATE TRIGGER anchor_text_update
+    BEFORE UPDATE OF id, rowid, oid, _rowid_, scope, fingerprint, query, encoder_id, decayed ON query_anchors
     WHEN OLD.id IS NOT NEW.id OR OLD.rowid IS NOT NEW.rowid OR OLD.scope IS NOT NEW.scope
         OR OLD.fingerprint IS NOT NEW.fingerprint OR OLD.query IS NOT NEW.query
         OR OLD.encoder_id IS NOT NEW.encoder_id OR OLD.decayed IS NOT NEW.decayed

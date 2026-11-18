@@ -472,7 +472,9 @@ class MemoryRecallService:
         self._chunk_index: dict[str, _ScopeChunkIndex] = {}
         self._chunk_gathers: dict[int, _ChunkGatherPlan] = {}
         self._anchor_vectors: _AnchorVectorCache | None = None
-        self._anchor_text_index: tuple[str, tuple[str, ...] | None, int, _AnchorTextIndex] | None = None
+        self._anchor_text_index: tuple[
+            str, tuple[str, ...] | None, int | tuple[int, int], _AnchorTextIndex
+        ] | None = None
         self._anchor_encodings: OrderedDict[tuple[str, str], Sequence[float]] = OrderedDict()
         self._store_embedder_shared = False
         self._unavailable_legacy_chunks: set[str] = set()
@@ -496,7 +498,12 @@ class MemoryRecallService:
         encoder = query.encoder_id
         assert encoder is not None
         scopes = plan.scopes if plan.restricted else None
-        revision = self.store.foreign_anchor_text_revision(encoder) if isinstance(source, _AnchorVectorCache) else None
+        revision: int | tuple[int, int] | None = None
+        if isinstance(source, _AnchorVectorCache):
+            revision = self.store.foreign_anchor_text_revision(encoder)
+            if revision is None:
+                # Older read-only schemas may also lack a trigger for query edits.
+                revision = (source.revision, self.store.connection.execute("PRAGMA data_version").fetchone()[0])
         cached = self._anchor_text_index
         if revision is not None and cached is not None and cached[:3] == (encoder, scopes, revision):
             index = cached[3]
