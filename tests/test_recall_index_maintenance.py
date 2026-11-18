@@ -12,6 +12,7 @@ import pytest
 from living_memory import retrieval
 from living_memory.retrieval import LAZY_CHUNK_NODE_LIMIT, MemoryRecallService
 from living_memory.server import create_mcp_server
+from living_memory.storage import MemoryStore
 
 
 SCOPE = "project:maintenance"
@@ -296,6 +297,103 @@ def test_pending_hydration_uses_current_source_after_discovery(mcp, change):
     else:
         assert store.list_node_chunks(node.id) == expected_chunks
     assert not store.connection.in_transaction
+
+
+@pytest.mark.parametrize("scope", [None, SCOPE])
+def test_repeated_mcp_recall_skips_empty_scan_until_writer_adds_work(mcp, monkeypatch, scope):
+    store = mcp.memory_store
+    scans = []
+    discover = store.list_unchunked_node_positions
+
+    def scan(**kwargs):
+        scans.append(kwargs["scope"])
+        return discover(**kwargs)
+
+    monkeypatch.setattr(store, "list_unchunked_node_positions", scan)
+
+    async def scenario():
+        async with Client(mcp) as client:
+            await client.call_tool("memory_remember", {"content": CONTENT, "context": {"scope": SCOPE}})
+            first = await recall(client, scope=scope)
+            assert body(first)["content"] == CONTENT and scans
+            scans.clear()
+            await recall(client, scope=scope)
+            assert not scans
+            with MemoryStore(store.db_path) as writer:
+                target = writer.append_trace("A fresh " + QUERY, {"scope": SCOPE})
+                assert writer.count_node_chunks(target.id) == 0
+            await recall(client, scope=scope)
+            assert scans and store.node_chunks_are_current(target.id)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("mutation", ["move", "restore", "blank", "chunk-loss", "rowid-replace"])
+def test_empty_scoped_plan_notices_pending_source(mcp, mutation):
+    store = mcp.memory_store
+    service = MemoryRecallService(store)
+    with MemoryStore(store.db_path) as writer:
+        node = writer.create_node(
+            level="concept", content=" " if mutation == "blank" else CONTENT,
+            context={"scope": "project:other" if mutation == "move" else SCOPE},
+        )
+        if mutation == "restore":
+            writer.soft_delete_node(node.id)
+        if mutation in {"chunk-loss", "rowid-replace"}:
+            writer.update_node(node.id, embedding=service.embedder.embed(CONTENT))
+        service.refresh_pending_chunks(scope=SCOPE)
+        with writer.transaction():
+            if mutation == "move":
+                writer.update_node(node.id, context={"scope": SCOPE})
+            elif mutation == "restore":
+                writer.connection.execute("UPDATE nodes SET decayed=0 WHERE id=?", (node.id,))
+            elif mutation == "blank":
+                # A legacy writer can change text without maintaining the fingerprint.
+                writer.connection.execute("UPDATE nodes SET content=? WHERE id=?", (CONTENT, node.id))
+            elif mutation == "chunk-loss":
+                writer.delete_node_chunks(node.id)
+            else:
+                other = writer.create_node(level="concept", content="Foreign source",
+                                           context={"scope": "project:other"},
+                                           embedding=service.embedder.embed("Foreign source"))
+                writer.connection.execute(
+                    "UPDATE OR REPLACE node_chunk_embeddings SET rowid="
+                    "(SELECT rowid FROM node_chunk_embeddings WHERE node_id=?) WHERE node_id=?",
+                    (node.id, other.id),
+                )
+        assert not store.node_chunks_are_current(node.id)
+        service.refresh_pending_chunks(scope=SCOPE)
+        assert store.node_chunks_are_current(node.id)
+
+
+def test_writer_commit_between_revision_and_scan_is_visible_next_call(mcp, monkeypatch):
+    store = mcp.memory_store
+    service = MemoryRecallService(store)
+    with MemoryStore(store.db_path) as writer:
+        discover = store.list_unchunked_node_positions
+        with monkeypatch.context() as patch:
+            def concurrently_insert(**kwargs):
+                writer.create_node(level="trace", content=CONTENT, node_id="new")
+                return discover(**kwargs)
+            patch.setattr(store, "list_unchunked_node_positions", concurrently_insert)
+            service.refresh_pending_chunks()
+            assert store.count_node_chunks("new") == 0
+        service.refresh_pending_chunks()
+        assert store.node_chunks_are_current("new")
+
+
+def test_rolled_back_empty_plan_cannot_mask_work_at_reused_revision(mcp):
+    store = mcp.memory_store
+    service = MemoryRecallService(store)
+    pending = store.append_trace(CONTENT)
+    store.connection.execute("UPDATE nodes SET decayed=1 WHERE id=?", (pending.id,))
+    rolled_back = store.chunk_corpus_revisions()
+    service.refresh_pending_chunks()
+    store.connection.rollback()
+    store.append_trace("Another pending source")
+    assert store.chunk_corpus_revisions() == rolled_back
+    service.refresh_pending_chunks()
+    assert store.node_chunks_are_current(pending.id)
 
 
 def test_empty_pending_selection_resets_position_without_encoder_setup(mcp, monkeypatch):
