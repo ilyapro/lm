@@ -411,11 +411,11 @@ def test_rolled_back_empty_plan_cannot_mask_work_at_reused_revision(mcp):
     service = MemoryRecallService(store)
     pending = store.append_trace(CONTENT)
     store.connection.execute("UPDATE nodes SET decayed=1 WHERE id=?", (pending.id,))
-    rolled_back = store.chunk_corpus_revisions()
+    rolled_back = store.pending_chunk_revision()
     service.refresh_pending_chunks()
     store.connection.rollback()
     store.append_trace("Another pending source")
-    assert store.chunk_corpus_revisions() == rolled_back
+    assert store.pending_chunk_revision() == rolled_back
     service.refresh_pending_chunks()
     assert store.node_chunks_are_current(pending.id)
 

@@ -482,7 +482,7 @@ class MemoryRecallService:
             tuple[str | None, ...], tuple[str, str]
         ] = OrderedDict()
         self._complete_chunk_plans: OrderedDict[
-            tuple[str | None, ...], tuple[str | None, dict[str, int]]
+            tuple[str | None, ...], tuple[str | None, int]
         ] = OrderedDict()
 
     def prepare_query(self, query: str, *, max_results: int = 10) -> _PreparedQuery:
@@ -874,10 +874,8 @@ class MemoryRecallService:
         # A caller can roll back its own writes and reuse their revision numbers.
         cacheable = not self.store.connection.in_transaction
         with self.store.read_snapshot():
-            revisions = self.store.chunk_corpus_revisions(
-                plan.scopes if plan.restricted else None,
-            ) if cacheable else None
-            if revisions is not None and self._complete_chunk_plans.get(scopes) == (encoder_id, revisions):
+            revision = self.store.pending_chunk_revision() if cacheable else None
+            if revision is not None and self._complete_chunk_plans.get(scopes) == (encoder_id, revision):
                 self._complete_chunk_plans.move_to_end(scopes)
                 return []
             pending = sorted(
@@ -886,8 +884,8 @@ class MemoryRecallService:
                 )),
                 key=lambda position: (after is not None and position <= after, *position),
             )
-            if not pending and revisions is not None:
-                self._complete_chunk_plans[scopes] = (encoder_id, revisions)
+            if not pending and revision is not None:
+                self._complete_chunk_plans[scopes] = (encoder_id, revision)
                 self._complete_chunk_plans.move_to_end(scopes)
                 if len(self._complete_chunk_plans) > LAZY_CHUNK_PLAN_LIMIT:
                     self._complete_chunk_plans.popitem(last=False)

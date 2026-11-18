@@ -105,10 +105,17 @@ _CHUNK_SCOPE_REVISION_FORMAT = "chunk_scope_revision_format"
 _CHUNK_SCOPE_REVISION_VERSION = "4"
 
 
-def _chunk_scope_revision_write(scopes: str) -> str:
-    return f"""INSERT INTO metadata (key, value)
+def _chunk_revision_write(scopes: str, *, chunked_ids: str | None = None) -> str:
+    # A source without chunks affects repair discovery, but has no vectors to
+    # invalidate. Both identities advance in the transaction of the mutation.
+    has_chunks = (
+        f"AND EXISTS (SELECT 1 FROM node_chunk_embeddings WHERE node_id IN ({chunked_ids}))"
+        if chunked_ids else ""
+    )
+    return f"""UPDATE metadata SET value = value + 1 WHERE key = 'pending_chunk_revision';
+        INSERT INTO metadata (key, value)
         SELECT '{_CHUNK_SCOPE_REVISION_PREFIX}' || scope, 1 FROM ({scopes})
-        WHERE scope IS NOT NULL GROUP BY scope
+        WHERE scope IS NOT NULL {has_chunks} GROUP BY scope
         ON CONFLICT(key) DO UPDATE SET value = value + 1;"""
 
 
@@ -117,11 +124,11 @@ def _chunk_scope_revision_write(scopes: str) -> str:
 _CHUNK_CORPUS_TRIGGERS = (
     f"""CREATE TRIGGER chunk_corpus_insert
     BEFORE INSERT ON node_chunk_embeddings BEGIN
-        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id = NEW.node_id OR id IN (SELECT node_id FROM node_chunk_embeddings WHERE id = NEW.id OR rowid = NEW.rowid)")}
+        {_chunk_revision_write("SELECT scope FROM nodes WHERE id = NEW.node_id OR id IN (SELECT node_id FROM node_chunk_embeddings WHERE id = NEW.id OR rowid = NEW.rowid)")}
     END""",
     f"""CREATE TRIGGER chunk_corpus_delete
     AFTER DELETE ON node_chunk_embeddings BEGIN
-        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id = OLD.node_id")}
+        {_chunk_revision_write("SELECT scope FROM nodes WHERE id = OLD.node_id")}
     END""",
     f"""CREATE TRIGGER chunk_corpus_update
     BEFORE UPDATE OF id, rowid, oid, _rowid_, node_id, chunk_index, embedding, encoder_id, content_fingerprint ON node_chunk_embeddings
@@ -131,7 +138,7 @@ _CHUNK_CORPUS_TRIGGERS = (
         OR OLD.chunk_index IS NOT NEW.chunk_index
         OR OLD.embedding IS NOT NEW.embedding
     BEGIN
-        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id IN (OLD.node_id, NEW.node_id) OR id IN (SELECT node_id FROM node_chunk_embeddings WHERE id = NEW.id OR rowid = NEW.rowid)")}
+        {_chunk_revision_write("SELECT scope FROM nodes WHERE id IN (OLD.node_id, NEW.node_id) OR id IN (SELECT node_id FROM node_chunk_embeddings WHERE id = NEW.id OR rowid = NEW.rowid)")}
     END""",
 )
 
@@ -142,18 +149,18 @@ _CHUNK_MEMBERSHIP_TRIGGERS = (
         OR OLD.decayed IS NOT NEW.decayed OR OLD.content_fingerprint IS NOT NEW.content_fingerprint
         OR OLD.content IS NOT NEW.content
     BEGIN
-        {_chunk_scope_revision_write("SELECT OLD.scope AS scope UNION SELECT NEW.scope UNION SELECT scope FROM nodes WHERE id = NEW.id OR rowid = NEW.rowid")}
+        {_chunk_revision_write("SELECT OLD.scope AS scope UNION SELECT NEW.scope UNION SELECT scope FROM nodes WHERE id = NEW.id OR rowid = NEW.rowid", chunked_ids="SELECT OLD.id UNION SELECT NEW.id UNION SELECT id FROM nodes WHERE rowid = NEW.rowid")}
     END""",
     f"""CREATE TRIGGER chunk_corpus_node_delete
     BEFORE DELETE ON nodes
     WHEN EXISTS (SELECT 1 FROM node_chunk_embeddings WHERE node_id = OLD.id)
     BEGIN
-        {_chunk_scope_revision_write("SELECT OLD.scope AS scope")}
+        {_chunk_revision_write("SELECT OLD.scope AS scope")}
     END""",
     f"""CREATE TRIGGER chunk_corpus_node_insert
     BEFORE INSERT ON nodes
     BEGIN
-        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id = NEW.id OR rowid = NEW.rowid UNION SELECT NEW.scope")}
+        {_chunk_revision_write("SELECT scope FROM nodes WHERE id = NEW.id OR rowid = NEW.rowid UNION SELECT NEW.scope", chunked_ids="SELECT NEW.id UNION SELECT id FROM nodes WHERE rowid = NEW.rowid")}
     END""",
 )
 
@@ -4387,6 +4394,15 @@ class MemoryStore:
                 passages[str(row[0])] = SourcePassage(str(row[1]), int(row[2]), int(row[3]))
         return passages
 
+    def pending_chunk_revision(self) -> int | None:
+        """Revision of repair inputs, if the database tracks chunkless sources."""
+        row = self._conn.execute(
+            "SELECT pending.value FROM metadata pending JOIN metadata format "
+            "ON format.key = ? AND format.value = ? WHERE pending.key = 'pending_chunk_revision'",
+            (_CHUNK_SCOPE_REVISION_FORMAT, _CHUNK_SCOPE_REVISION_VERSION),
+        ).fetchone()
+        return int(row[0]) if row is not None else None
+
     def chunk_corpus_revisions(
         self, scopes: Sequence[str] | None = None,
     ) -> dict[str, int] | None:
@@ -5858,6 +5874,10 @@ class MemoryStore:
             self._conn.execute(
                 "UPDATE metadata SET value = value + 1 WHERE key >= ? AND key < ?",
                 (_CHUNK_SCOPE_REVISION_PREFIX, "chunk_scope_revision;"),
+            )
+            self._conn.execute(
+                "INSERT INTO metadata (key, value) VALUES ('pending_chunk_revision', '0') "
+                "ON CONFLICT(key) DO UPDATE SET value = value + 1"
             )
             for sql in (*_CHUNK_CORPUS_TRIGGERS, *_CHUNK_MEMBERSHIP_TRIGGERS):
                 name = sql.split()[2]
