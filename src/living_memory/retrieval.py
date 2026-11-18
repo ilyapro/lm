@@ -397,8 +397,8 @@ class _AnchorVectorCache:
         ):
             return corpus
 
-        cacheable = not self.store.connection.in_transaction
-        with self.store.transaction():
+        with self.store.read_snapshot():
+            cacheable = self.store.cacheable_read
             # Layout and newly prepared rows must belong to the same revision,
             # even if another writer committed after the source was selected.
             if not cacheable or self.store.query_anchor_revision() != self.revision:
@@ -619,8 +619,8 @@ class MemoryRecallService:
         read required metadata and shape the selected results before leaving
         this context; failure rolls back access and event/history together.
         Optional work and transport belong after it. A repeatable read-only
-        selector opts into re-selection if an external commit overlaps the
-        reads. Logging flags independently control the consumption transaction.
+        selector observes one snapshot through passage and validity reads.
+        Logging flags independently control the consumption transaction.
         """
         self.last_recall_event_id = None
         self.last_residual = []
@@ -639,24 +639,12 @@ class MemoryRecallService:
         if repair_pending:
             self.refresh_pending_chunks(scope=scope, ambient_context=ambient_context, query=prepared)
 
-        def select() -> tuple[ScopePlan, list[RecallResult]]:
-            return self._select_recall(
+        with self.store.read_snapshot() if repeatable_selection else nullcontext():
+            plan, limited = self._select_recall(
                 prepared, scope=scope, ambient_context=ambient_context, depth=depth,
                 max_results=max_results, select_results=select_results,
             )
 
-        # In the common case keep the revision-keyed vector/anchor caches and
-        # short reads. A commit on another connection invalidates the entire
-        # observation, including delivery selection. Rebuild once under a WAL
-        # read snapshot, then release it before recording any consumption.
-        def data_version() -> int:
-            return self.store.connection.execute("PRAGMA data_version").fetchone()[0]
-
-        version = data_version() if repeatable_selection else None
-        plan, limited = select()
-        if version is not None and data_version() != version:
-            with self.store.transaction():
-                plan, limited = select()
         if log_event is None:
             log_event = log_access
         try:
@@ -1264,8 +1252,7 @@ class MemoryRecallService:
         The existing deferred transaction helper reserves no writer. Its read
         snapshot prevents a concurrent move from appearing in two partitions.
         An outer caller transaction may contain writes that roll back, so its
-        rows are never retained. This snapshot covers only the vector read;
-        metadata, corrections and source validity remain live recall inputs.
+        rows are never retained. MCP selection shares its snapshot with this read.
 
         Broad queries temporarily gather rows in node/chunk order. Keeping the
         full width block's normalization and matmul shape preserves scores and
@@ -1273,8 +1260,8 @@ class MemoryRecallService:
         change; there is no second persistent corpus matrix.
         """
 
-        cacheable = not self.store.connection.in_transaction
-        with self.store.transaction():
+        with self.store.read_snapshot():
+            cacheable = self.store.cacheable_read
             revisions = self.store.chunk_corpus_revisions(
                 plan.scopes if plan.restricted else None,
             )
@@ -1475,7 +1462,7 @@ class MemoryRecallService:
         """
 
         revision = self.store.query_anchor_revision()
-        if revision is None or self.store.connection.in_transaction:
+        if revision is None or not self.store.cacheable_read:
             self._anchor_vectors = None
             return self.store
         cached = self._anchor_vectors
@@ -1659,9 +1646,9 @@ class MemoryRecallService:
             )
             # Transaction-local reads may be rolled back without changing
             # total_changes again. Never retain them for a later level/pass.
-            if connection.in_transaction or state != observed_state:
+            if not self.store.cacheable_read or state != observed_state:
                 observations.clear()
-            observed_state = None if connection.in_transaction else state
+            observed_state = state if self.store.cacheable_read else None
             key = source_only, tuple(node_ids)
             if key not in observations:
                 connections = self.store.list_recall_connections(

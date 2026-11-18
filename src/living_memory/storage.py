@@ -1083,6 +1083,8 @@ class MemoryStore:
     but trace content is never updated in place.
     """
 
+    _owns_read_snapshot = False
+
     def __init__(
         self,
         config: MemoryConfig | str | Path | None = None,
@@ -1145,6 +1147,24 @@ class MemoryStore:
     @property
     def connection(self) -> sqlite3.Connection:
         return self._conn
+
+    @property
+    def cacheable_read(self) -> bool:
+        """Revision-keyed reads may be retained unless a caller owns the transaction."""
+        return self._owns_read_snapshot or not self._conn.in_transaction
+
+    @contextmanager
+    def read_snapshot(self) -> Iterator[None]:
+        """Share a deferred snapshot for read-only work, including nested readers."""
+        if self._conn.in_transaction:
+            yield
+            return
+        with self.transaction():
+            self._owns_read_snapshot = True
+            try:
+                yield
+            finally:
+                self._owns_read_snapshot = False
 
     @contextmanager
     def transaction(self, *, immediate: bool = False) -> Iterator[None]:
