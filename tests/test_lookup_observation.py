@@ -33,6 +33,47 @@ def _credits(store):
     )]
 
 
+def test_lookup_credits_only_returned_ids(mcp):
+    store = mcp.memory_store
+    scope = "project:lookup"
+    first, second = [
+        store.append_trace(f"Cobalt package signature for {name}.", {"scope": scope}).id
+        for name in ("alpha", "beta")
+    ]
+    padded = f" {first} "
+
+    async def scenario():
+        async with Client(mcp) as client:
+            recall = (await client.call_tool("memory_recall", {
+                "query": "cobalt package signature", "scope": scope, "depth": 0,
+            })).data
+            assert {row["id"] for row in recall["results"]} == {first, second}
+            initial = store.get_node(first).usefulness_score
+
+            miss = (await client.call_tool("memory_lookup", {"node_id": padded})).data
+            assert (miss["count"], miss["results"], miss["missing"]) == (0, [], [padded])
+            assert [row["node_id"] for row in _lookup_events(store)] == [padded]
+            assert _credits(store) == []
+            assert store.get_node(first).usefulness_score == initial
+            assert store.count_query_anchor_edges() == 0
+
+            mixed = (await client.call_tool("memory_lookup", {
+                "node_ids": [padded, second, second], "view": "full",
+            })).data
+            assert [row["id"] for row in mixed["results"]] == [second]
+            assert mixed["missing"] == [padded]
+            events = _lookup_events(store)
+            lookup_id, = [row["lookup_event_id"] for row in events if row["node_id"] == second]
+            assert {row["node_id"] for row in events if row["lookup_event_id"] == lookup_id} == {
+                padded, second,
+            }
+            assert _credits(store) == [(recall["recall_event_id"], second, "lookup", lookup_id)]
+            assert store.get_node(first).usefulness_score == initial
+            assert store.count_query_anchor_edges() == 1
+
+    asyncio.run(scenario())
+
+
 def test_query_only_preserves_views_validity_and_writable_credit(mcp, caplog):
     store = mcp.memory_store
     content = "Only publish the cobalt package when the signature matches."
