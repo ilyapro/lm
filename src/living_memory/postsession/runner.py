@@ -1257,7 +1257,7 @@ class ExtractionRunner:
                         sessions.get(skey, 0) >= getattr(self.config, f"max_{group}_per_session")):
                     decision.status, decision.reason = "dropped", "budget_reconcile"
                     continue
-                if op.kind == "remember" and self._skip_existing(op, decision):
+                if self._skip_existing(op, decision):
                     continue
                 attempts[group] += 1
                 sessions[skey] = sessions.get(skey, 0) + 1

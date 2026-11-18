@@ -583,6 +583,63 @@ def test_native_pre_dispatch_auth_failure_can_resume(live_server, tmp_path):
     assert len(Ledger(tmp_path)) == 1
 
 
+@pytest.mark.parametrize("existing,read_status,tag", [
+    (True, "success", "a1"),
+    (False, "success", "a2"),
+    (True, "partial", "a3"),
+    (False, "unavailable", "a4"),
+])
+def test_cli_ready_teach_preflight(live_server, tmp_path, monkeypatch, existing, read_status, tag):
+    client = LiveMemoryClient(live_server["url"], token=TOKEN)
+    record, op = _native_op(client, "teach", tag)
+    rejected = LiveMemoryClient(client.url, token="invalid-test-token", timeout=2)
+    state = tmp_path / "state"
+    assert run(state, rejected, record, [op])[0].reason == "pre_dispatch"
+    saved, = Ledger(state).entries()
+    assert saved["state"] == "ready"
+    payload = saved["operation"]["payload"]
+    original_id = payload["trace_id"]
+    if existing:
+        prior = client.teach(original_id, payload["correction"], context=payload["context"])
+        prior_id = prior["corrective_trace"]["id"]
+
+    recall = LiveMemoryClient.recall
+
+    def candidate_read(self, *args, **kwargs):
+        if read_status == "unavailable":
+            raise ClientError("candidate read refused")
+        response = recall(self, *args, **kwargs)
+        if read_status == "partial":
+            response["results"].append({"node": {"id": "missing"}, "delivery": "snippet"})
+        return response
+
+    monkeypatch.setattr(LiveMemoryClient, "recall", candidate_read)
+    cli = _load_cli()
+    fixtures = Path(__file__).parent / "fixtures" / "postsession"
+    report = tmp_path / "report.json"
+    args = [
+        "--reconcile", "--write", "--url", client.url, "--token", TOKEN,
+        "--state-dir", str(state), "--out", str(report),
+        "--baseline", str(fixtures / "gate-baseline.json"),
+        "--gate-verdict", str(fixtures / "gate-control.json"), "--max-verdict-age-days", "100000",
+    ]
+    assert cli.main(args) == 0
+    decision, = json.loads(report.read_text())["decisions"]
+    assert decision["candidate_read"]["read_status"] == read_status
+    if existing:
+        assert (decision["status"], decision["reason"], decision["node_id"]) == (
+            "skipped", "lm_prior_extraction", prior_id,
+        )
+    else:
+        assert decision["status"] == "written"
+    entry, = Ledger(state).entries()
+    assert (entry["state"], entry["result_id"]) == ("applied", decision["node_id"])
+    assert cli.main(args) == 0
+    assert json.loads(report.read_text())["decisions"] == []
+    original, = client.lookup_nodes([original_id])["results"]
+    assert original["superseded_by"] == [decision["node_id"]]
+
+
 def test_teach_confirmation_requires_the_actual_relation(live_server, tmp_path):
     client = LiveMemoryClient(live_server["url"], token=TOKEN)
     record, op = _native_op(client, "teach", "ef")
