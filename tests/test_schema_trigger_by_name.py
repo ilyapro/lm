@@ -266,11 +266,14 @@ def test_ranked_trigger_projection_preserves_sqlite_values(tmp_path, scope):
             '{"trigger":99999999999999999999}', '{"trigger":[]}', '{"trigger":{"key": 1}}',
             '{"trigger":""}', '{"trigger":null}', '{}', '{"trigger":"first","trigger":"last"}',
         ]
-        for context in contexts:
-            node = store.create_node(level="concept", content="Stored procedure", context={"scope": SCOPE})
+        ranked = []
+        expected = []
+        for index, context in enumerate(contexts):
+            node = store.create_node(level="concept", content=f"Procedure {index}", context={"scope": SCOPE})
             store.connection.execute("UPDATE nodes SET context=? WHERE id=?", (context, node.id))
-        unranked = _schema(store)
-        ranked = [row[0] for row in store.connection.execute("SELECT id FROM nodes WHERE id != ?", (unranked.id,))]
-        assert sorted(store.schema_triggers(scope, node_ids=ranked)) == sorted(
-            row for row in store.schema_triggers(scope) if row[0] != unranked.id
-        )
+            ranked.append(node.id)
+            trigger = store.connection.execute("SELECT JSON_EXTRACT(?, '$.trigger')", (context,)).fetchone()[0]
+            if trigger:
+                expected.append((node.id, str(trigger)))
+        _schema(store)
+        assert sorted(store.schema_triggers(scope, node_ids=ranked)) == sorted(expected)
