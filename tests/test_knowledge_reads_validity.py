@@ -505,18 +505,24 @@ def test_mcp_selection_does_not_cache_rolled_back_windows(tmp_path, monkeypatch)
                     return {row["id"] for row in response.data["results"]}
 
                 assert await recall() == {"first", "second"}
-                store.connection.execute("BEGIN")
-                try:
-                    store.update_node("first", context=outside)
-                    uncommitted = store.chunk_corpus_revisions()
-                    assert await recall() == {"second"}
-                    assert store.connection.in_transaction
-                finally:
-                    store.connection.rollback()
-                writer.memory_store.update_node("second", context=outside)
+                peer = writer.memory_store
+                peer.connection.execute("BEGIN")
+                peer.update_node("first", context=outside)
+                uncommitted = peer.chunk_corpus_revisions()
+                pairs = store.list_supersedes_pairs
+
+                def rollback_during_read(ids):
+                    assert peer.connection.in_transaction
+                    peer.connection.rollback()
+                    return pairs(ids)
+
+                with monkeypatch.context() as patch:
+                    patch.setattr(store, "list_supersedes_pairs", rollback_during_read)
+                    assert await recall() == {"first", "second"}
+                peer.update_node("second", context=outside)
                 assert store.chunk_corpus_revisions() == uncommitted
                 assert await recall() == {"first"}
-                assert len(store.list_recall_events()) == 2
+                assert len(store.list_recall_events()) == 3
 
         asyncio.run(scenario())
     finally:

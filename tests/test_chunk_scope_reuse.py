@@ -189,30 +189,38 @@ def test_changed_scope_is_fresh_without_reloading_other_scopes(stores, monkeypat
 
 
 @pytest.mark.parametrize("scope", [None, "project:alpha"])
-def test_rollback_does_not_cache_a_revision_that_another_write_can_reuse(tmp_path, scope):
+@pytest.mark.parametrize("repeatable", [False, True])
+def test_rollback_does_not_cache_a_revision_that_another_write_can_reuse(tmp_path, scope, repeatable):
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         add(store, "a")
         add(store, "b", vector=(0.0, 1.0, 0.0))
         warm = service(store)
-        before = recall(warm, scope)
+        def select(current):
+            with current.recall_response(
+                "orbital telemetry drift", scope=scope, depth=0, max_results=100,
+                log_access=False, repeatable_selection=repeatable,
+            ) as results:
+                return results
+
+        before = select(warm)
         committed = dict(warm._chunk_index)
         revision = store.chunk_corpus_revisions()
         store.connection.execute(
             "UPDATE node_chunk_embeddings SET embedding=? WHERE node_id='a'",
             (pack_chunk_embedding([0.0, 1.0, 0.0]),),
         )
-        assert recall(warm, scope) == []
+        assert select(warm) == []
         assert warm._chunk_index == committed
         store.connection.rollback()
         assert store.chunk_corpus_revisions() == revision
-        assert recall(warm, scope) == before
+        assert select(warm) == before
         with store.connection:
             store.connection.execute(
                 "UPDATE node_chunk_embeddings SET embedding=? WHERE node_id='b'",
                 (pack_chunk_embedding([1.0, 0.0, 0.0]),),
             )
-        assert [r.node.id for r in recall(warm, scope)] == ["a", "b"]
-        assert recall(warm, scope) == recall(service(store), scope)
+        assert [r.node.id for r in select(warm)] == ["a", "b"]
+        assert select(warm) == select(service(store))
 
 
 def test_scope_move_during_partition_read_keeps_one_version_per_node(tmp_path, monkeypatch):
