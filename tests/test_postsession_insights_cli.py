@@ -357,7 +357,7 @@ def test_reader_sees_committed_wal_content(cli, tmp_path):
 def test_correction_suppresses_insight_without_confirming_remember(cli, live_server, tmp_path):
     from living_memory.postsession.client import LiveMemoryClient
     from living_memory.postsession.runner import (
-        ExtractionRunner, Ledger, RunnerConfig, enforce_attribution,
+        ExtractionRunner, Ledger, RunnerConfig,
     )
     from postsession_support import TOKEN
 
@@ -379,9 +379,11 @@ def test_correction_suppresses_insight_without_confirming_remember(cli, live_ser
     run = runner()
     pending = run.propose(record)
     op, = pending.ops
-    context = enforce_attribution(op, record, task="fixture").payload["context"]
     original = client.remember("The pytest configuration is empty.", {"scope": SCOPE})
-    corrected = client.teach(original["node"]["id"], FACT, context=context)
+    original_id = original["node"]["id"]
+    corrected = client.teach(original_id, FACT, context={
+        "corrected_node_id": original_id, "transcript_sha256": SOURCE[0], "source_span": SOURCE[1],
+    })
     correction_id = corrected["corrective_trace"]["id"]
 
     with cli.build_deduper(live_server["db"]) as readonly:
