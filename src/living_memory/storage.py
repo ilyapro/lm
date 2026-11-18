@@ -1682,18 +1682,20 @@ class MemoryStore:
     ) -> dict[str, dict[str, Any]]:
         """Read exact content and stored validity without materializing Nodes.
 
-        Ordinary context fields are projected in SQLite. Raw JSON preserves null, booleans and large integers. Relation
-        validity and correction-text shaping remain the readers' shared work.
+        Ordinary context fields are projected in SQLite. Raw JSON preserves
+        null, booleans and large integers. Relation validity and correction-text
+        shaping remain the readers' shared work.
         """
         context_column = ""
-        params: tuple[str, ...] = ()
+        params: tuple[str | None, ...] = ()
         if context_key is not None:
             # JSON path quotes delimit a literal key. Encode embedded quotes as
             # Unicode escapes so dots/brackets in the same key remain literal.
             key = _json_dumps(context_key)[1:-1].replace(r'\"', r'\u0022')
-            params = (f'$."{key}"',)
             # SQLite JSON paths can alias a NUL-containing name with its prefix
             # in either stored order. Decode the object only for possible aliases.
+            # A NUL request can only match in that fallback.
+            params = (None if "\x00" in context_key else f'$."{key}"',)
             context_column = r""", context -> ? AS context_value,
                 CASE WHEN context GLOB '*\u0000*' THEN context END AS nul_context"""
         nodes: dict[str, dict[str, Any]] = {}

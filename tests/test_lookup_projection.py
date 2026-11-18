@@ -119,6 +119,8 @@ def test_context_key_distinguishes_nul_from_prefix(runtime, nul_first):
     store = mcp.memory_store
     node = store.append_trace("Exact field selection.", {"scope": "project:probe"})
     prefix, extended = "alpha", "alpha\x00beta"
+    store.update_node(node.id, context={prefix: "short", "scope": node.scope})
+    assert store.get_node_knowledge([node.id], context_key=extended)[node.id]["context"] == {}
 
     async def scenario():
         async with Client(mcp) as client:
