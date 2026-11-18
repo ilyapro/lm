@@ -1065,15 +1065,21 @@ class RecallWork:
         prefix = f"{alias}." if alias else ""
         pattern = f"{prefix}task_pattern"
         task = f"{prefix}task"
-        no_pattern = f"({pattern} IS NULL OR {pattern} = '')"
+        scope = f"{prefix}scope = ?"
         if self.kind == "work":
-            identity = f"({pattern} = ? OR ({no_pattern} AND {task} = ?))"
-            values = (self.value, self.value)
-        else:
-            identity = (f"{no_pattern} AND ({task} IS NULL OR {task} = '') "
-                        f"AND {prefix}transport_session_id = ?")
-            values = (self.value,)
-        return f"{prefix}scope = ? AND ({identity})", (self.scope, *values)
+            # Each alternative can seek the (scope, task_pattern, created_at)
+            # index, including the legacy rows whose effective label is task.
+            return (
+                f"(({scope} AND {pattern} = ?) "
+                f"OR ({scope} AND {pattern} IS NULL AND {task} = ?) "
+                f"OR ({scope} AND {pattern} = '' AND {task} = ?))",
+                (self.scope, self.value) * 3,
+            )
+        return (
+            f"{scope} AND ({pattern} IS NULL OR {pattern} = '') "
+            f"AND ({task} IS NULL OR {task} = '') AND {prefix}transport_session_id = ?",
+            (self.scope, self.value),
+        )
 
 
 class MemoryStore:

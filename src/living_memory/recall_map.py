@@ -2263,8 +2263,6 @@ class RecallMapBuilder:
             return _Curtailment(streak=0, offers=0)
         if follows is None:
             return _Curtailment(streak=0, offers=0)
-        for follow in follows:
-            follow["tokens"] = token_set(str(follow["query"] or ""))
         windows = {
             str(row["delivery_event_id"]): (str(row["delivered_at"]), str(row["outcome_end"]))
             for row in self.store.connection.execute(
@@ -2274,6 +2272,18 @@ class RecallMapBuilder:
                 [row["id"] for row in history],
             )
         }
+
+        def followed(delivered: list[_DeliveredItem], follow: dict[str, Any]) -> bool:
+            if any(item.medoid_id in follow["node_ids"] for item in delivered):
+                return True
+            if not follow["query"]:
+                return False
+            if "tokens" not in follow:
+                follow["tokens"] = token_set(str(follow["query"]))
+            return any(
+                _echoes(item.label, follow["tokens"]) or _echoes(item.ask_hint, follow["tokens"])
+                for item in delivered
+            )
 
         streak = 0
         offers = 0
@@ -2289,12 +2299,7 @@ class RecallMapBuilder:
                 follow["event_id"] != row["id"]
                 and follow["at"] is not None
                 and window[0] <= follow["at"] <= window[1]
-                and any(
-                    item.medoid_id in follow["node_ids"]
-                    or _echoes(item.label, follow["tokens"])
-                    or _echoes(item.ask_hint, follow["tokens"])
-                    for item in delivered
-                )
+                and followed(delivered, follow)
                 for follow in follows
             ):
                 break
