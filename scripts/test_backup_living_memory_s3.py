@@ -2,7 +2,7 @@
 
 import fcntl
 from collections import Counter
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import closing, redirect_stderr, redirect_stdout
 import gzip
 import hashlib
 import io
@@ -600,6 +600,64 @@ def interrupted_upload(backup, *, complete=False):
     assert backup.invoke() == 3
     backup.hook = lambda *args: None
     backup.calls.clear()
+
+
+@pytest.mark.parametrize("mode", ["replacement", "recovery", "rollback"])
+def test_only_active_payloads_remain_between_transfers(backup, tmp_path, mode):
+    previous = tmp_path / "previous.sqlite3"
+    for path in (backup.database, previous):
+        with closing(sqlite3.connect(path)) as db:
+            assert db.execute("PRAGMA journal_mode=WAL").fetchone() == ("wal",)
+    backup.objects[FINAL] = backup.old = gzip.compress(previous.read_bytes(), mtime=0)
+    if mode == "recovery":
+        interrupted_upload(backup, complete=True)
+
+    def inspect(operation, args):
+        if operation not in {"get", "put", "cp", "del"}:
+            return
+        files = [p.name for p in backup.state.glob("*-*/*") if p.is_file()]
+        needs_upload = (operation == "put" or (operation == "cp" and args[0] == FINAL)
+                        or (operation == "get" and Path(args[-1]).name == "previous.sqlite3.gz"))
+        assert files == (["snapshot.sqlite3.gz"] if needs_upload else [])
+        if mode == "rollback" and operation == "get" and Path(args[-1]).name == "final.sqlite3.gz":
+            Path(args[-1]).write_bytes(b"damaged download")
+            return subprocess.CompletedProcess([], 0, "", "")
+
+    backup.hook = inspect
+    if mode == "rollback":
+        assert backup.invoke() == 1
+        assert backup.objects == {FINAL: backup.old}
+        assert backup.status()["rollback"] == "verified"
+    else:
+        assert backup.invoke() == 0
+        backup.fresh_bytes()
+
+
+@pytest.mark.parametrize("name", ["current", "retained"])
+def test_recovery_metadata_md5_uses_received_archive(backup, name):
+    def lost_copy(operation, args):
+        if operation == "cp":
+            backup.objects[args[-1]] = backup.objects[args[0]]
+            raise subprocess.TimeoutExpired("fixture safety copy", 120)
+
+    backup.hook = lost_copy
+    assert backup.invoke() == 3
+    transaction = backup.status()["transaction"]
+    assert set(transaction["previous"]) == {"File size", "MD5 sum"}
+    backup.calls.clear()
+
+    def altered_header(operation, args):
+        if operation == "get" and Path(args[-1]).name == f"{name}.sqlite3.gz":
+            payload = bytearray(backup.objects[args[0]])
+            payload[4] ^= 1  # Different gzip mtime, identical size and SQLite bytes.
+            Path(args[-1]).write_bytes(payload)
+            return subprocess.CompletedProcess([], 0, "", "")
+
+    backup.hook = altered_header
+    assert backup.invoke() == 3
+    assert backup.status()["result"] == "unknown"
+    assert backup.status()["transaction"] == transaction
+    assert all(op in {"info", "ls", "multipart", "get"} for op, _ in backup.calls)
 
 
 def test_scheduled_multipart_recovery_takes_current_snapshot(backup, tmp_path):
