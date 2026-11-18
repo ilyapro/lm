@@ -444,14 +444,7 @@ class _PromptDiscovery:
     by_limit: dict[int, dict[str, _Candidate]]
 
 
-@dataclass(order=True, slots=True)
-class _VectorMatch:
-    score: float
-    order: int
-    node_id: str = field(compare=False)
-    version: str = field(compare=False)
-    position: int = field(compare=False)
-    chunk_id: str | None = field(default=None, compare=False)
+_VectorMatch = tuple[float, int, str, str | None, str]
 
 
 def _vector_keep_n(plan: ScopePlan, max_results: int) -> int:
@@ -1295,34 +1288,8 @@ class MemoryRecallService:
         lexical: list[_VectorMatch] = []
         order = 0
         for block in self._chunk_blocks(plan, len(query_embedding), encoder_id):
-            scores, chunk_id = _pooled_chunk_similarities(block, query_embedding, q_arr)
-            for index, (similarity, position) in enumerate(scores):
-                if not similarity >= VECTOR_MATCH_THRESHOLD:
-                    continue
-                order += 1
-                node_id = block.node_ids[index]
-                lexical_hit = node_id in lexical_ids
-                # Later ties cannot displace the earliest matching node.
-                discover = len(discovery) < keep_n or similarity > discovery[0].score
-                if not (discover or lexical_hit):
-                    continue
-                item = _VectorMatch(similarity, 1 - order, node_id, block.source_versions[index], position)
-                if lexical_hit:
-                    item.chunk_id = chunk_id(position)
-                    lexical.append(item)
-                if discover:
-                    if len(discovery) < keep_n:
-                        heappush(discovery, item)
-                    else:
-                        heapreplace(discovery, item)
-
-            # Resolve surviving discoveries while this block's row scores are
-            # available. Lexical hits already carry their winning chunk.
-            for item in discovery:
-                if item.chunk_id is None:
-                    item.chunk_id = chunk_id(item.position)
-            del scores, chunk_id
-
+            order = _select_block_matches(block, query_embedding, q_arr, order, keep_n, lexical_ids,
+                                          discovery, lexical)
         return discovery, lexical
 
     def _admit_vector(
@@ -1331,30 +1298,29 @@ class MemoryRecallService:
     ) -> None:
         # Keep vector evidence for this selector's lexical tail, including
         # winners below its discovery cutoff, before current-source admission.
-        kept = [item for item in discovery if item.node_id not in candidates]
-        kept.extend(item for item in lexical if item.node_id in candidates)
+        kept = [item for item in discovery if item[2] not in candidates]
+        kept.extend(item for item in lexical if item[2] in candidates)
         kept.sort(reverse=True)
         # One query for the whole kept set rather than one per node. Max-pool
         # puts more nodes over VECTOR_MATCH_THRESHOLD than a single vector did
         # -- a node now clears it if *any* window does -- so this list runs
         # closer to its `keep_n` ceiling than it used to, and the per-node
         # round trip is the part of it that is pure overhead.
-        missing = [item.node_id for item in kept if item.node_id not in candidates]
+        missing = [item[2] for item in kept if item[2] not in candidates]
         fetched = self.store.get_recall_nodes(missing, plan) if missing else {}
-        for item in kept:
-            node_id = item.node_id
+        for similarity, _order, node_id, chunk_id, version in kept:
             existing = candidates.get(node_id)
             node = existing.node if existing is not None else fetched.get(node_id)
             # Hydration can span a concurrent edit. Historical source rows can
             # also retain a fingerprint predating their text. Check only the
             # bounded winners, using the version from the scored block.
-            if node is None or _content_fingerprint(node.content) != item.version:
+            if node is None or _content_fingerprint(node.content) != version:
                 continue
             if existing is None:
                 existing = candidates[node_id] = _Candidate(node=node)
-            if item.score > existing.vector_score:
-                existing.vector_score = item.score
-                existing.chunk_id = item.chunk_id
+            if similarity > existing.vector_score:
+                existing.vector_score = similarity
+                existing.chunk_id = chunk_id
 
     # ------------------------------------------------------------------
     # Chunk corpus cache
@@ -2684,6 +2650,44 @@ def _prepare_chunk_gather(blocks: tuple[_ChunkBlock, ...]) -> _ChunkGatherPlan:
         source_versions=versions, chunk_ids=chunk_ids, encoder_id=blocks[0].encoder_id,
     )
     return _ChunkGatherPlan(blocks, (), template)
+
+
+def _select_block_matches(
+    block: _ChunkBlock, query_embedding: Sequence[float], q_arr: Any, order: int,
+    keep_n: int, lexical_ids: Collection[str], discovery: list[_VectorMatch], lexical: list[_VectorMatch],
+) -> int:
+    scores, chunk_id = _pooled_chunk_similarities(block, query_embedding, q_arr)
+    pending: dict[int, int] = {}
+    for index, (similarity, position) in enumerate(scores):
+        if not similarity >= VECTOR_MATCH_THRESHOLD:
+            continue
+        rank = order
+        order -= 1
+        node_id = block.node_ids[index]
+        lexical_hit = node_id in lexical_ids
+        # Later ties cannot displace the earliest matching node.
+        discover = len(discovery) < keep_n or similarity > discovery[0][0]
+        if not (discover or lexical_hit):
+            continue
+        item = (similarity, rank, node_id, chunk_id(position) if lexical_hit else None, block.source_versions[index])
+        if lexical_hit:
+            lexical.append(item)
+        if discover:
+            if len(discovery) < keep_n:
+                heappush(discovery, item)
+            else:
+                evicted = heapreplace(discovery, item)
+                pending.pop(evicted[1], None)
+            if not lexical_hit:
+                pending[rank] = position
+
+    # Only this block's surviving nonlexical discoveries still need a chunk.
+    # Updating the payload preserves heap order because ranks are unique.
+    if pending:
+        for slot, (score, rank, node_id, _, version) in enumerate(discovery):
+            if rank in pending:
+                discovery[slot] = (score, rank, node_id, chunk_id(pending[rank]), version)
+    return order
 
 
 def _pooled_chunk_similarities(

@@ -20,7 +20,6 @@ def resolved_scores(block, query, query_array):
             for node_id, (score, position) in zip(block.node_ids, scores)]
 
 
-
 class FixedEmbedder:
     def embed(self, text):
         return fixture_vector([1.0, 0.0, 0.0])

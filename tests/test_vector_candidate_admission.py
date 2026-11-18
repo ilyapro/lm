@@ -1,6 +1,6 @@
 """Vector discovery admits current source identities before decoding bodies."""
 
-from dataclasses import fields, replace
+from dataclasses import replace
 from math import sqrt
 import sqlite3
 import sys
@@ -98,10 +98,11 @@ def measure_vector_state(call):
 
     Cached blocks, numeric arrays, input bodies/query and referenced strings
     are outside this measurement. Tuples, floats and order integers are counted
-    once by identity, including match objects shared by the lexical list and heap.
+    once by identity, even when both the lexical list and heap reference them.
     """
     codes = {
-        retrieval._scalar_chunk_scores.__code__, retrieval._pooled_chunk_similarities.__code__, MemoryRecallService._collect_vector.__code__,
+        retrieval._scalar_chunk_scores.__code__, retrieval._pooled_chunk_similarities.__code__,
+        retrieval._select_block_matches.__code__, MemoryRecallService._collect_vector.__code__,
         MemoryRecallService._vector_winners.__code__, MemoryRecallService._admit_vector.__code__,
     }
     peak = {"container_entries": 0, "records": 0, "bytes": 0, "observations": 0}
@@ -116,14 +117,6 @@ def measure_vector_state(call):
 
         def visit(value):
             nonlocal entries, records, size
-            if isinstance(value, retrieval._VectorMatch) and id(value) not in seen:
-                seen.add(id(value))
-                size += sys.getsizeof(value)
-                records += 1
-                entries += len(fields(value))
-                for field in fields(value):
-                    visit(getattr(value, field.name))
-                return
             if type(value) not in (list, tuple, dict, set, float, int) or id(value) in seen:
                 return
             seen.add(id(value))
