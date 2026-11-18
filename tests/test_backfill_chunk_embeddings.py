@@ -1085,3 +1085,105 @@ def test_normal_recall_uses_completed_index_without_repair(tmp_path, monkeypatch
     finally:
         server.auto_consolidation.close()
         store.close()
+
+
+@pytest.fixture
+def stale_source(tmp_path):
+    path = tmp_path / "legacy.sqlite3"
+    old = "\n\n".join(("orchestrators", "clay", "pottery", "kiln"))
+    current = old.replace("kiln", "émail bleu")
+    with MemoryStore(path) as store:
+        target = store.create_node(
+            level="concept", content=old, representative_embedding=[0.25, 0.75],
+            context={"scope": "project:synthetic"},
+        )
+    assert complete_run(path) == 0
+    with sqlite3.connect(path) as conn:
+        conn.execute("UPDATE nodes SET content=? WHERE id=?", (current, target.id))
+        stamps = conn.execute("""
+            SELECT c.chunk_index, c.encoder_id, c.content_fingerprint, n.content_fingerprint
+            FROM node_chunk_embeddings c JOIN nodes n ON n.id=c.node_id
+            WHERE n.id=? ORDER BY c.chunk_index
+        """, (target.id,)).fetchall()
+    digest = hashlib.sha256(old.encode()).hexdigest()
+    assert stamps == [(i, "hash:384", digest, digest) for i in range(4)]
+    return path, target.id, current
+
+
+def test_stale_fingerprint_repair_restores_mcp_vector(stale_source):
+    import asyncio
+    from fastmcp import Client
+    from living_memory.server import create_mcp_server
+
+    path, target, current = stale_source
+    with MemoryStore(path) as store:
+        other = store.append_trace("a separate pending source")
+    report = path.parent / "report.json"
+    args = ["--db", str(path), "--node-id", target, "--encoder-id", "hash:384", "--json", str(report)]
+    run = ["backfill", *args, "--allow-fallback-embeddings"]
+    server = create_mcp_server(path)
+
+    async def check():
+        async with Client(server) as client:
+            query = {"query": "orchestrator", "scope": "project:synthetic"}
+            before = (await client.call_tool("memory_recall", query)).structured_content
+            assert not before["results"]
+            assert cli("verify", *args) == 1
+            assert json.loads(report.read_text())["pending_nodes"] == 1
+            assert cli("backfill", *args, "--dry-run") == 0
+            dry = json.loads(report.read_text())
+            assert (dry["pending_after"], dry["chunks_written"]) == (1, 4)
+
+            def source_row():
+                row = server.memory_store.connection.execute("SELECT * FROM nodes WHERE id=?", (target,)).fetchone()
+                return dict(row)
+
+            original = source_row()
+            assert cli(*run, *backup_arg(path, "pre-repair.db")) == 0
+            summary = json.loads(report.read_text())
+            assert (summary["nodes_written"], summary["chunks_written"], summary["pending_after"]) == (1, 4, 0)
+            digest = hashlib.sha256(current.encode()).hexdigest()
+            assert source_row() == {**original, "content_fingerprint": digest}
+            assert fingerprints_per_node(path)[target] == {digest}
+            assert stored_chunks_for(path, target) == expected_chunks_for(current)
+            assert cli("verify", *args) == 0
+            ids = chunk_identities(path)
+            assert cli(*run, "--existing-backup", str(path.parent / "pre-repair.db")) == 0
+            assert json.loads(report.read_text())["nodes_processed"] == 0
+            assert chunk_identities(path) == ids
+            assert not server.memory_store.list_node_chunks(other.id)
+            after = (await client.call_tool("memory_recall", query)).structured_content
+            assert after["results"][0]["id"] == target
+            event = server.memory_store.get_recall_event(after["recall_event_id"])
+            assert event.results[0]["methods"] == ["vector"]
+            assert chunk_identities(path) == ids
+
+    try:
+        asyncio.run(check())
+    finally:
+        server.auto_consolidation.close()
+        server.memory_store.close()
+
+
+def test_stale_fingerprint_source_replaced_during_encoding(stale_source):
+    path, target, _ = stale_source
+    winner = "a concurrent source replacement"
+    before = chunk_identities(path)
+    stamps = fingerprints_per_node(path)
+
+    def race(embed):
+        def encode(texts):
+            with sqlite3.connect(path) as conn:
+                conn.execute("UPDATE nodes SET content=? WHERE id=?", (winner, target))
+            return embed(texts)
+        return encode
+
+    interrupted = run_in_process(path, wrap=race, limit=1)
+    assert interrupted.nodes_written == 0 and interrupted.pending_after == 1
+    assert chunk_identities(path) == before and fingerprints_per_node(path) == stamps
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("SELECT content, content_fingerprint FROM nodes WHERE id=?", (target,)).fetchone() == (
+            winner, next(iter(stamps[target]))
+        )
+    assert run_in_process(path).pending_after == 0
+    assert stored_chunks_for(path, target) == expected_chunks_for(winner)
