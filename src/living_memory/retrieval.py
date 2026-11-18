@@ -642,7 +642,7 @@ class MemoryRecallService:
         with self.store.read_snapshot() if repeatable_selection else nullcontext():
             plan, limited = self._select_recall(
                 prepared, scope=scope, ambient_context=ambient_context, depth=depth,
-                max_results=max_results, select_results=select_results,
+                max_results=max_results, select_results=select_results, repeatable_selection=repeatable_selection,
             )
 
         if log_event is None:
@@ -678,7 +678,7 @@ class MemoryRecallService:
     def _select_recall(
         self, prepared: _PreparedQuery, *, scope: str | None,
         ambient_context: dict[str, Any] | None, depth: int | str | None, max_results: int,
-        select_results: _ResultSelector | None,
+        select_results: _ResultSelector | None, repeatable_selection: bool,
     ) -> tuple[ScopePlan, list[RecallResult]]:
         query, query_embedding = prepared.text, prepared.embedding
         plan = self.scope_resolver.resolve(
@@ -753,6 +753,7 @@ class MemoryRecallService:
                 query,
                 plan,
                 ranked,
+                repeatable_selection=repeatable_selection,
                 demotions=demotions,
                 causal_mode=causal_mode,
             )
@@ -1565,6 +1566,7 @@ class MemoryRecallService:
         *,
         demotions: Mapping[str, float] | None,
         causal_mode: bool,
+        repeatable_selection: bool = False,
     ) -> list[RecallResult]:
         """``name`` mode: the schemas this query names, if they earned a slot, go first.
 
@@ -1580,7 +1582,13 @@ class MemoryRecallService:
         query_tokens = frozenset(tokenize(query, evidence=True))
         if not query_tokens or not ranked:
             return ranked
-        ranked_ids = [result.node.id for result in ranked]
+        # Only a repeatable selection can rule out a level change since ranking.
+        ranked_ids = [
+            result.node.id for result in ranked
+            if not repeatable_selection or result.node.level in ("schema", "concept")
+        ]
+        if not ranked_ids:
+            return ranked
         named_ids = {
             node_id
             for scope in plan.search_scopes

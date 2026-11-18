@@ -1877,18 +1877,19 @@ class MemoryStore:
         """
 
         projection = ", provenance" if strategy is not None else ""
+        source = "nodes"
         filters = ["level IN ('schema', 'concept')", "decayed = 0"]
         params = []
+        if node_ids is not None:
+            source = "json_each(?) AS ranked CROSS JOIN nodes ON nodes.id = ranked.value"
+            params.append(_json_dumps(node_ids))
         if scope is not None:
             filters.append("scope = ?")
             params.append(scope)
-        if node_ids is not None:
-            filters.append("id IN (SELECT value FROM json_each(?))")
-            params.append(_json_dumps(node_ids))
         rows = self._conn.execute(
             f"""
-            SELECT id, JSON_EXTRACT(context, '$.trigger') {projection}
-            FROM nodes WHERE {" AND ".join(filters)}
+            SELECT nodes.id, JSON_EXTRACT(context, '$.trigger') {projection}
+            FROM {source} WHERE {" AND ".join(filters)}
               AND JSON_EXTRACT(context, '$.trigger') IS NOT NULL
             """,
             params,
