@@ -332,9 +332,10 @@ def test_promotion_compares_reopened_concepts_across_encoders(tmp_path, monkeypa
             result = c.memory_consolidate(store, scope=scope, min_cluster_size=1)
             concept, = result.concepts_created
             assert not result.concepts_promoted
-            if not tagged:
-                store.update_node(concept.id, representative_embedding=list(concept.embedding))
             ids.append(concept.id)
+        if not tagged:
+            for concept in store.get_nodes(ids).values():
+                store.update_node(concept.id, representative_embedding=list(concept.embedding))
 
     with MemoryStore(path) as store:
         guard = RLock()

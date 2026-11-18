@@ -265,9 +265,6 @@ def test_output_wait_for_shared_encoder_leaves_native_lookup_available(runtime, 
         def __exit__(self, *args):
             shared_lock.release()
 
-    source_model = synthetic_model(REPRESENTATIVE)
-    source_model.model_name = "harbor-representative"
-    monkeypatch.setattr(c, "LocalEmbeddingModel", lambda **kwargs: source_model)
     output = synthetic_model([0.0, 1.0, 0.0])
     other = synthetic_model([0.0, 0.0, 1.0], entered=entered, release=release)
     store.set_chunk_embedder(output.embed_batch)
