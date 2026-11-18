@@ -181,7 +181,7 @@ def test_source_failure_propagates_after_optional_preparation_failure(runtime, m
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("route", ["recall", "explicit", "teach"])
+@pytest.mark.parametrize("route", ["explicit", "teach"])
 @pytest.mark.parametrize("read", ["recall_deliveries", "has_query_anchor"])
 def test_required_preparation_read_failure_precedes_mutation(runtime, monkeypatch, route, read):
     r = runtime

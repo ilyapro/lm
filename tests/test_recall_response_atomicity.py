@@ -276,3 +276,43 @@ def test_direct_service_passage_failure_preserves_logging_contract(
     assert result.node.access_count == int(log_access)
     assert len(store.list_recall_events()) == int(log_event)
     assert bool(result.recall_event_id) == log_event
+
+
+@pytest.mark.parametrize("policy", ["audit", "credit"])
+def test_optional_mark_read_failure_preserves_recall(runtime, monkeypatch, policy):
+    store, node, _, call = runtime
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", policy)
+    first = call()
+    denied = []
+
+    def deny_once(action, table, column, *_):
+        if not denied and (action, table, column) == (sqlite3.SQLITE_READ, "recall_events", "query"):
+            denied.append(column)
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    store.connection.set_authorizer(deny_once)
+    try:
+        second = call(used=[node.id, node.id])
+    finally:
+        store.connection.set_authorizer(None)
+    assert denied == ["query"]
+    assert second["results"][0]["id"] == node.id
+    assert second["feedback_marks"] == {
+        "accepted": 0, "dropped": 2, "by_reason": {"unconfirmed": 1, "duplicate": 1},
+    }
+    assert {event.id for event in store.list_recall_events()} == {
+        first["recall_event_id"], second["recall_event_id"],
+    }
+    assert store.get_node(node.id).access_count == 2
+    rows = store.connection.execute(
+        "SELECT accepted, reject_reason, recall_event_id, source_id FROM recall_feedback_marks ORDER BY id"
+    )
+    assert [tuple(row) for row in rows] == [
+        (0, reason, "", second["recall_event_id"]) for reason in ("unconfirmed", "duplicate")
+    ]
+    assert not any(store.credited_node_ids(event.id) for event in store.list_recall_events())
+    assert store.count_query_anchors() == 0
+    recovered = call(used=[node.id])
+    assert recovered["feedback_marks"]["accepted"] == 1
+    assert store.credited_node_ids(second["recall_event_id"]) == ({node.id} if policy == "credit" else set())

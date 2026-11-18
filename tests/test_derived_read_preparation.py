@@ -590,7 +590,7 @@ def test_failed_missing_anchor_batch_keeps_current_existing_effects(runtime, mon
 
 
 @pytest.mark.parametrize("route", ["recall", "negative", "explicit", "implicit", "teach"])
-def test_continually_changing_feedback_fails_before_mutation_without_unbounded_retry(runtime, monkeypatch, route):
+def test_continually_changing_feedback_has_bounded_preparation(runtime, monkeypatch, route):
     r = runtime
     queries = []
     transport = None
@@ -613,12 +613,19 @@ def test_continually_changing_feedback_fails_before_mutation_without_unbounded_r
             with r.guard:
                 transport = r.store.get_recall_event(prior["recall_event_id"]).transport_session_id
             monkeypatch.setattr(feedback, "_anchor_embedder", changing_encoder)
-            with pytest.raises(Exception, match="feedback inputs changed during preparation; retry"):
-                await consume(owner, route, r.node.id)
+            marked_read = route in ("recall", "negative")
+            if marked_read:
+                response = await consume(owner, route, r.node.id)
+                assert response["feedback_marks"] == {
+                    "accepted": 0, "dropped": 1, "by_reason": {"unconfirmed": 1},
+                }
+            else:
+                with pytest.raises(Exception, match="feedback inputs changed during preparation; retry"):
+                    await consume(owner, route, r.node.id)
             assert queries == [(QUERY,), ("concurrent query 1",)]
             with r.guard:
                 assert r.store.connection.execute("SELECT count(*) FROM nodes").fetchone()[0] == 1
-                assert r.store.connection.execute("SELECT count(*) FROM recall_feedback_marks").fetchone()[0] == 0
+                assert r.store.connection.execute("SELECT count(*) FROM recall_feedback_marks").fetchone()[0] == int(marked_read)
                 assert all(not r.store.credited_node_ids(event.id) and not event.feedback_applied
                            for event in r.store.list_recall_events())
                 assert r.store.count_query_anchors() == 0

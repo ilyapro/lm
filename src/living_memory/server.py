@@ -83,8 +83,7 @@ from living_memory.feedback import (
     has_explicit_marks,
     map_feedback_refs,
     prepared_feedback,
-    prepared_lookup_credit,
-    resolve_explicit_marks,
+    prepared_read_feedback,
 )
 from living_memory import storage as storage_module
 from living_memory.storage import MemoryStore
@@ -1327,20 +1326,10 @@ def _register_tools(
         prepared_query = recall_service.prepare_anchor_history(
             prepared_query, scope=scope, ambient_context=ambient_context, depth=depth, guard=lambda: runtime_lock,
         )
-        with prepared_feedback(
+        with prepared_read_feedback(
             store, guard=lambda: runtime_lock, used=used, irrelevant=irrelevant,
-            transport_session_id=transport_session_id,
-            context=feedback_context,
-        ) as feedback_preparation:
-            # Resolve explicit marks before this call's own event exists, so a
-            # mark can only name an earlier delivery; recorded after, with the
-            # new event id as their source.
-            pending_marks = (
-                resolve_explicit_marks(store, used, irrelevant, transport_session_id,
-                                       context=feedback_context)
-                if has_explicit_marks(used, irrelevant)
-                else None
-            )
+            transport_session_id=transport_session_id, context=feedback_context,
+        ) as (feedback_preparation, pending_marks):
             delivery_history = DeliveryHistory()
             correction_refs: dict[str, list[str]] = {}
 
@@ -1562,11 +1551,11 @@ def _register_tools(
         occurred_at = storage_module._utc_now()
         valid_fetch = (requested_ids and not filters and view in ("knowledge", "full")
                        and (context_key is None or (context_key and view == "knowledge")))
-        with prepared_lookup_credit(
+        with prepared_read_feedback(
             store, guard=lambda: runtime_lock,
             lookup_ids=requested_ids if valid_fetch else None,
             transport_session_id=transport_session_id, occurred_at=occurred_at,
-        ) as feedback_preparation:
+        ) as (feedback_preparation, _):
             if requested_ids:
                 if filters:
                     return {

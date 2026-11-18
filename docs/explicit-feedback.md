@@ -126,7 +126,9 @@ required storage errors propagate; non-array bodies and non-object elements
 provide no delivery evidence. A missing eligible result remains `not_delivered`.
 A `memory_recall`
 resolves its marks *before* it records its own event, so a mark can never name
-the delivery that carries it.
+the delivery that carries it. If feedback preparation or delivery resolution fails,
+the recall returns its results and reports otherwise eligible marks as
+`unconfirmed`. These marks receive no credit.
 
 A dropped mark gets one reason, checked in this order:
 

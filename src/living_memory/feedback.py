@@ -1221,30 +1221,38 @@ def prepared_feedback(
 
 
 @contextmanager
-def prepared_lookup_credit(
+def prepared_read_feedback(
     store: MemoryStore, *, guard: Callable[[], AbstractContextManager[Any]],
-    lookup_ids: Sequence[str] | None,
-    transport_session_id: str | None, occurred_at: str | datetime,
-) -> Iterator[Mapping[tuple[str, str], Sequence[float]] | None]:
-    """Hold the read guard even when optional credit preparation fails.
-
-    None means skip credit entirely. Only entering preparation is caught;
-    source/validity reads in the caller still propagate their own failures.
-    """
+    transport_session_id: str | None, occurred_at: str | datetime | None = None,
+    lookup_ids: Sequence[str] | None = None,
+    used: Sequence[Any] | None = None, irrelevant: Sequence[Any] | None = None,
+    context: Mapping[str, Any] | None = None,
+) -> Iterator[tuple[Mapping[tuple[str, str], Sequence[float]] | None, list[ExplicitMark] | None]]:
+    """Hold the read guard and resolve optional feedback before the read's own event."""
+    marked = has_explicit_marks(used, irrelevant)
+    preparation = None
+    marks = None
     with ExitStack() as stack:
         try:
             preparation = stack.enter_context(prepared_feedback(
-                store, guard=guard, lookup_ids=lookup_ids,
-                transport_session_id=transport_session_id, occurred_at=occurred_at,
+                store, guard=guard, lookup_ids=lookup_ids, used=used, irrelevant=irrelevant,
+                transport_session_id=transport_session_id, occurred_at=occurred_at, context=context,
             ))
+            if marked:
+                marks = resolve_explicit_marks(store, used, irrelevant, transport_session_id, context=context)
         except Exception as error:
             _LOG.warning(
-                "lookup credit preparation failed (%s; %d requested id(s)); credit skipped",
-                type(error).__name__[:80], len(lookup_ids or ()),
+                "%s preparation failed (%s; %d requested id(s)); credit skipped",
+                "explicit mark" if marked else "lookup credit", type(error).__name__[:80],
+                len(lookup_ids or ()) + len(used or ()) + len(irrelevant or ()),
             )
-            stack.enter_context(guard())
-            preparation = None
-        yield preparation
+            if preparation is None:
+                stack.enter_context(guard())
+            if marked:
+                marks = _explicit_mark_requests(used, irrelevant, transport_session_id)
+                for mark in marks:
+                    mark.reject_reason = mark.reject_reason or "unconfirmed"
+        yield preparation, marks
 
 
 def _apply_query_feedback(
