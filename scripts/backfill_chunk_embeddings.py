@@ -1,34 +1,16 @@
 #!/usr/bin/env python3
 """Live-safe, resumable backfill of chunk embeddings for every active node.
 
-What this is for
-----------------
-Schema v6 stores embeddings as many float32 little-endian BLOB *chunks* per node
-(``node_chunk_embeddings``) instead of one JSON vector in ``nodes.embedding``.
-New writes are chunked by the write path in ``storage.py``; the ~12.8k nodes that
-already existed are not. This script encodes them, and nothing else.
-
-Three subcommands, deliberately separate:
-
-``backfill``
-    Add the missing chunk rows. Additive only — see "Safe under a live server".
-``verify``
-    Read-only coverage / consistency / size report. Safe on the live database.
-``drop-embedding-column``
-    Remove the legacy ``nodes.embedding`` JSON column. **Run only after the new
-    code is deployed and the server restarted** (see docs/chunk-migration.md);
-    the currently-running server still reads that column.
+Backfill encodes current text windows for active sources in the selected
+encoder space. Verify and dry-run inspect coverage on a WAL-aware read-only
+connection. The separate drop-embedding-column command removes legacy node
+vectors only after explicit confirmation and backup.
 
 Safe under a live server
 ------------------------
-The backfill INSERTs and DELETEs rows of ``node_chunk_embeddings`` and advances
-their trigger-maintained cache revision.
-``nodes`` is read, never written: after the store is opened (which runs the
-additive v5 -> v6 migration) a SQLite *authorizer* is installed that denies every
-write outside the chunk table and its schema-owned revision effects. The shared
-storage policy protects the source knowledge. ``PRAGMA busy_timeout`` is raised
-and every chunk write retries on SQLITE_BUSY, because the MCP server is writing
-to the same WAL database throughout.
+Opening MemoryStore runs its normal migrations. After open, the backfill
+restricts writes to chunk replacement and schema-owned revision effects.
+Per-source transactions retry on SQLITE_BUSY.
 
 Resumability
 ------------
@@ -39,10 +21,7 @@ under the write lock before replacing a set. Re-run to continue from the
 remaining sources. Use --limit to budget source attempts per invocation.
 
 The bounded batch is ``--batch-size`` nodes: one page of pending nodes, one
-encode call, then one transaction per node. A single giant transaction would hold
-the write lock for the entire ~9-minute run and grow the WAL by the whole
-backfill; per-node commits keep both bounded and make the resume granularity one
-node.
+encode call, then one write transaction per node.
 
 Every chunk is encoded from its own text. ``nodes.embedding`` is never recycled
 as chunk 0's vector even for a single-window node (which the write path does do,
@@ -122,7 +101,7 @@ from living_memory.storage import (  # noqa: E402
 
 LOG = logging.getLogger("backfill_chunk_embeddings")
 
-#: Pending nodes per page: one ``list_unchunked_nodes`` call, one encode call,
+#: Pending nodes per page: one source selection, one encode call,
 #: then one transaction per node. Larger pages amortize the encoder's warm-up
 #: over more texts; smaller ones shorten the window a kill can waste.
 DEFAULT_BATCH_NODES = 64
@@ -161,7 +140,6 @@ class BackfillError(RuntimeError):
 
 # ---------------------------------------------------------------------------
 # Pending-node predicate
-#
 # ---------------------------------------------------------------------------
 
 _ACTIVE_CONTENT_CLAUSES = (
@@ -190,11 +168,11 @@ class ChunkSelection:
         active = " AND ".join(clauses)
         # A pre-v6 file or a chunk table predating producer identity has no
         # provably compatible rows. Read-only commands must not migrate either.
+        width = encoder_width(encoder_id)
         columns = {row[1] for row in conn.execute(f"PRAGMA table_info({CHUNK_EMBEDDING_TABLE})")}
         if "encoder_id" not in columns:
             return cls(active, tuple(filters), active, tuple(filters))
 
-        width = encoder_width(encoder_id)
         ready = f"""SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} c
             WHERE c.node_id = n.id GROUP BY c.node_id
             HAVING MIN(c.chunk_index) = 0 AND MAX(c.chunk_index) = COUNT(*) - 1
@@ -209,10 +187,12 @@ class ChunkSelection:
 
 
 def encoder_width(encoder_id: str) -> int:
-    suffix = encoder_id.rsplit(":", 1)[-1]
-    if not suffix.isascii() or not suffix.isdigit() or int(suffix) <= 0:
-        raise BackfillError(f"expected an encoder ID ending in a positive width: {encoder_id!r}")
-    return int(suffix)
+    prefix, separator, suffix = encoder_id.rpartition(":")
+    if prefix and separator and suffix.isascii() and suffix.isdigit() and 0 < len(suffix) <= 9:
+        width = int(suffix)
+        if width > 0:
+            return width
+    raise BackfillError(f"expected an encoder ID ending in a positive width: {encoder_id!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -588,8 +568,10 @@ def dry_run(
     summary = BackfillSummary(mode="dry-run", db=str(db), started_at=_utc_now_iso())
     summary.encoder_id = encoder_id or LocalEmbeddingModel().encoder_id()
     width = encoder_width(summary.encoder_id)
-    if dimensions is not None and dimensions != width:
-        raise BackfillError("--dimensions must match the selected encoder width")
+    if dimensions is not None:
+        if dimensions < 1:
+            raise BackfillError("--dimensions must be positive")
+        width = dimensions
     started = time.perf_counter()
     conn = open_readonly(db)
     try:
@@ -694,7 +676,7 @@ def _write_chunks_with_retry(
                 ).fetchone()
                 if current is None:
                     raise KeyError(node_id)
-                if (not current["pending"] or current[:-1] != tuple(source)
+                if (not current["pending"] or any(current[key] != source[key] for key in source.keys())
                         or _chunk_ids(store.connection, node_id) != chunk_ids):
                     return 0
                 return store.replace_node_chunks(
@@ -836,9 +818,7 @@ def run_backfill(
                     )
                 except KeyError:
                     # The node row is gone between the read and the write. Living
-                    # Memory soft-deletes (nodes.decayed), so this needs an
-                    # external hard delete — rare, and not a reason to abandon a
-                    # twelve-minute run over the other 12k nodes.
+                    # Memory normally soft-deletes via nodes.decayed.
                     summary.nodes_processed += 1
                     summary.nodes_vanished += 1
                     skipped.add(node_id)
@@ -896,7 +876,10 @@ def run_backfill(
 # ---------------------------------------------------------------------------
 
 
-def verify_report(db: Path, *, scope: str | None, level: str | None, encoder_id: str | None = None) -> dict[str, Any]:
+def verify_report(
+    db: Path, *, scope: str | None, level: str | None, encoder_id: str | None = None,
+    before_drop: bool = False,
+) -> dict[str, Any]:
     """Read-only coverage, consistency and size report. Safe on the live DB."""
 
     encoder_id = encoder_id or LocalEmbeddingModel().encoder_id()
@@ -963,12 +946,13 @@ def verify_report(db: Path, *, scope: str | None, level: str | None, encoder_id:
         )
         # The invariant a killed run must never break: one node, one generation
         # of chunks, dense ordinals from 0, one vector width.
+        # Dropping legacy vectors retains the original corpus-wide integrity gate.
+        population = "" if before_drop else f"JOIN nodes n ON n.id=c.node_id WHERE {selection.active}"
         inconsistent = [
             str(r[0])
             for r in conn.execute(
                 f"""
-                SELECT c.node_id FROM {CHUNK_EMBEDDING_TABLE} c JOIN nodes n ON n.id=c.node_id
-                WHERE {selection.active}
+                SELECT c.node_id FROM {CHUNK_EMBEDDING_TABLE} c {population}
                 GROUP BY c.node_id
                 HAVING COUNT(DISTINCT c.content_fingerprint) > 1
                     OR COUNT(DISTINCT dimensions) > 1
@@ -976,7 +960,7 @@ def verify_report(db: Path, *, scope: str | None, level: str | None, encoder_id:
                     OR MAX(chunk_index) != COUNT(*) - 1
                 ORDER BY node_id
                 LIMIT 50
-                """, selection.filters
+                """, () if before_drop else selection.filters
             ).fetchall()
         ]
         report["inconsistent_nodes"] = len(inconsistent)
@@ -990,6 +974,7 @@ def verify_report(db: Path, *, scope: str | None, level: str | None, encoder_id:
         report["ok"] = (
             pending == 0
             and not inconsistent
+            and (not before_drop or len(report["dimensions"]) <= 1)
         )
         return report
     finally:
@@ -1182,7 +1167,7 @@ def cmd_drop_column(args: argparse.Namespace) -> int:
     )
     print(f"backup ok: {backup.path} ({backup.bytes} bytes)", flush=True)
 
-    report = verify_report(db, scope=None, level=None)
+    report = verify_report(db, scope=None, level=None, before_drop=True)
     print(
         f"coverage: {report['covered_nodes']}/{report['active_chunkable_nodes']} nodes "
         f"chunked ({report['pending_nodes']} pending, "
@@ -1300,8 +1285,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = subparsers.add_parser(
         "backfill",
-        help="Add missing chunk embeddings (resumable, additive, live-safe).",
-        description="Add missing chunk embeddings. Never writes to nodes.",
+        help="Refresh missing, stale or incompatible chunks (resumable, live-safe).",
+        description="Encode pending source windows and replace their chunks atomically.",
     )
     _add_db_argument(run)
     _add_backup_arguments(run)
@@ -1341,7 +1326,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--dimensions",
         type=int,
         default=None,
-        help="Check the vector width used for --dry-run byte totals.",
+        help="Override vector width for --dry-run byte estimates only.",
     )
     run.add_argument(
         "--assumed-rate",
@@ -1369,8 +1354,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify = subparsers.add_parser(
         "verify",
         help="Read-only coverage / consistency / size report.",
-        description="Read-only report. Exit 0 only when coverage is complete, "
-        "every node has exactly one chunk generation, and one vector width.",
+        description="Read-only report for active sources in the selected encoder space.",
     )
     _add_db_argument(verify)
     _add_filter_arguments(verify)
