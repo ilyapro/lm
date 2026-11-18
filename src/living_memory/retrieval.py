@@ -994,7 +994,8 @@ class MemoryRecallService:
         anchor_seeded = any(
             candidate.anchor_score > 0.0 for candidate in candidates.values()
         )
-        reference = REFERENCE_WEIGHTS if schema_trigger_by_name() else None
+        reference = REFERENCE_WEIGHTS.normalized() if schema_trigger_by_name() else None
+        weights_by_scope: dict[str, RetrievalWeights] = {}
         anchor_free_narrow_present = (
             _ungated_scope_profile(
                 candidates, ungated_scopes, decision_mode=decision_mode, anchor_free=True
@@ -1009,7 +1010,10 @@ class MemoryRecallService:
             if _is_rejected_alternative_node(node) and not decision_mode:
                 continue
 
-            weights = (reference or self.store.get_retrieval_weights(node.scope)).normalized()
+            weights = reference or weights_by_scope.get(node.scope)
+            if weights is None:
+                weights = self.store.get_retrieval_weights(node.scope).normalized()
+                weights_by_scope[node.scope] = weights
             graph_score = candidate.combined_graph_score
             ungated = not plan.restricted or node.scope in ungated_scopes
             admissible = (
