@@ -45,7 +45,7 @@ from living_memory.models import (
     SourcePassage,
 )
 from living_memory.relations import (
-    checked_weight_sql, current_relation_sql, register_file_evidence,
+    checked_weight_sql, current_relation_sql, has_file_evidence, register_file_evidence,
     correction_sql, is_correction, is_semantic_relation, semantic_relation_sql,
 )
 from living_memory.scope import ALL_SCOPES, ScopePlan, normalize_scope, resolve_scope
@@ -2094,22 +2094,27 @@ class MemoryStore:
         metadata_data = dict(metadata or {})
         if merge:
             row = self._conn.execute(
-                f"""
-                SELECT *, {checked_weight_sql()} AS checked_weight FROM connections
+                """
+                SELECT * FROM connections
                 WHERE source_id = ? AND target_id = ? AND type = ?
                 """,
                 (source_id, target_id, relation_type),
             ).fetchone()
             if row is not None:
                 existing = _connection_from_row(row)
+                previous_weight = existing.weight
+                if existing.type == "related" and has_file_evidence(existing.metadata):
+                    previous_weight = self._conn.execute(
+                        f"SELECT {checked_weight_sql()} FROM connections WHERE id = ?", (existing.id,),
+                    ).fetchone()[0]
                 if (is_semantic_relation(relation_type, metadata_data)
-                        and (row["checked_weight"] is None
+                        and (previous_weight is None
                              or not is_semantic_relation(existing.type, existing.metadata))):
                     # Fresh semantic evidence replaces technical history; the
                     # old marker and weight do not describe this contribution.
                     existing = None
                 else:
-                    weight = max(float(weight), row["checked_weight"] or 0.0)
+                    weight = max(float(weight), previous_weight or 0.0)
                     metadata_data = {**existing.metadata, **metadata_data}
             weight = round(min(1.0, max(0.0, float(weight))), 6)
 
@@ -2122,7 +2127,7 @@ class MemoryStore:
 
         now = _utc_now()
         metadata_json = _json_dumps(metadata_data)
-        if (existing is not None and weight == row["weight"]
+        if (existing is not None and weight == existing.weight
                 and metadata_json == _json_dumps(existing.metadata)):
             connection = existing
         else:

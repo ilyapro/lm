@@ -130,6 +130,25 @@ def register_file_evidence(connection: sqlite3.Connection) -> None:
     connection.create_function("lm_checked_file_weight", 7, _checked_file_weight, deterministic=True)
 
 
+def has_file_evidence(metadata: Mapping[str, Any]) -> bool:
+    """Writer signatures, including rules shallow-merged over a file list."""
+    return (
+        metadata.get("rule") == "R4b"
+        or metadata.get("basis") == "shared_files"
+        or metadata.get("rule_basis") == "shared_files"
+        or (metadata.get("rule") in ("R4a", "R5a", "R6") and isinstance(metadata.get("files"), list))
+    )
+
+
+def needs_source_projection(relation_type: str, weight: float, metadata: Mapping[str, Any]) -> bool:
+    if relation_type == "related" and has_file_evidence(metadata):
+        # Endpoint checks can leave a discovery-only contribution after a
+        # shallow merge. Its source weight is read from the same endpoints.
+        if metadata.get("basis") in ("co_access", "cluster") or metadata.get("rule") != "R4b":
+            return True
+    return source_relation_weight(relation_type, weight, metadata) != weight
+
+
 def checked_weight_sql(alias: str = "connections", *, source_only: bool = False) -> str:
     """Only file-derived edges fetch endpoint contexts, by primary key."""
     meta = f"{alias}.metadata"

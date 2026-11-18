@@ -62,7 +62,7 @@ from living_memory.query_anchors import (
     match_anchors,
 )
 from living_memory.schema_dedup import collapse_schema_duplicates
-from living_memory.relations import is_semantic_relation, source_relation_weight
+from living_memory.relations import is_semantic_relation, needs_source_projection
 from living_memory.scope import (
     ScopePlan,
     ScopeResolver,
@@ -1633,13 +1633,7 @@ class MemoryRecallService:
                 neighbors = {node_id: [] for node_id in connections}
                 for node_id, edges in connections.items():
                     for edge in edges:
-                        if not source_only and (
-                            source_relation_weight(edge.type, edge.weight, edge.metadata) != edge.weight
-                            or (isinstance(edge.metadata.get("files"), list)
-                                and edge.metadata.get("rule") != "R4b")
-                            or (edge.metadata.get("rule") == "R4b"
-                                and edge.metadata.get("basis") in ("co_access", "cluster"))
-                        ):
+                        if not source_only and needs_source_projection(edge.type, edge.weight, edge.metadata):
                             historical_edges = True
                         traversal = _traversal(
                             edge, node_id, causal_mode=causal_mode,

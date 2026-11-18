@@ -116,7 +116,7 @@ def test_required_reads_fail_and_unused_bodies_can_be_denied(tmp_path, monkeypat
         try:
             if denied in {"content", "provenance"}:
                 assert len(ed.derive_edges_for_new_trace(store, note)) == 1
-                assert reads == {"id", "decayed", "context", "scope"}
+                assert reads == ({"id", "decayed", "context"} if kind == "commit" else {"id", "decayed", "context", "scope"})
             else:
                 with pytest.raises(sqlite3.DatabaseError):
                     ed.derive_edges_for_new_trace(store, note)
@@ -307,8 +307,10 @@ def test_grouped_files_bound_each_file_before_selected_json(tmp_path, monkeypatc
 ])
 def test_grouped_file_limit_preserves_required_source_errors(tmp_path, names, raises):
     with storage.MemoryStore(tmp_path / "memory.sqlite3") as store:
-        hub = store.append_trace("Hub", {"scope": "project:edges", "files": ["hot", "warm"] * 21})
-        bad = store.append_trace("Bad tail", {"scope": "project:edges", "files": ["hot"]})
+        hub = store.create_node(level="trace", node_id="a-hub", content="Hub",
+                                context={"scope": "project:edges", "files": ["hot", "warm"] * 21})
+        bad = store.create_node(level="trace", node_id="z-tail", content="Bad tail",
+                                context={"scope": "project:edges", "files": ["hot"]})
         store.connection.execute("DROP INDEX idx_nodes_commit_prefix")
         store.connection.execute("DROP INDEX idx_nodes_files_present")
         store.connection.execute("UPDATE nodes SET context = '{' WHERE id = ?", (bad.id,))
@@ -322,7 +324,7 @@ def test_grouped_file_limit_preserves_required_source_errors(tmp_path, names, ra
             }
         # Neither success nor failure leaves the request callback registered.
         with pytest.raises(sqlite3.OperationalError):
-            store.connection.execute("SELECT _lm_file_citation_admit('hot')").fetchone()
+            store.connection.execute("SELECT _lm_file_citation_admit('hot', 'global', '[]')").fetchone()
 
 
 def test_grouped_file_selected_json_failure_closes_cursor(tmp_path, monkeypatch):
