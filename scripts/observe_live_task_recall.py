@@ -238,23 +238,27 @@ def _candidate_identity(source: dict[str, bytes], installed_root: Path) -> dict[
         # packages. Leave a standalone venv's import order intact.
         deps = os.environ.get("LIVING_MEMORY_DEPS_DIR")
         if not deps:
-            cache = installed_root / ".cache/python-deps"
+            cache = os.path.realpath(installed_root / ".cache/python-deps")
             active_paths = os.environ.get("PYTHONPATH", "").split(os.pathsep)
-            if any(os.path.realpath(p) == os.path.realpath(cache) for p in active_paths if p):
-                deps = str(cache)
+            if any(os.path.realpath(p) == cache for p in active_paths if p):
+                deps = cache
         import_paths = [str(directory / "src")]
         if deps:
             import_paths.append(os.path.abspath(deps))
-        program = (
-            "import json, sys; from pathlib import Path; "
-            "sys.path[:0] = sys.argv[1:]; "
-            "from living_memory import server; "
-            "origin = Path(server.__file__).resolve(); "
-            "expected = Path('src/living_memory/server.py').resolve(); "
-            "\nif origin != expected: raise RuntimeError('unexpected candidate origin')\n"
-            "instance = server.create_mcp_server(Path('candidate.sqlite3')); "
-            "print(json.dumps(server._loaded_code_identity())); instance.memory_store.close()"
-        )
+        program = """
+import json
+from pathlib import Path
+import sys
+
+sys.path[:0] = sys.argv[1:]
+from living_memory import server
+
+if Path(server.__file__).resolve() != Path("src/living_memory/server.py").resolve():
+    raise RuntimeError("unexpected candidate origin")
+instance = server.create_mcp_server(Path("candidate.sqlite3"))
+print(json.dumps(server._loaded_code_identity()))
+instance.memory_store.close()
+"""
         environment = dict(os.environ, LIVING_MEMORY_EMBEDDING_BACKEND="hash")
         environment.pop("PYTHONPATH", None)
         environment.pop("LM_AUTH_TOKEN", None)
