@@ -401,15 +401,15 @@ def test_upsert_creates_anchor_with_weighted_edges(tmp_path: Path) -> None:
         other = _trace(store, "a second consulted node")
 
         result = qa.upsert_anchor(
-            store, "поревьювь EZ-13871", SCOPE, [1.0, 0.0], [used.id, other.id]
+            store, "сверь патч LX-42017", SCOPE, [1.0, 0.0], [used.id, other.id]
         )
 
         assert result.created is True
         assert result.reinforced is False
         assert result.matched_by is None
         assert result.anchor.scope == SCOPE
-        assert result.anchor.query == "поревьювь EZ-13871"
-        assert result.anchor.fingerprint == recall_fingerprint("поревьювь EZ-13871", SCOPE)
+        assert result.anchor.query == "сверь патч LX-42017"
+        assert result.anchor.fingerprint == recall_fingerprint("сверь патч LX-42017", SCOPE)
         assert {edge.target_id for edge in result.edges} == {used.id, other.id}
         assert all(edge.weight == ANCHOR_EDGE_WEIGHT for edge in result.edges)
         assert all(edge.hits == 1 for edge in result.edges)
@@ -440,7 +440,7 @@ def test_exact_repeat_reinforces_the_same_anchor_by_fingerprint(tmp_path: Path) 
     ("Restart is allowed before approval", "Restart is forbidden before approval"),
     ("Restart is allowed before approval", "Restart is allowed after approval"),
     ("Alice permits Bob to restart", "Bob permits Alice to restart"),
-    ("поревьювь EZ-13871", "поревьювь EZ-12826"),
+    ("сверь патч LX-42017", "сверь патч LX-42018"),
     ("Check PATH", "Check path"),
 ])
 def test_similar_queries_keep_independent_anchors_and_semantic_matches(

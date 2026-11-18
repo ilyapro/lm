@@ -28,28 +28,26 @@ from living_memory.chunking import (
 from living_memory.source_text import passage_spans
 
 
-# A node-shaped text: Russian prose with English identifiers, numbers, bullet
-# lists and paragraph breaks, the way real Living Memory content looks.
-REAL_SHAPED_NODE = """Замер векторного канала recall на живой базе 2026-08-17 (12839 активных узлов, 16583 эмбеддинга): st.max_seq_length = 128, и 67% активных узлов длиннее этого лимита при медиане 235 токенов. Хвост за токеном 128 в вектор не попадает вообще — cos(вектор полного узла, вектор его первых 128 токенов) = 1.000. На узлах длиннее 800 символов модель видит 10-36% контента, в среднем около 20%.
+CATALOG_NOTE = """Для учебной выставки мастерская собирает каталог образцов ткани. У каждого лоскута есть карточка с номером, рисунком и названием красителя. Перед открытием смотритель раскладывает карточки по ящикам, сверяет номера с планом зала и отмечает пустые места в таблице shelf_map. Если на столе лежат два куска одного цвета, у них всё равно будут разные номера: один мог выгореть у окна, а другой всё время хранился в конверте.
 
-Дешёвый вариант «поднять max_seq_length до 512» проверен и отвергнут. На восьми узлах длиннее 1500 символов с запросом из хвостового фрагмента (токены 200-320) средний cos составил 0.479 против 0.489 при лимите 128: добавление текста в один вектор разбавляет сигнал, а не обогащает его. Плюс энкод дороже примерно в пять раз — 18 текстов в секунду против 90 на CPU.
+В начале занятия ведущая достаёт карточку LX-42017 из секции B4 и просит найти парный образец по описанию плетения. На обороте оставлено место для наброска. Линию утка проводят синим карандашом, линию основы рисуют зелёным, а под рисунком записывают число пересечений на участке длиной 12 мм. Цвет карандаша относится только к схеме: сам лоскут можно описывать любыми словами, которые помогут следующей группе узнать его при другом освещении.
 
-Чанкинг окнами около 128 токенов с overlap 32 и max-pool по чанкам узла даёт на том же тесте средний cos 0.954 с выигрышем на всех восьми узлах. Оговорка: запрос в этом микротесте — дословный фрагмент, на перефразировках выигрыш будет скромнее, поэтому финальный гейт — офлайн-харнесс на реальных запросах из recall_events, а не этот микротест.
+The catalog stores the drawer label in drawer_code and the visible pattern in weave_name. A visitor can search for a sample by either field. The printed guide uses short names because the labels must fit beside the fabric without covering the edges. For a card with two sketches, keep the first sketch on the front and place the second inside the folded sleeve.
 
-Инвентарь того, что меняется в хранении:
-- nodes.embedding сейчас лежит JSON-текстом: 7.9 КБ на 384-мерный вектор против 1.5 КБ в float32, то есть 135 МБ на базу.
-- Холодный старт первого recall парсит 16.5k JSON примерно 750 мс, и это видно в p50 первого запроса сессии.
-- float32 BLOB little-endian: около 45k чанков (в 3.53 раза больше строк, чем узлов) займут примерно 69 МБ, чтение через np.frombuffer 35-140 мс.
-- Скан 45k на 384 float32 занимает около 1.2 мс, max-pool в узлы около 0.5 мс на numpy против 0.3 мс сейчас — приемлемо.
-- Полный пересчёт эмбеддингов с чанкингом занимает примерно 8.5 минут CPU при batch 32.
+В коробку для следующего занятия кладут пять вещей:
+- Лупу с ручкой и шкалой, на которой хорошо видны деления от 1 до 8.
+- Полоску серого картона для сравнения светлого края ткани с тёмной серединой.
+- Прозрачную сетку grid_6x6, чтобы считать узелки, не оставляя следов на поверхности.
+- Пустой конверт с полем sample_id для маленького фрагмента нити из учебного набора.
+- Журнал, куда группа вписывает время осмотра и положение настольной лампы.
 
-Ограничения, зафиксированные до начала работ: модель эмбеддинга paraphrase-multilingual-MiniLM-L12-v2 не менять, max_seq_length глобально не поднимать, bm25/FTS и словарь _SYNONYMS не трогать, внешние векторные индексы вроде FAISS или sqlite-vec не вводить — чистый numpy плюс sqlite. Все эксперименты только на снапшотах: mode=ro или копия через sqlite backup API, потому что копия файла без -wal неполна.
+Когда карточку передают соседнему столу, учащиеся сначала читают только заголовок и пытаются отыскать материал на ощупь. Затем можно заглянуть под клапан и проверить рисунок. Если образец оказался другим, наблюдатель записывает, какой признак ввёл его в заблуждение. Для следующей попытки берут лоскут из того же ящика: так прежняя заметка пригодится даже в том случае, если два материала назывались одинаково, но заметно различались плотностью.
 
-The harness itself replays recorded recall_events end to end: a query goes through the live MemoryRecallService of the current revision, and hit@5 with MRR are computed against the labelled goldset. The replay module cannot do this on its own — it re-ranks recorded per-result scores, so it structurally cannot evaluate a change that alters the scores themselves, which is exactly what max-pool over chunk vectors does.
+На экране каталог показывает не только общий план, но и отдельные детали. Поле zoom_level управляет масштабом, кнопка reset_view возвращает изображение к размеру карточки. Для показа на большом экране ведущая выбирает режим «пара» и закрепляет слева красную ткань из верхнего ряда. Справа открывается свободное место для второго снимка. Если перенести туда снимок из нижнего ряда, подписи должны остаться под своими образцами, даже когда группа поворачивает экран.
 
-Голдсет собирается из трёх страт, чтобы гейт не свёлся к одному классу запросов. Первая страта — content-grounded события из recall_events, где полезность выдачи подтверждена через feedback_trace_id. Вторая — кросс-языковые пары: жаргонные русские запросы к английским узлам, класс «поревьювь / мердж-реквест / апрув», на котором замерены провалы cos 0.201-0.392 против 0.75-0.83 на нормальной лексике. Третья — ролевые запросы-промахи вида «EZ-13871 ревью задачи», где ожидается процедурная схема, а не отдельный trace.
+Each drawer has room for 24 sleeves arranged in two rows. Put a paper divider between the rows before closing the drawer. Write the range of sample numbers on the tab in pencil so it can be updated when the class adds another swatch. Keep the tab above the sleeves and fold it inward when the drawer goes back into the cabinet.
 
-Гейт фазы 1 сформулирован числами, а не впечатлениями: на голдсете hit@5 и MRR не ниже baseline, на хвостовом подмножестве (запрос по содержимому за пределами первых 128 токенов узла) — выраженный рост, размер хранимых эмбеддингов меньше нынешних 135 МБ, холодная инициализация векторного канала быстрее 200 мс против нынешних 750 мс, p50 memory_recall не хуже baseline плюс 5 мс. Отдельно требуется регрессионный тест по домашнему правилу «на старом коде падает»: узел с релевантным хвостом за токеном 128 и запрос по этому хвосту — на старом коде узел вне top-5, на новом в top-5.
+Последняя группа дня проверяет опись по порядку ящиков, а не по цветам. На месте каждого выданного образца должна лежать закладка с номером карточки. Закладку убирают только после того, как ткань вернулась в конверт, рисунок вложен под клапан и строка return_slot содержит номер полки. В конце смотритель делает чистую копию плана на завтра и оставляет рядом запасные карточки без номеров, чтобы новые образцы можно было внести до открытия выставки.
 """
 
 
@@ -165,7 +163,7 @@ def test_russian_sentence_punctuation_is_respected(
         "Первое предложение описывает векторный канал recall и его лимит.",
         "Второе предложение объясняет, почему хвост узла не виден модели!",
         "Третье предложение спрашивает, что делать с перекалибровкой весов?",
-        "Четвёртое предложение фиксирует замер на живой базе от 2026-08-17.",
+        "Четвёртое предложение задаёт срок выдачи карточек до 17:30.",
     ]
     text = " ".join(sentences)
 
@@ -221,13 +219,13 @@ def test_overlap_stays_within_the_requested_size(
     overlap_tokens: int, heuristic: HeuristicTokenizer
 ) -> None:
     chunks = chunk_text(
-        REAL_SHAPED_NODE,
+        CATALOG_NOTE,
         overlap_tokens=overlap_tokens,
         tokenizer=heuristic,
     )
 
     assert len(chunks) > 1
-    paragraphs = passage_spans(REAL_SHAPED_NODE)
+    paragraphs = passage_spans(CATALOG_NOTE)
 
     def paragraph_at(offset: int) -> int:
         return next(paragraph for start, end, paragraph in paragraphs if start <= offset < end)
@@ -243,7 +241,7 @@ def test_overlap_stays_within_the_requested_size(
             # of what was asked for.
             assert overlap >= max(1, overlap_tokens // 2)
     _assert_sane(
-        chunks, REAL_SHAPED_NODE, window=DEFAULT_MAX_TOKENS - ENCODER_SPECIAL_TOKENS
+        chunks, CATALOG_NOTE, window=DEFAULT_MAX_TOKENS - ENCODER_SPECIAL_TOKENS
     )
 
 
@@ -297,8 +295,8 @@ def test_long_paragraph_uses_shared_passages_instead_of_soft_line_cuts(heuristic
     [
         "Single short sentence.",
         "Одно короткое предложение без переносов",
-        REAL_SHAPED_NODE,
-        REAL_SHAPED_NODE.replace("\n\n", "\n"),
+        CATALOG_NOTE,
+        CATALOG_NOTE.replace("\n\n", "\n"),
         "\n".join(f"- пункт {index} списка про retrieval" for index in range(60)),
         "щ" * 500,
         "  leading and trailing whitespace \n\n\n",
@@ -317,11 +315,11 @@ def test_chunks_cover_the_whole_token_stream(
 
 def test_chunking_is_deterministic(heuristic: HeuristicTokenizer) -> None:
     runs = [
-        chunk_text(REAL_SHAPED_NODE, tokenizer=HeuristicTokenizer()) for _ in range(3)
+        chunk_text(CATALOG_NOTE, tokenizer=HeuristicTokenizer()) for _ in range(3)
     ]
 
     assert runs[0] == runs[1] == runs[2]
-    assert runs[0] == chunk_text(REAL_SHAPED_NODE, tokenizer=heuristic)
+    assert runs[0] == chunk_text(CATALOG_NOTE, tokenizer=heuristic)
     assert len({tuple(chunk.text for chunk in run) for run in runs}) == 1
 
 
@@ -343,16 +341,16 @@ def test_invalid_arguments_are_rejected(
     kwargs: dict[str, int], message: str, heuristic: HeuristicTokenizer
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        chunk_text(REAL_SHAPED_NODE, tokenizer=heuristic, **kwargs)
+        chunk_text(CATALOG_NOTE, tokenizer=heuristic, **kwargs)
 
 
-def test_long_real_shaped_node_yields_a_plausible_chunk_count() -> None:
-    assert len(REAL_SHAPED_NODE) >= 3000
+def test_long_catalog_note_yields_a_plausible_chunk_count() -> None:
+    assert len(CATALOG_NOTE) >= 3000
 
-    chunks = chunk_text(REAL_SHAPED_NODE)
+    chunks = chunk_text(CATALOG_NOTE)
 
     window = DEFAULT_MAX_TOKENS - ENCODER_SPECIAL_TOKENS
-    total = count_tokens(REAL_SHAPED_NODE)
+    total = count_tokens(CATALOG_NOTE)
     ideal = math.ceil((total - DEFAULT_OVERLAP_TOKENS) / (window - DEFAULT_OVERLAP_TOKENS))
     assert total > window, "the fixture must not fit in a single window"
     assert 3 <= math.ceil(total / window) <= len(chunks) <= 2 * ideal
@@ -421,7 +419,7 @@ def test_unavailable_model_tokenizer_falls_back_to_the_heuristic_one(
     tokenizer = get_tokenizer("no-such-model-anywhere")
 
     assert tokenizer.name == "heuristic"
-    assert chunk_text(REAL_SHAPED_NODE, tokenizer=tokenizer)
+    assert chunk_text(CATALOG_NOTE, tokenizer=tokenizer)
     reset_tokenizer_cache()
 
 
@@ -509,7 +507,7 @@ def test_model_tokenizer_counts_past_the_configured_sequence_limit(
     to remove.
     """
 
-    long_text = REAL_SHAPED_NODE
+    long_text = CATALOG_NOTE
 
     total = count_tokens(long_text, tokenizer=model_tokenizer)
 
@@ -522,7 +520,7 @@ def test_model_tokenizer_chunks_fit_the_encoder_sequence_limit(
 ) -> None:
     """Re-encoding a chunk on its own must still fit max_seq_length."""
 
-    chunks = chunk_text(REAL_SHAPED_NODE, tokenizer=model_tokenizer)
+    chunks = chunk_text(CATALOG_NOTE, tokenizer=model_tokenizer)
 
     assert len(chunks) > 1
     for chunk in chunks:
@@ -538,7 +536,7 @@ def test_heuristic_tokenizer_approximates_the_model_tokenizer(
 ) -> None:
     """The fallback counter must stay close to — and not below — the real one."""
 
-    real = count_tokens(REAL_SHAPED_NODE, tokenizer=model_tokenizer)
-    estimated = count_tokens(REAL_SHAPED_NODE, tokenizer=heuristic)
+    real = count_tokens(CATALOG_NOTE, tokenizer=model_tokenizer)
+    estimated = count_tokens(CATALOG_NOTE, tokenizer=heuristic)
 
     assert 0.9 <= estimated / real <= 1.35, (estimated, real)

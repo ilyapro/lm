@@ -1,205 +1,14 @@
 """Recall service combining scope, FTS5, embeddings, graph traversal, and feedback.
 
-The vector channel
-==================
+The vector channel pools the best matching chunk per node and applies a
+length correction proportional to the logarithm of the chunk count.
 
-A node's vector score is the **maximum cosine over its chunk vectors**, read as
-float32 BLOBs from ``node_chunk_embeddings`` (schema v6) and kept as a cached
-matrix per scope. The encoder is configured with ``max_seq_length = 128``, so a
-single whole-node vector only ever saw the node's first window; max-pooling
-over windows is what makes the rest of a node findable at all.
-
-Length bias, measured
----------------------
-
-Max over ``k`` draws is stochastically greater than one draw, so a node with
-more windows gets more attempts to match. That is a real effect and it was
-measured rather than assumed. Over all 12,862 active nodes of a snapshot of the
-live database and all 234 frozen goldset queries, scoring every node three ways
--- the legacy single vector, the re-encoded *first* chunk alone, and the
-max-pool -- isolates it from both selection and encoder drift:
-
-===========  =====  ==============================  =====================
-chunks (k)   nodes  max-pool minus first chunk      that gain / log2(k)
-===========  =====  ==============================  =====================
-1            4851   +0.000                          --
-2            1627   +0.027                          0.027
-3             980   +0.052                          0.033
-4             912   +0.065                          0.033
-6             737   +0.085                          0.033
-8             413   +0.095                          0.032
-12            165   +0.109                          0.030
-16            155   +0.130                          0.032
-===========  =====  ==============================  =====================
-
-The gain is not noise and it is not content: re-encoding the same first window
-moves every bucket by the same -0.005, while the extra-window gain is strictly
-monotone in ``k`` and almost exactly proportional to ``log2(k)``. A
-least-squares fit through the origin (a one-window node has no extra windows
-and must take no correction) gives **0.0313 of cosine per doubling**. Left
-uncorrected it moved real rankings: on a vector-only top-5 over the same fixed
-population, one-chunk nodes fell from 29.7% of slots to 15.0% while 16+-chunk
-nodes rose from 4.4% to 13.6%.
-
-So the correction is applied, at the coefficient the measurement produced --
-:data:`LENGTH_BIAS_LOG2_COEFFICIENT`. The frozen goldset then *checks* that
-coefficient rather than choosing it, and agrees. All three rows are full
-end-to-end harness runs over the same 234-query goldset and the same chunked
-snapshot, so the vector channel is the only difference between them:
-
-==========================  ======  ======  ======  ==============
-vector channel              hit@1   hit@5   MRR     hit@5 on tail
-==========================  ======  ======  ======  ==============
-single vector (baseline)    0.175   0.526   0.324   0.077
-max-pool, uncorrected       0.188   0.534   0.338   --
-max-pool, beta = 0.031      0.188   0.577   0.354   0.385
-==========================  ======  ======  ======  ==============
-
-The last column is the 26 goldset items whose answer lies past the node's first
-128 tokens -- the subset this whole change exists for. It goes from 0.077 to
-0.385 hit@5 (0.046 to 0.204 MRR), and no stratum regresses: content_grounded
-0.694 -> 0.719, role_query 0.222 -> 0.444, cross_lingual flat at 0.105 (that
-one is a jargon-vocabulary problem, not a window problem).
-
-A sensitivity sweep over the same goldset puts hit@5 at 0.573 for every beta in
-[0.015, 0.045] and back down to 0.543 at 0.060, so the fitted value sits inside
-a plateau rather than on a peak, and nothing was picked for scoring best -- the
-sweep's own argmax on MRR is beta = 0.015, which is not what ships.
-
-What the shift does to STRONG_VECTOR_MATCH
-------------------------------------------
-
-:data:`STRONG_VECTOR_MATCH` (0.65) is both the base-score override in
-``rank_candidates`` and the cross-scope admission bar, so a shift in the
-vector_score distribution moves how often either fires. Over every result the
-goldset run returned, the share at or above 0.65 goes:
-
-* baseline 30.1%, precision of those strong matches 0.284
-* max-pool uncorrected 40.0%, precision 0.204 -- a third more results claiming
-  "strong match", and materially less often right
-* max-pool corrected **18.3%**, precision 0.259
-
-The correction does not merely undo the inflation, it lands the distribution
-below where it started (median vector_score 0.553 -> 0.515): a long node now
-pays up to 0.12 for its windows, and long nodes were most of what sat above
-0.65. So 0.65 fires *less* often than the calibration it was chosen under, in
-the safe direction -- fewer overrides, fewer cross-scope admissions, and the
-precision of what still qualifies is back within noise of baseline. The
-relative gate (``CROSS_SCOPE_RELATIVE_VECTOR``) is scale-free and unaffected.
-The constant is therefore left alone: the goldset improves with it unchanged,
-and moving it would be a second untested intervention on top of this one.
-Retuning the channel blend for the new distribution is the separate downstream
-step (``weights-recalibration``); nothing here changes a weight or a floor.
-
-The graph channel's entry from query space
-==========================================
-
-BFS used to be seedable only from what BM25, the vector channel, or a schema
-trigger had already found, so the graph had no entry of its own from the space
-of *questions*: a query whose answer no other channel can reach never got a
-walk at all. :mod:`living_memory.query_anchors` supplies the missing entry --
-a remembered query, embedded by the same model as node content, carrying
-weighted edges to the nodes a grounded consumption of that query actually used.
-Matching "query <-> past query" and taking one hop finds a repeated situation
-that "query <-> node content" cannot: the operator's own jargon meets itself
-(«поревьювь EZ-13871» <-> «поревьювь EZ-12826» = 0.931) where the same query
-against the English content of the node it should find sits at 0.100-0.269.
-
-This is deliberately **not** a fifth channel. A matched anchor's targets enter
-``_collect_graph`` as seeds, are scored as graph activation, and are blended by
-the same learned per-scope ``graph`` weight as any other graph evidence -- so
-the weights keep meaning what they meant. Three things change and nothing else:
-
-* the graph guard runs when anchors produced seeds even with no other
-  candidate, which is precisely the blind spot;
-* an anchor's targets open a second walk with activation
-  ``anchor cosine x edge weight``, landing in ``_Candidate.anchor_score`` under
-  the same ``min(1.5, ...)`` cap as a BFS-discovered neighbour;
-* nothing else. With no anchors, or on a query class no anchor resembles, no
-  anchor walk runs, every ``anchor_score`` is 0.0, and the ranking is
-  byte-identical to the pre-anchor code.
-
-Anchors never demote what they seed
------------------------------------
-
-Extra evidence must not cost a candidate anything, and the first cut of the
-above broke that. ``rank_candidates`` floors the per-scope normalized graph
-weight at 0.25 (0.75 in causal mode) for any candidate with a graph activation,
-taking the deficit proportionally out of ``bm25`` and ``vector``. That floor
-predates anchors and is exactly what makes a graph-only candidate competitive
-against lexical ones -- it is not the defect and is not touched here. But an
-anchor is a *new* way for an already-strong lexical/vector candidate to acquire
-a **small** graph activation, and crossing that step function moved up to a
-quarter of the weight off the very evidence that was carrying it. Measured on
-the frozen 234-item goldset: of the results that gained a graph score from an
-anchor seed, 54 lost score against 18 that gained, median relative loss 8.1%;
-two fell out of the returned list entirely. The anchor demoted the node it was
-seeding (``result.md`` section 6).
-
-The fix is to keep the anchors-off score computable and never go below it:
-
-* ``_collect_graph`` runs the pre-anchor walk **first and alone**, before a
-  single anchor target has been admitted as a candidate. ``graph_score``
-  therefore still holds exactly what it would hold with anchors off -- an
-  anchor can neither displace one of its seeds nor perturb one of its numbers.
-* the anchor walk then runs separately into ``anchor_score``, and
-  ``combined_graph_score`` is what the ranker blends.
-* a candidate whose activation an anchor moved is scored **both** ways, through
-  one ``_blend_candidate_score``, and keeps the better result. The floor
-  applies identically in both, so the comparison is honest.
-
-An anchor-*only* candidate has no anchors-off score to fall back to, so it
-keeps the floored blend in full: the blind spot the floor was covering stays
-covered, which a plain "exempt anchor activations from the floor" would have
-closed again.
-
-Both factors of the activation live in [0, 1] and the product is a confidence,
-so an anchor seed lands in exactly the numeric range seeds already occupied
-(lexical coverage, a cosine) rather than inflating the channel. One grounded
-consumption is worth ``ANCHOR_EDGE_WEIGHT`` (0.25), so a link the operator's
-work has confirmed once seeds weakly and one confirmed four times seeds at full
-strength -- the calibration is the edge weight's, not a new constant here.
-
-Cost, measured
---------------
-
-``match_anchors`` is a full scan by design (a few thousand rows against the
-chunk corpus's 60k), and its own docstring measures that scan at ~12 ms cold
-and instructs read-path callers to cache the vectors and re-validate with
-``MemoryStore.query_anchor_revision``. That is what :class:`_AnchorVectorCache`
-below provides: policy stays in ``match_anchors``, while matrices, norms and
-scope row indices are reused per embedding width. Scope vectors are prepared
-only on first use within a revision. Each query selects
-its scopes in their original order; contiguous selections use matrix views,
-and disjoint selections use temporary gathers. The transactional SQLite
-revision covers anchor membership and vectors across all writers.
-Reinforcement of a live anchor never rewrites a stored vector, so it preserves
-the cache.
-
-End to end, on a snapshot of the live database (12,901 active nodes, 143,285
-connections, 60,636 chunk vectors) carrying 3,760 anchors and 10,716 edges
-built from real pre-cutoff consumptions, against real post-cutoff queries --
-``artifacts/anchors/latency.json``:
-
-============================  ==================  ==================
-stratum                       paired delta p50    anchor stage p50
-============================  ==================  ==================
-holdout, no anchor matched     -0.6 ms             0.8 ms
-holdout, anchor matched        +8.3 ms             2.9 ms
-repeated query (worst case)    +4.4 ms             1.1 ms
-============================  ==================  ==================
-
-against a budget of +5 ms p50. The middle and bottom rows are the feature doing
-work rather than overhead: a matched anchor opens a walk from seeds no other
-channel produced, so the BFS explores a neighbourhood that would not have been
-visited at all. That walk is a *second* one, separate from the pre-anchor walk
-so it cannot perturb it (see below); it is bounded by the same
-:data:`GRAPH_SEED_LIMIT` roots and the same depth, and it runs only when an
-anchor actually matched -- which the table's top row, the common case, shows
-costing nothing.
-
-With zero live anchors the probe short-circuits and no scan happens: cold start
-costs one indexed ``COUNT``.
+A query anchor links a remembered question to its grounded targets. Matching
+a new question against anchor vectors lets similar wording retrieve a shared
+procedure even when the procedure uses a different language. Matched targets
+seed a separate graph walk with activation equal to cosine times edge weight.
+The ranker keeps the better of the blends with and without anchor evidence for
+candidates reached independently. Anchor vectors are cached by store revision.
 """
 
 from __future__ import annotations
@@ -407,10 +216,7 @@ class _Candidate:
     trigger_score: float = 0.0
     trigger_coverage: float = 0.0
     path: tuple[str, ...] = ()
-    #: Activation this candidate owes to a matched query anchor, kept apart
-    #: from ``graph_score`` so the ranker can still see what the candidate was
-    #: worth before the anchor touched it. See "Anchors never demote what they
-    #: seed" in the module docstring.
+    #: Activation from the separate query-anchor walk.
     anchor_score: float = 0.0
     source_graph_score: float = 0.0
     lexical_score: float = 0.0
@@ -1184,21 +990,6 @@ class MemoryRecallService:
     ) -> None:
         """Score nodes by the best cosine among their chunk vectors.
 
-        A node's vector score is ``max`` over its chunks, not the mean and not
-        a single whole-node vector. The encoder only ever sees the first 128
-        tokens of whatever it is handed, so a single vector answers "does the
-        *opening* of this node match?"; the max over windows answers "does
-        *any part* of this node match?", which is the question recall is
-        actually asking. Mean would answer a third question nobody asked --
-        one relevant paragraph in a long node is a hit, not a 1/k-strength
-        hit -- and would make long nodes systematically unfindable.
-
-        Everything downstream is untouched: the pooled score goes into
-        ``_Candidate.vector_score`` exactly where the old single-vector cosine
-        went, and fusion, the STRONG_VECTOR_MATCH override and the cross-scope
-        gate read it the same way. What the shift in that score's distribution
-        does to those two thresholds is measured in the module notes above.
-
         The caller supplies the prepared query vector, also used by anchors.
         Pending repair precedes selection; scoring reads the current index.
         """
@@ -1622,20 +1413,9 @@ class MemoryRecallService:
     ) -> None:
         """Score graph discovery and retain its independent source contribution.
 
-        The first walk is the one that existed before anchors: it seeds from
-        the top pre-graph candidates and writes ``graph_score``. Nothing in it
-        reads an anchor, and it runs *before* any anchor target is admitted as
-        a candidate, so it computes the same numbers whether anchors are on or
-        off. That is what makes ``graph_score`` the anchors-off counterfactual
-        the ranker needs -- see "Anchors never demote what they seed" in the
-        module docstring.
-
-        The second walk is the anchors', seeded from the matched anchors'
-        targets and writing ``anchor_score``. Keeping the two apart is the
-        whole fix: merged into one seed block, an anchor target could displace
-        a real seed, and an anchor-derived activation was indistinguishable
-        from a traversed one, so the ranker had no way to tell what a
-        candidate had been worth before the anchor named it.
+        Ordinary candidate seeds contribute to ``graph_score``. A separate
+        walk from matched anchor targets contributes to ``anchor_score``,
+        so the ranker can also compute each candidate's anchors-off score.
 
         Source qualification seeds by current lexical/vector support and
         excludes history-derived relation weights. The same bounded walker
@@ -2419,11 +2199,7 @@ def _as_query_array(query_embedding: Sequence[float]) -> Any:
 #: tolerance itself, far below what any threshold in this module resolves.
 UNIT_NORM_TOLERANCE = 1e-6
 
-#: Cosine subtracted per doubling of a node's chunk count, cancelling the part
-#: of a max-pooled score that comes from having more windows rather than better
-#: ones. See ``Length bias`` in the module docstring for the derivation and the
-#: numbers; ``0.031`` is the least-squares fit of the measured gain, not a
-#: value tuned against the goldset.
+#: Cosine subtracted per doubling of a node's chunk count after max pooling.
 LENGTH_BIAS_LOG2_COEFFICIENT = 0.031
 
 

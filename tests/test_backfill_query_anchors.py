@@ -51,10 +51,10 @@ SCRIPT_PATH = REPO_ROOT / "scripts" / "backfill_query_anchors.py"
 
 SCOPE = "project:demo"
 
-#: Six distinct operator questions, each with independent grounded targets.
+#: Six distinct fixture questions, each with independent grounded targets.
 QUERIES = (
     "как перезапустить сервер living memory",
-    "поревьювь мердж реквест 9806",
+    "прошерсти чейнджсет 4207",
     "где лежит runbook по чанкам",
     "почему падает тест retrieval harness",
     "какие веса каналов сейчас",

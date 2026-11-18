@@ -31,11 +31,11 @@ _EXACT_IDENTIFIER_CASES = (
         id="component",
     ),
     pytest.param(
-        "EZ-13771",
-        "Ticket EZ-13771 owns the tooltip marker experiment rollout and screenshot checks.",
+        "LX-42017",
+        "Ticket LX-42017 owns the swatch catalog import and palette checks.",
         (
-            "Ticket EZ-13772 owns the tooltip marker experiment rollout and screenshot checks.",
-            "The tooltip marker experiment needs rollout screenshots and checks.",
+            "Ticket LX-42018 owns the swatch catalog import and palette checks.",
+            "The swatch catalog needs palette checks after import.",
         ),
         id="ticket-key",
     ),

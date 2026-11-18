@@ -49,9 +49,9 @@ FRESH_NODE_STAMP = "2026-03-01T00:00:00Z"
 
 #: The remembered situation. The eval queries below are (a) this string exactly
 #: and (b) a different string carrying this string's vector.
-ANCHOR_QUERY = "поревьювь мердж-реквест 9443 по чеклисту"
+ANCHOR_QUERY = "прошерсти чейнджсет 4208 по чеклисту"
 REPEAT_QUERY = ANCHOR_QUERY
-DISJOINT_QUERY = "глянь мердж-реквест 9443 по чеклисту"
+DISJOINT_QUERY = "глянь чейнджсет 4208 по чеклисту"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -125,7 +125,7 @@ def corpus(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
     fresh = store.create_node(
         level="trace",
         content=(
-            "мердж-реквест 9443 по чеклисту: свежий разбор, миграция чексуммы "
+            "чейнджсет 4208 по чеклисту: свежий разбор, миграция чексуммы "
             "zr9042 откатывается перед мержем"
         ),
         context={"scope": SCOPE},
@@ -149,7 +149,7 @@ def corpus(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
     #     the vector match still fires -- one past query bridging to another.
     disjoint = qa.upsert_anchor(
         store,
-        "мердж-реквест 9443 чеклист ревью",
+        "чейнджсет 4208 чеклист ревью",
         SCOPE,
         embedder.embed(DISJOINT_QUERY),
         old_ids,

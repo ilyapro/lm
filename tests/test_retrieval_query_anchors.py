@@ -55,23 +55,23 @@ NEIGHBOUR_NODE = (
 #: unrelated subjects, each outscoring the English target — which is why the
 #: target sits outside the top 5 without an anchor.
 DECOYS = (
-    "Мердж-реквест 9443 закрыт без ревью: ветка удалена вместе с историей",
-    "Реквест на доступ к стенду 9806 отправлен администратору кластера",
+    "Чейнджсет 4208 закрыт без ревью: ветка удалена вместе с историей",
+    "Реквест на доступ к стенду 4207 отправлен администратору кластера",
     "Глянь логи ночного прогона: упал тест мультиязычного поиска",
     "Посмотри отчёт по нагрузке: очередь реквестов выросла втрое",
     "Ревью дизайна интерфейса перенесено на следующую неделю",
     "Мердж ветки релиза заблокирован конфликтом в файле миграции",
-    "Реквест 9443 в трекере переведён в статус ожидания",
+    "Реквест 4208 в трекере переведён в статус ожидания",
 )
 
 #: Distinct queries: both the verb and ticket number differ.
-JARGON_QUERY = "посмотри мердж-реквест 9806"
-ANCHOR_QUERY = "глянь мердж-реквест 9443"
+JARGON_QUERY = "посмотри чейнджсет 4207"
+ANCHOR_QUERY = "глянь чейнджсет 4208"
 
 #: This pair must stay below VECTOR_MATCH_THRESHOLD against the target's
 #: content, so the anchor is the only channel that can admit it as a candidate.
-INVISIBLE_QUERY = "поревьювь мердж-реквест 9806"
-INVISIBLE_ANCHOR = "поревьювь мердж-реквест 9443"
+INVISIBLE_QUERY = "прошерсти чейнджсет 4207"
+INVISIBLE_ANCHOR = "прошерсти чейнджсет 4208"
 
 #: Queries and modes the cold-start comparison sweeps. Each reaches a different
 #: combination of channels; ``causal`` and ``decision`` are here because they
@@ -364,17 +364,16 @@ with tempfile.TemporaryDirectory(prefix="lm-anchor-scan-") as directory:
         counts = {}
         recall(svc, "deployment restart after schema migration")
         counts["empty_corpus"] = counter["scans"]
-        # The anchor *write* path runs a scan of its own for cosine dedup, so
-        # the counter is reset around each recall.
+        # Count scans during recall independently of writes.
         anchor(store, ANCHOR_Q, [nodes["review"]])
         counter["scans"] = 0
         recall(svc, JARGON)
         counts["first_recall"] = counter["scans"]
         recall(svc, JARGON)
         counts["second_recall"] = counter["scans"]
-        anchor(store, "поревьювь реквест EZ-13871", [nodes["deploy"]])
+        anchor(store, "сверь патч LX-42017", [nodes["deploy"]])
         counter["scans"] = 0
-        revived = recall(svc, "поревьювь реквест EZ-12826")
+        revived = recall(svc, "сверь патч LX-42018")
         counts["after_new_anchor"] = counter["scans"]
         counts["new_anchor_target_found"] = nodes["deploy"] in ids(revived)
         del store.iter_query_anchor_vectors
@@ -588,9 +587,7 @@ def probe() -> dict[str, Any]:
     measured = run_probe()
     if not measured.get("model_available"):
         pytest.skip(
-            "sentence-transformers model is not in the local cache; these tests measure "
-            "what the encoder does to the operator's jargon and are meaningless against "
-            "the hash fallback"
+            "encoder similarity tests require the cached sentence-transformers model"
         )
     return measured
 

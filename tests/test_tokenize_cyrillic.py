@@ -98,7 +98,7 @@ _IDENTIFIER_CASES = [
     ("HTTPServerError", ["httpserver", "failure"]),
     ("recall_map_builder", ["recall", "map", "builder"]),
     ("snake_case_name_v2", ["snake", "case", "name", "v2"]),
-    ("EZ-13771", ["ez"]),
+    ("LX-42017", ["lx"]),
     ("06f6422abc", ["06f6422abc"]),
     ("a1b2c3d4e5f6a7b8", ["a1b2c3d4e5f6a7b8"]),
     ("node-01M1WBR5", ["node", "01m1wbr5"]),

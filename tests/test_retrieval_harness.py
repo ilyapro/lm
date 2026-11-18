@@ -278,7 +278,7 @@ def corpus(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
             {
                 "cross_lingual": [
                     {
-                        "jargon_query": "поревьювь мердж-реквест",
+                        "jargon_query": "прошерсти чейнджсет",
                         "paraphrase_query": "review merge request approve",
                         "scope": SCOPE,
                         "depth": 1,
@@ -988,7 +988,7 @@ def test_token_spans_reproduce_tokenize_exactly() -> None:
 
     samples = [
         "fooBar baz-qux alembic_migration ZR9042",
-        "ColorDock/swatches.palette поревьювь МёрджReq",
+        "ColorDock/swatches.palette прошерсти ОбразецRGB",
         "plain english sentence with nothing special",
         TAIL_NODE_CONTENT,
     ]
@@ -1130,7 +1130,7 @@ def test_build_goldset_produces_a_valid_three_stratum_goldset(
         assert item.provenance["label"]["min_containment"] == config.min_containment
 
     cross = next(item for item in reloaded if item.stratum == "cross_lingual")
-    assert cross.query == "поревьювь мердж-реквест"
+    assert cross.query == "прошерсти чейнджсет"
     assert cross.provenance["paraphrase_query"] == "review merge request approve"
     assert cross.provenance["resolution"] == "paraphrase_top_k"
     assert len(cross.provenance["paraphrase_top_k"]) == len(cross.relevant_node_ids)

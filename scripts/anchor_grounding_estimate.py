@@ -103,9 +103,7 @@ DEDUP_THRESHOLDS = (0.80, 0.85, 0.90, 0.92, 0.95, 0.97, 0.99)
 #: Similarity bands sampled for human inspection of the dedup decision.
 EXAMPLE_BANDS = ((0.99, 1.01), (0.97, 0.99), (0.95, 0.97), (0.90, 0.95), (0.85, 0.90))
 
-#: A token carrying a digit is an identifier (EZ-13871, 9806, NW-7). Two queries
-#: that differ only in one are the same *class* of situation, not the same
-#: situation — merging them under a dedup threshold loses the ticket.
+#: Digit-bearing tokens distinguish concrete entities in otherwise similar queries.
 IDENTIFIER_TOKEN = re.compile(r"[0-9]")
 
 CYRILLIC = re.compile(r"[Ѐ-ӿ]")
@@ -509,12 +507,8 @@ def near_duplicate_similarity(
 ) -> dict[str, Any]:
     """Cosine between every pair of anchor queries that share a scope.
 
-    Anchors never cross scope, so only same-scope pairs can ever be merged.
-    Reports the distribution, the collapse curve at candidate thresholds under
-    the *transitive* merge a similarity-upsert store actually performs, and how
-    many merged pairs carry different identifiers — the failure mode that
-    matters, because "поревьювь EZ-13871" and "поревьювь EZ-12826" are the same
-    class of situation and different tickets.
+    Report the similarity distribution, cluster sizes under transitive merging
+    at each threshold, and how often qualifying pairs have different identifiers.
     """
 
     import numpy as np
