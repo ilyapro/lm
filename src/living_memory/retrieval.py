@@ -17,7 +17,7 @@ import json
 import logging
 import os
 import re
-from collections import OrderedDict, deque
+from collections import Counter, OrderedDict, defaultdict, deque
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
@@ -43,7 +43,7 @@ from living_memory.feedback import (
     feedback_weighted_score,
 )
 from living_memory.hubs import hub_demotions
-from living_memory.irrelevance import query_demotions
+from living_memory.irrelevance import has_active_irrelevance, query_demotions, query_irrelevance_factor
 from living_memory.models import (
     REJECTED_ALTERNATIVE_KIND,
     Connection,
@@ -58,6 +58,7 @@ from living_memory.query_anchors import (
     AnchorMatch,
     _PreparedAnchorVectors,
     _prepare_anchor_vectors,
+    _rank_anchors,
     match_anchors,
 )
 from living_memory.schema_dedup import collapse_schema_duplicates
@@ -328,6 +329,29 @@ class _ChunkGatherPlan:
         return replace(self.template, rows=rows)
 
 
+class _AnchorTextIndex:
+    """Nominate foreign-space questions by shared terms, across vector widths."""
+
+    def __init__(self, rows: Iterable[tuple[str, str]]):
+        self.rows: list[tuple[str, str, int]] = []
+        self.postings: dict[str, list[int]] = defaultdict(list)
+        for index, (anchor_id, text) in enumerate(rows):
+            # Include exact text for identifiers, punctuation and stopword-only queries.
+            terms = set(tokenize(text, evidence=True))
+            self.rows.append((anchor_id, text, len(terms)))
+            for term in terms | {"=" + " ".join(text.split())}:
+                self.postings[term].append(index)
+
+    def nearest(self, query: str, limit: int) -> list[str]:
+        terms = set(tokenize(query, evidence=True))
+        exact = self.postings.get("=" + " ".join(query.split()), ())
+        overlap = Counter(index for term in terms for index in self.postings.get(term, ()))
+        # Exact text precedes lexical overlap. Both only nominate rows for encoding.
+        scores = {i: n / (len(terms) + self.rows[i][2]) for i, n in overlap.items()}
+        scores.update((i, 1.0) for i in exact)
+        return [self.rows[i][0] for i in sorted(scores, key=lambda i: (-scores[i], self.rows[i][0]))[:limit]]
+
+
 @dataclass(frozen=True, slots=True)
 class _AnchorVectorCache:
     """One revision's prepared rows, grown lazily by query width and scope.
@@ -341,19 +365,23 @@ class _AnchorVectorCache:
 
     revision: int
     store: MemoryStore
-    by_width: dict[int, _PreparedAnchorVectors]
+    by_width: dict[int | tuple, _PreparedAnchorVectors]
     has_anchors: bool
-    layouts: dict[int, list[tuple[str, str]]] = field(default_factory=dict)
-    pending: dict[int, set[str]] = field(default_factory=dict)
+    layouts: dict[int | tuple, list[tuple[str, str]]] = field(default_factory=dict)
+    pending: dict[int | tuple, set[str]] = field(default_factory=dict)
+
+    text_indexes: dict[tuple[str, tuple[str, ...] | None], _AnchorTextIndex] = field(default_factory=dict)
 
     def query_anchor_corpus(
-        self, width: int, scopes: Sequence[str] | None = None,
+        self, width: int, scopes: Sequence[str] | None = None, *, space: tuple[str, bool] | None = None,
     ) -> _PreparedAnchorVectors:
-        corpus = self.by_width.get(width)
+        key = width if space is None else (width, space)
+        partition = {"space": space} if space is not None else {}
+        corpus = self.by_width.get(key)
         requested = None if scopes is None else set(map(normalize_scope, scopes))
         if corpus is not None and (
-            not self.pending[width] if requested is None else
-            not requested.intersection(self.pending[width])
+            not self.pending[key] if requested is None else
+            not requested.intersection(self.pending[key])
         ):
             return corpus
 
@@ -363,23 +391,23 @@ class _AnchorVectorCache:
             # even if another writer committed after the source was selected.
             if not cacheable or self.store.query_anchor_revision() != self.revision:
                 return _prepare_anchor_vectors(
-                    self.store.iter_query_anchor_vectors(scopes, dimensions=width),
+                    self.store.iter_query_anchor_vectors(scopes, dimensions=width, **partition),
                     width, index_scopes=True,
                 )
-            if width not in self.layouts:
-                self.layouts[width] = self.store.query_anchor_vector_layout(width)
-                self.pending[width] = {scope for _anchor_id, scope in self.layouts[width]}
+            if key not in self.layouts:
+                self.layouts[key] = self.store.query_anchor_vector_layout(width, **partition)
+                self.pending[key] = {scope for _anchor_id, scope in self.layouts[key]}
             if corpus is None:
                 corpus = _PreparedAnchorVectors((), (), (), ())
-            missing = self.pending[width] if requested is None else requested & self.pending[width]
+            missing = self.pending[key] if requested is None else requested & self.pending[key]
             if missing:
                 prepared = _prepare_anchor_vectors(
-                    self.store.iter_query_anchor_vectors(sorted(missing), dimensions=width),
+                    self.store.iter_query_anchor_vectors(sorted(missing), dimensions=width, **partition),
                     width, index_scopes=True,
                 )
-                corpus = corpus.extend(prepared, self.layouts[width])
-                self.pending[width].difference_update(missing)
-            self.by_width[width] = corpus
+                corpus = corpus.extend(prepared, self.layouts[key])
+                self.pending[key].difference_update(missing)
+            self.by_width[key] = corpus
         return corpus
 
     def __getattr__(self, name: str) -> Any:
@@ -393,6 +421,7 @@ class _PreparedQuery:
     text: str
     embedding: tuple[float, ...]
     encoder_id: str | None = None
+    historical_scores: Mapping[str, tuple[str, float]] | None = None
 
 
 class MemoryRecallService:
@@ -432,6 +461,7 @@ class MemoryRecallService:
         self._chunk_index: dict[str, _ScopeChunkIndex] = {}
         self._chunk_gathers: dict[int, _ChunkGatherPlan] = {}
         self._anchor_vectors: _AnchorVectorCache | None = None
+        self._anchor_encodings: OrderedDict[tuple[str, str], Sequence[float]] = OrderedDict()
         self._store_embedder_shared = False
         self._unavailable_legacy_chunks: set[str] = set()
         self._pending_chunk_positions: OrderedDict[
@@ -447,6 +477,70 @@ class MemoryRecallService:
         vector = self.embedder.embed(query) if query else ()
         encoder_id = vector.encoder_id if isinstance(vector, EncodedVector) else None
         return _PreparedQuery(query, tuple(vector), encoder_id)
+
+    def prepare_anchor_history(
+        self, query: _PreparedQuery, *, scope: str | None, ambient_context: dict[str, Any] | None,
+        depth: int | str | None = 1, guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
+    ) -> _PreparedQuery:
+        """Re-score a bounded set of historical questions before response selection."""
+        encoder = query.encoder_id
+        if not encoder or not query.embedding or query.historical_scores is not None:
+            return query
+        with guard():
+            if not (self.anchor_seeding and _parse_depth(depth, query.text)[0] > 0) and not (
+                _explicit_feedback_policy() == "credit" and query_irrelevance_factor() < 1
+                and has_active_irrelevance(self.store)
+            ):
+                return replace(query, historical_scores={})
+            source = self._anchor_vector_source()
+            if source is None:
+                return replace(query, historical_scores={})
+            plan = self.scope_resolver.resolve(scope=scope, ambient_context=ambient_context, store=self.store)
+            scopes = plan.scopes if plan.restricted else None
+            key = (encoder, scopes)
+            cached = isinstance(source, _AnchorVectorCache)
+            index = source.text_indexes.get(key) if cached else None
+            if index is None:
+                index = _AnchorTextIndex(self.store.iter_foreign_anchor_queries(encoder, scopes))
+                if cached:
+                    # Retain one plan; broad and narrow indexes can overlap.
+                    source.text_indexes.clear()
+                    source.text_indexes[key] = index
+            if not index.rows:
+                return replace(query, historical_scores={})
+            candidates = index.nearest(query.text, ANCHOR_MATCH_LIMIT)
+            nominations = _rank_anchors(
+                source, query.embedding, scopes, min_similarity=ANCHOR_MATCH_COSINE_THRESHOLD,
+                limit=ANCHOR_MATCH_LIMIT, space=(encoder, False),
+            )
+            candidates.extend(key for key, _score in nominations)
+            texts = {}
+            for anchor_id in dict.fromkeys(candidates):
+                anchor = self.store.get_query_anchor(anchor_id)
+                if anchor and not anchor.decayed and plan.allows(anchor.scope) and anchor.encoder_id != encoder:
+                    texts[anchor_id] = anchor.query
+            vectors = {}
+            for text in dict.fromkeys(texts.values()):
+                if text == query.text:
+                    vectors[text] = query.embedding
+                elif (encoder, text) in self._anchor_encodings:
+                    vectors[text] = self._anchor_encodings[encoder, text]
+                    self._anchor_encodings.move_to_end((encoder, text))
+        missing = [text for text in dict.fromkeys(texts.values()) if text not in vectors]
+        if missing:
+            batch = getattr(self.embedder, "embed_batch", None)
+            fresh = batch(missing) if batch else [self.embedder.embed(text) for text in missing]
+            with guard():
+                for text, vector in zip(missing, fresh, strict=True):
+                    if (isinstance(vector, EncodedVector) and vector.encoder_id == encoder
+                            and len(vector) == len(query.embedding)):
+                        vectors[text] = vector
+                        self._anchor_encodings[encoder, text] = vector
+                while len(self._anchor_encodings) > 256:
+                    self._anchor_encodings.popitem(last=False)
+        scores = {key: (text, cosine_similarity(query.embedding, vectors[text]))
+                  for key, text in texts.items() if text in vectors}
+        return replace(query, historical_scores=scores)
 
     def memory_recall(
         self,
@@ -499,6 +593,7 @@ class MemoryRecallService:
             return
 
         prepared = query if isinstance(query, _PreparedQuery) else self.prepare_query(query)
+        prepared = self.prepare_anchor_history(prepared, scope=scope, ambient_context=ambient_context, depth=depth)
         query = prepared.text
         if not query:
             yield []
@@ -535,7 +630,8 @@ class MemoryRecallService:
         # nothing for a seed to open. Vector scoring and anchor matching
         # reuse the same prepared query embedding.
         anchor_matches = (
-            self._match_query_anchors(plan, query_embedding)
+            self._match_query_anchors(plan, query_embedding, encoder_id=prepared.encoder_id,
+                                      historical_scores=prepared.historical_scores)
             if graph_depth > 0 and self.anchor_seeding else None
         )
         anchor_seeds = (
@@ -558,7 +654,8 @@ class MemoryRecallService:
             candidate.lexical_score = _lexical_support(query_terms, candidate.node.content)
 
         demotions = _merge_demotions(
-            self._collect_query_demotions(plan, query_embedding, matches=anchor_matches),
+            self._collect_query_demotions(plan, query_embedding, matches=anchor_matches, encoder_id=prepared.encoder_id,
+                                          historical_scores=prepared.historical_scores),
             self._collect_hub_demotions(),
         )
         supersedes = supersedes_sets(self.store, candidates)
@@ -1192,7 +1289,8 @@ class MemoryRecallService:
     # ------------------------------------------------------------------
 
     def _match_query_anchors(
-        self, plan: ScopePlan, query_embedding: Sequence[float]
+        self, plan: ScopePlan, query_embedding: Sequence[float], *, encoder_id: str | None = None,
+        historical_scores: Mapping[str, tuple[str, float]] | None = None,
     ) -> list[AnchorMatch]:
         """Observe matches and graph targets for this recall only."""
 
@@ -1207,6 +1305,7 @@ class MemoryRecallService:
             plan,
             limit=ANCHOR_MATCH_LIMIT,
             min_similarity=ANCHOR_MATCH_COSINE_THRESHOLD,
+            encoder_id=encoder_id, historical_scores=historical_scores,
         )
 
     def _collect_anchor_seeds(
@@ -1262,7 +1361,8 @@ class MemoryRecallService:
 
     def _collect_query_demotions(
         self, plan: ScopePlan, query_embedding: Sequence[float],
-        *, matches: list[AnchorMatch] | None = None,
+        *, matches: list[AnchorMatch] | None = None, encoder_id: str | None = None,
+        historical_scores: Mapping[str, tuple[str, float]] | None = None,
     ) -> dict[str, float]:
         """Query-relative irrelevance multipliers for this recall. Never raises.
 
@@ -1286,7 +1386,7 @@ class MemoryRecallService:
             source = self._anchor_vector_source()
             if source is None:
                 return {}
-            return query_demotions(source, query_embedding, plan)
+            return query_demotions(source, query_embedding, plan, encoder_id=encoder_id, historical_scores=historical_scores)
         except Exception:  # pragma: no cover - derived signal, never fatal
             return {}
 

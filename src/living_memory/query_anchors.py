@@ -21,6 +21,7 @@ from heapq import nsmallest
 from typing import Any, NamedTuple, Protocol
 import math
 
+from living_memory.embeddings import EncodedVector
 from living_memory.models import Connection, ConnectionType, Node
 from living_memory.scope import ScopePlan, normalize_scope
 from living_memory.storage import (
@@ -268,15 +269,14 @@ def match_anchors(
     *,
     min_similarity: float = ANCHOR_MATCH_COSINE_THRESHOLD,
     include_targets: bool = True,
+    encoder_id: str | None = None,
+    historical_scores: Mapping[str, tuple[str, float]] | None = None,
 ) -> list[AnchorMatch]:
     """Match a query vector against the live anchors of the planned scopes.
 
-    A full scan, not an index: an anchor corpus is one row per distinct
-    remembered question — a few thousand — against tens of thousands of node
-    chunks, so the whole thing is one small matmul. Vectors are compared only
-    against anchors of the *same* recorded width; differing widths are points in
-    different spaces (a corpus caught mid-re-embed, a fixture with 3-d vectors)
-    and are skipped rather than silently truncated to a common prefix.
+    Stored cosines use the prepared query's encoder and width. Historical
+    candidates may contribute a fresh score for their observed source text.
+    Untagged vector callers share the legacy untagged partition only.
 
     Read-path callers cache the prepared matrix and re-validate it with
     :meth:`MemoryStore.query_anchor_revision`, a transactional SQLite counter
@@ -299,16 +299,31 @@ def match_anchors(
     if scopes is not None and not scopes:
         return []
 
+    if isinstance(query_embedding, EncodedVector):
+        encoder_id = query_embedding.encoder_id
+    space = (encoder_id, True) if encoder_id is not None else None
     ranked = _rank_anchors(
-        store, vector, scopes, min_similarity=min_similarity, limit=limit
+        store, vector, scopes, min_similarity=min_similarity, limit=limit, space=space,
     )
+    candidates = [(key, score, None) for key, score in ranked]
+    if historical_scores:
+        candidates.extend(
+            (key, score, text) for key, (text, score) in historical_scores.items()
+            if score >= min_similarity
+        )
+        candidates.sort(key=lambda item: (-item[1], item[0]))
 
     matches: list[AnchorMatch] = []
-    for anchor_id, similarity in ranked:
+    for anchor_id, similarity, historical_text in candidates:
         anchor = store.get_query_anchor(anchor_id)
         if anchor is None or anchor.decayed:
             continue
         if scopes is not None and anchor.scope not in scopes:
+            continue
+        if historical_text is None:
+            if anchor.encoder_id != encoder_id:
+                continue
+        elif anchor.query != historical_text or anchor.encoder_id == encoder_id:
             continue
         targets: tuple[tuple[str, float], ...] = ()
         if include_targets:
@@ -331,6 +346,7 @@ def _rank_anchors(
     *,
     min_similarity: float,
     limit: int,
+    space: tuple[str, bool] | None = None,
 ) -> list[tuple[str, float]]:
     """Top ``limit`` live anchors at or above ``min_similarity``, best first.
 
@@ -352,13 +368,14 @@ def _rank_anchors(
         return []
 
     prepared = getattr(store, "query_anchor_corpus", None)
+    partition = {"space": space} if space is not None else {}
     if prepared is None:
         corpus = _prepare_anchor_vectors(
-            store.iter_query_anchor_vectors(scopes, dimensions=len(vector)), len(vector),
+            store.iter_query_anchor_vectors(scopes, dimensions=len(vector), **partition), len(vector),
         )
         indices = slice(None)
     else:
-        corpus = prepared(len(vector), scopes)
+        corpus = prepared(len(vector), scopes, **partition)
         if corpus is None:
             return []
         indices = corpus.select(scopes)

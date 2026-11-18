@@ -319,6 +319,8 @@ def query_demotions(
     min_similarity: float = ANCHOR_MATCH_COSINE_THRESHOLD,
     limit: int = ANCHOR_MATCH_LIMIT,
     matches: Sequence[AnchorMatch] | None = None,
+    encoder_id: str | None = None,
+    historical_scores: Mapping[str, tuple[str, float]] | None = None,
 ) -> dict[str, float]:
     """``{node_id: multiplier}`` for the incoming query; ``{}`` when none apply.
 
@@ -341,7 +343,7 @@ def query_demotions(
             scope_plan,
             limit=limit,
             min_similarity=min_similarity,
-            include_targets=False,
+            include_targets=False, encoder_id=encoder_id, historical_scores=historical_scores,
         )
     if not matches:
         return {}

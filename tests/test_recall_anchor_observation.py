@@ -21,7 +21,8 @@ class IndependentMatches(MemoryRecallService):
     """Control: each consumer matches independently against identical inputs."""
 
     def _collect_query_demotions(self, plan, query_embedding, **kwargs):
-        return super()._collect_query_demotions(plan, query_embedding)
+        kwargs.pop("matches", None)
+        return super()._collect_query_demotions(plan, query_embedding, **kwargs)
 
 
 @pytest.fixture(autouse=True)
@@ -48,7 +49,7 @@ def populate(store):
     for index in range(7):
         name = f"anchor-{index}"
         store.insert_query_anchor(scope="project:demo", query=name, fingerprint=name,
-                                  anchor_id=name, embedding=[1.0, max(0, index - 1) * 0.1])
+                                  anchor_id=name, embedding=fixture_vector([1.0, max(0, index - 1) * 0.1]))
         for target in ("semantic", "anchor-only", "stale", "outside", "decayed"):
             store.upsert_query_anchor_edge(name, target, weight=0.5 + index * 0.05)
     for name, scope, vector in (
@@ -57,7 +58,7 @@ def populate(store):
         ("zero", "project:demo", [0.0, 0.0]),
     ):
         store.insert_query_anchor(scope=scope, query=name, fingerprint=name,
-                                  anchor_id=name, embedding=vector)
+                                  anchor_id=name, embedding=fixture_vector(vector))
     store.create_connection("correction", "stale", "supersedes")
     with store.connection:
         store.connection.execute(QUERY_IRRELEVANCE_SCHEMA_SQL)
@@ -113,8 +114,8 @@ def test_shared_and_independent_observations_agree(tmp_path, monkeypatch, numpy,
         assert independent["_rank_anchors"] == (2 if graph else 1)
         assert counts["get_query_anchor"] * (2 if graph else 1) == independent["get_query_anchor"]
         # Cold preparation rechecks the revision inside its vector-read snapshot.
-        assert counts["query_anchor_revision"] == 2
-        assert independent["query_anchor_revision"] == (3 if graph else 2)
+        assert counts["query_anchor_revision"] == 3
+        assert independent["query_anchor_revision"] == (4 if graph else 3)
         assert counts["list_query_anchor_edges"] == independent["list_query_anchor_edges"]
         assert bool(counts["list_query_anchor_edges"]) == graph
         ids = [row["node"]["id"] for rows in expected for row in rows]

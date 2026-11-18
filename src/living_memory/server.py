@@ -1324,6 +1324,9 @@ def _register_tools(
             recall_service.refresh_pending_chunks(
                 query=prepared_query, scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
             )
+        prepared_query = recall_service.prepare_anchor_history(
+            prepared_query, scope=scope, ambient_context=ambient_context, depth=depth, guard=lambda: runtime_lock,
+        )
         with prepared_feedback(
             store, guard=lambda: runtime_lock, used=used, irrelevant=irrelevant,
             transport_session_id=transport_session_id,
@@ -1805,6 +1808,9 @@ def _register_prompts(
             recall_service.refresh_pending_chunks(
                 query=prepared_query, scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
             )
+        prepared_query = recall_service.prepare_anchor_history(
+            prepared_query, scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
+        )
         with runtime_lock:
             return retrieval_context_prompt(
                 store,

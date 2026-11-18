@@ -154,11 +154,11 @@ def test_bookkeeping_and_chunk_writes_preserve_anchor_cache(stores, monkeypatch)
     with writer.connection:
         writer.connection.execute(
             "UPDATE query_anchors SET id=id, scope=scope, dimensions=dimensions, "
-            "embedding=embedding, decayed=decayed, query='current wording', updated_at='t'"
+            "embedding=embedding, decayed=decayed, query=query, updated_at='t'"
         )
     for _ in range(3):
         result = matches(warm, [1.0, 0.0])
-        assert result[0].anchor.query == "current wording"
+        assert result[0].anchor.query == "a"
         assert result[0].anchor.reinforcement_count == 1
         assert result[0].targets == ((node.id, 0.5),)
         assert warm._anchor_vectors is cached
