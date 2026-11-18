@@ -366,6 +366,30 @@ def test_empty_scoped_plan_notices_pending_source(mcp, mutation):
         assert store.node_chunks_are_current(node.id)
 
 
+def test_empty_plan_is_specific_to_requested_encoder(mcp):
+    store = mcp.memory_store
+    service = MemoryRecallService(store)
+    node = store.create_node(level="concept", content=CONTENT, embedding=[1.0, 0.0])
+    service.refresh_pending_chunks()
+    encoder = service.embedder.encoder_id()
+    assert store.node_chunks_are_current(node.id)
+    assert not store.node_chunks_are_current(node.id, encoder_id=encoder)
+    service.refresh_pending_chunks(encoder_id=encoder)
+    assert store.node_chunks_are_current(node.id, encoder_id=encoder)
+
+
+def test_old_revision_format_keeps_discovering_chunkless_inserts(mcp):
+    store = mcp.memory_store
+    service = MemoryRecallService(store)
+    with store.transaction():
+        store.connection.execute("DROP TRIGGER chunk_corpus_node_insert")
+        store.connection.execute("UPDATE metadata SET value='3' WHERE key='chunk_scope_revision_format'")
+    service.refresh_pending_chunks()
+    node = store.append_trace(CONTENT)
+    service.refresh_pending_chunks()
+    assert store.node_chunks_are_current(node.id)
+
+
 def test_writer_commit_between_revision_and_scan_is_visible_next_call(mcp, monkeypatch):
     store = mcp.memory_store
     service = MemoryRecallService(store)
