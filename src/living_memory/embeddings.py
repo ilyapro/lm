@@ -898,21 +898,30 @@ def tokenize(text: str, *, evidence: bool = False) -> list[str]:
     Cyrillic policy; text bodies and output lists are never cached.
     """
 
+    return list(_canonical_tokens(_raw_tokens(text), evidence=evidence))
+
+
+def distinct_evidence_tokens(text: str) -> set[str]:
+    """Canonical evidence terms, processing each distinct surface form once."""
+    return set(_canonical_tokens(set(_raw_tokens(text)), evidence=True))
+
+
+def _raw_tokens(text: str) -> list[str]:
     separated = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)
     separated = separated.replace("_", " ").replace("-", " ").replace("/", " ").replace(".", " ")
     normalized = separated.lower().replace("ё", "е")
-    raw_tokens = _TOKEN_RE.findall(normalized)
+    return _TOKEN_RE.findall(normalized)
 
+
+def _canonical_tokens(raw_tokens: Iterable[str], *, evidence: bool) -> Iterator[str]:
     stop_words = _EVIDENCE_STOP_WORDS if evidence else _STOP_WORDS
-    tokens: list[str] = []
     for raw_token in raw_tokens:
         token = raw_token.strip("_")
         if not token or (token.isdigit() and not evidence) or token in stop_words:
             continue
         canonical = _canonical_token(token)
         if canonical and canonical not in stop_words:
-            tokens.append(canonical)
-    return tokens
+            yield canonical
 
 
 def repair_search_terms(query: str) -> str:

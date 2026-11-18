@@ -64,6 +64,27 @@ def test_separate_source_and_task_match_concatenated_coverage(
         embeddings.reset_cyrillic_stem_cache()
 
 
+@pytest.mark.parametrize("stemming", ["on", "off"])
+def test_lexical_terms_canonicalize_distinct_surface_forms(monkeypatch, stemming):
+    text = "HTTP_429 HTTP_429 миграциями МИГРАЦИЯМИ cache/caching Straße Straße the"
+    monkeypatch.setenv("LM_TOKENIZE_CYRILLIC_STEM", stemming)
+    embeddings.reset_cyrillic_stem_cache()
+    try:
+        expected = set(embeddings.tokenize(text, evidence=True)) | {"http_429", "cache/caching"}
+        calls = []
+        canonical = embeddings._canonical_token
+
+        def counted(token):
+            calls.append(token)
+            return canonical(token)
+
+        monkeypatch.setattr(embeddings, "_canonical_token", counted)
+        assert retrieval._lexical_terms(text) == expected
+        assert len(calls) == len(set(calls))
+    finally:
+        embeddings.reset_cyrillic_stem_cache()
+
+
 def test_recall_prepares_each_body_once_and_reads_fresh_source(tmp_path, monkeypatch):
     monkeypatch.setenv("LIVING_MEMORY_CHUNK_TOKENIZER", "regex")
     monkeypatch.delenv("LM_RECALL_SCHEMA_TRIGGER", raising=False)
@@ -88,14 +109,13 @@ def test_recall_prepares_each_body_once_and_reads_fresh_source(tmp_path, monkeyp
         store.create_connection("content", "graph", "requires")
         service = retrieval.MemoryRecallService(store, embedder=encoder, anchor_seeding=False)
         calls = Counter()
-        tokenize = retrieval.tokenize
+        terms = retrieval._lexical_terms
 
-        def count(text, **kwargs):
-            if kwargs.get("evidence"):
-                calls[text] += 1
-            return tokenize(text, **kwargs)
+        def count(text):
+            calls[text] += 1
+            return terms(text)
 
-        monkeypatch.setattr(retrieval, "tokenize", count)
+        monkeypatch.setattr(retrieval, "_lexical_terms", count)
 
         def recall():
             calls.clear()

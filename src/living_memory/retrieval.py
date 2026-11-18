@@ -34,6 +34,7 @@ from living_memory.embeddings import (
     LocalEmbeddingModel,
     cosine_similarity,
     cyrillic_prefix_terms,
+    distinct_evidence_tokens,
     repair_search_terms,
     tokenize,
 )
@@ -2098,9 +2099,9 @@ def _lexical_terms(text: str) -> set[str]:
     terms still admit partial matches and retain synonym/stem support.
     """
 
-    return set(tokenize(text, evidence=True)) | {
-        identifier.casefold() for identifier in _LEXICAL_IDENTIFIER_RE.findall(text)
-    }
+    terms = distinct_evidence_tokens(text)
+    terms.update(identifier.casefold() for identifier in _LEXICAL_IDENTIFIER_RE.findall(text))
+    return terms
 
 
 def _lexical_support(query_terms: set[str], content: str) -> float:
