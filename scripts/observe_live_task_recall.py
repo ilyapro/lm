@@ -100,10 +100,9 @@ def _validated_identity(
 ) -> tuple[str, str]:
     identity = health.get("code_identity") or {}
     boot_id = health.get("boot_id")
-    digest = identity.get("digest")
     if not health.get("ok") or not isinstance(boot_id, str) or not boot_id:
         raise ObservationError("unhealthy service")
-    _known_digest(identity)
+    digest = _known_digest(identity)
     if prior_scheme != identity["scheme"]:
         raise ObservationError("prior and current loaded-code schemes differ")
     if boot_id == prior_boot_id or digest == prior_digest:
@@ -237,9 +236,12 @@ def _candidate_identity(source: dict[str, bytes]) -> dict[str, Any]:
         # import population without reading or changing the real memory DB.
         program = (
             "import json; from pathlib import Path; "
-            "from living_memory.server import create_mcp_server, _loaded_code_identity; "
-            "server = create_mcp_server(Path('candidate.sqlite3')); "
-            "print(json.dumps(_loaded_code_identity())); server.memory_store.close()"
+            "from living_memory import server; "
+            "origin = Path(server.__file__).resolve(); "
+            "expected = Path('src/living_memory/server.py').resolve(); "
+            "assert origin == expected; "
+            "instance = server.create_mcp_server(Path('candidate.sqlite3')); "
+            "print(json.dumps(server._loaded_code_identity())); instance.memory_store.close()"
         )
         environment = dict(os.environ, PYTHONPATH=str(directory / "src"),
                            LIVING_MEMORY_EMBEDDING_BACKEND="hash")
@@ -426,6 +428,30 @@ def _disk_comparison(root: Path, source: dict[str, bytes]) -> dict[str, Any]:
             "different_paths": sorted(different), "candidate_files": len(source)}
 
 
+def _process_comparison(args: argparse.Namespace, source: dict[str, bytes]) -> dict[str, Any]:
+    try:
+        expected = _candidate_identity(source)["digest"]
+    except (OSError, subprocess.SubprocessError, ObservationError, ValueError):
+        return {"status": "unknown", "reason": "candidate function identity unavailable"}
+
+    base = build_url(args.host, args.port, tls=args.tls)
+    try:
+        health = _health(base.replace("/mcp/", "/health"), args.timeout,
+                         build_verify(args.ca_cert, insecure=args.insecure))
+        if not isinstance(health, dict) or health.get("ok") is not True:
+            raise ObservationError("unhealthy service")
+        boot_id = health.get("boot_id")
+        if not isinstance(boot_id, str) or not boot_id:
+            raise ObservationError("service boot identity unavailable")
+        digest = _known_digest(health.get("code_identity"))
+    except Exception:  # Keep raw transport diagnostics out of the public report.
+        return {"status": "unknown", "candidate_digest": expected,
+                "reason": "healthy service identity unavailable"}
+    return {"status": "match" if digest == expected else "mismatch",
+            "scheme": CODE_IDENTITY_SCHEME, "candidate_digest": expected,
+            "service_digest": digest, "boot_id": boot_id}
+
+
 def _compare(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Compare candidate sources and covered functions.")
     parser.add_argument("--installed-root", required=True, type=Path)
@@ -433,32 +459,16 @@ def _compare(argv: list[str]) -> int:
     parser.add_argument("--published-commit", required=True, help="Full ID of a trusted candidate commit")
     _connection_options(parser)
     args = parser.parse_args(argv)
-    disk = {"status": "unknown", "reason": "candidate sources unavailable"}
-    process = disk.copy()
     try:
         source = _published_sources(args.candidate_root or args.installed_root, args.published_commit)
     except (OSError, subprocess.SubprocessError, ObservationError):
-        pass
+        disk = process = {"status": "unknown", "reason": "candidate sources unavailable"}
     else:
+        process = _process_comparison(args, source)
         try:
             disk = _disk_comparison(args.installed_root, source)
         except (OSError, ObservationError):
             disk = {"status": "unknown", "reason": "installed sources unavailable"}
-        process = {"status": "unknown", "reason": "candidate function identity unavailable"}
-        try:
-            expected = _candidate_identity(source)["digest"]
-            process = {"status": "unknown", "candidate_digest": expected,
-                       "reason": "healthy service identity unavailable"}
-            base = build_url(args.host, args.port, tls=args.tls)
-            health = _health(base.replace("/mcp/", "/health"), args.timeout,
-                             build_verify(args.ca_cert, insecure=args.insecure))
-            if health.get("ok") is True and isinstance(health.get("boot_id"), str) and health["boot_id"]:
-                digest = _known_digest(health.get("code_identity"))
-                process = {"status": "match" if digest == expected else "mismatch",
-                           "scheme": CODE_IDENTITY_SCHEME, "candidate_digest": expected,
-                           "service_digest": digest, "boot_id": health["boot_id"]}
-        except Exception:  # Transport and child stderr may contain private configuration.
-            pass
     print(json.dumps({"published_commit": args.published_commit, "disk": disk,
                       "process": process, "recall": "not_run"}, sort_keys=True))
     statuses = {disk["status"], process["status"]}
