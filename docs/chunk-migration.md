@@ -34,8 +34,8 @@ can inspect an explicit space without loading its encoder. With no explicit ID,
 it resolves the encoder locally and reports its ID. On writes the producer must
 load and match the selected space. Use the same `--model` on each invocation for
 a non-default model. A legacy table lacking producer IDs needs fresh encoding
-of every active chunkable source. With a scope or level filter, coverage is for
-that population only.
+of every active chunkable source. Use `--node-id ID` on verify, dry-run and backfill to inspect and repair one
+source. Coverage follows the selected ID, scope and level.
 
 The source-attempt limit bounds each pass, including lost races. A single source
 may contain many windows. Budget for a validated SQLite backup, database and
@@ -161,8 +161,10 @@ The command in step 1 is the backfill. It is safe to leave running while the
 server serves reads and writes:
 
 * Opening the writable store runs normal schema migrations. During the subsequent
-  backfill a SQLite authorizer permits only chunk writes and schema-owned cache
-  revision effects.
+  backfill a SQLite authorizer permits chunk writes, source fingerprint updates and
+  schema-owned cache revisions. When a stored nonempty fingerprint differs from
+  SHA-256 of the current UTF-8 body, the writer corrects it in the same transaction
+  that replaces all windows.
 * Each source commits in one transaction. SQLite waits up to the configured busy
   timeout and retries chunk writes with backoff on lock contention.
 * The encoder runs outside that transaction. Before applying the result the writer

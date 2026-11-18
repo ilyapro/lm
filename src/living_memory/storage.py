@@ -203,7 +203,7 @@ def install_derived_only_authorizer(
 
     if corpus == "chunks":
         tables = {CHUNK_EMBEDDING_TABLE}
-        triggers = _CHUNK_CORPUS_TRIGGERS
+        triggers = (*_CHUNK_CORPUS_TRIGGERS, *_CHUNK_MEMBERSHIP_TRIGGERS)
         revision_key = _CHUNK_SCOPE_REVISION_FORMAT
     elif corpus == "anchors":
         tables = {QUERY_ANCHOR_TABLE, QUERY_ANCHOR_EDGE_TABLE}
@@ -249,7 +249,11 @@ def install_derived_only_authorizer(
     ) -> int:
         if action in writes:
             if database == "main":
-                if table in tables and source is None and revision_schema_matches():
+                fingerprint_update = (
+                    corpus == "chunks" and table == "nodes"
+                    and action == sqlite3.SQLITE_UPDATE and column == "content_fingerprint"
+                )
+                if (table in tables or fingerprint_update) and source is None and revision_schema_matches():
                     return sqlite3.SQLITE_OK
                 if (
                     table == "metadata" and source in expected

@@ -9,7 +9,7 @@ vectors only after explicit confirmation and backup.
 Safe under a live server
 ------------------------
 Opening MemoryStore runs its normal migrations. After open, the backfill
-restricts writes to chunk replacement and schema-owned revision effects.
+restricts writes to chunk replacement, source fingerprints and schema-owned revisions.
 Per-source transactions retry on SQLITE_BUSY.
 
 Resumability
@@ -96,6 +96,7 @@ from living_memory.storage import (  # noqa: E402
     # whitespace set the pending predicate must trim is a detail of the schema.
     # Importing the one definition beats keeping a second copy in step with it.
     _SQL_WHITESPACE,
+    _content_fingerprint,
 )
 
 LOG = logging.getLogger("backfill_chunk_embeddings")
@@ -157,10 +158,11 @@ class ChunkSelection:
     @classmethod
     def for_connection(
         cls, conn: sqlite3.Connection, encoder_id: str, scope: str | None, level: str | None,
+        node_id: str | None = None,
     ) -> ChunkSelection:
         clauses = list(_ACTIVE_CONTENT_CLAUSES)
         filters = []
-        for column, value in (("scope", scope), ("level", level)):
+        for column, value in (("scope", scope), ("level", level), ("id", node_id)):
             if value is not None:
                 clauses.append(f"n.{column} = ?")
                 filters.append(value)
@@ -172,14 +174,15 @@ class ChunkSelection:
         if "encoder_id" not in columns:
             return cls(active, tuple(filters), active, tuple(filters))
 
+        conn.create_function("content_digest", 1, _content_fingerprint, deterministic=True)
         ready = f"""SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} c
             WHERE c.node_id = n.id GROUP BY c.node_id
             HAVING MIN(c.chunk_index) = 0 AND MAX(c.chunk_index) = COUNT(*) - 1
-               AND n.content_fingerprint != ''
                AND MIN(c.content_fingerprint = n.content_fingerprint
                        AND c.encoder_id IS ? AND c.dimensions = ?
                        AND typeof(c.embedding) = 'blob' AND length(c.embedding) = ?) = 1"""
-        return cls(active, tuple(filters), f"{active} AND NOT EXISTS ({ready})",
+        pending = f"{active} AND (n.content_fingerprint IS NOT content_digest(n.content) OR NOT EXISTS ({ready}))"
+        return cls(active, tuple(filters), pending,
                    (*filters, encoder_id, width, width * CHUNK_EMBEDDING_ITEMSIZE))
 
     def count(self, conn: sqlite3.Connection) -> int:
@@ -560,6 +563,7 @@ def dry_run(
     assumed_rate: float,
     progress_interval: float,
     quiet: bool,
+    node_id: str | None = None,
     encoder_id: str | None = None,
 ) -> BackfillSummary:
     """Report what a real run would write, touching nothing.
@@ -580,7 +584,7 @@ def dry_run(
     conn = open_readonly(db)
     try:
         conn.execute("BEGIN")
-        selection = ChunkSelection.for_connection(conn, summary.encoder_id, scope, level)
+        selection = ChunkSelection.for_connection(conn, summary.encoder_id, scope, level, node_id)
         summary.node_embedding_column_present = has_node_column(conn, "embedding")
         summary.tokenizer = get_tokenizer().name
         if has_chunk_table(conn):
@@ -689,8 +693,13 @@ def _write_chunks_with_retry(
                 if (not current["pending"] or any(current[key] != source[key] for key in source.keys())
                         or _chunk_ids(store.connection, node_id) != chunk_ids):
                     return 0
+                fingerprint = _content_fingerprint(source["content"])
+                if fingerprint != source["content_fingerprint"]:
+                    store.connection.execute(
+                        "UPDATE nodes SET content_fingerprint = ? WHERE id = ?", (fingerprint, node_id)
+                    )
                 return store.replace_node_chunks(
-                    node_id, pairs, content_fingerprint=source["content_fingerprint"]
+                    node_id, pairs, content_fingerprint=fingerprint
                 )
         except sqlite3.OperationalError as exc:
             if not _is_busy(exc) or attempt == BUSY_RETRIES:
@@ -717,6 +726,7 @@ def run_backfill(
     limit: int = 0,
     scope: str | None = None,
     level: str | None = None,
+    node_id: str | None = None,
     progress_interval: float = DEFAULT_PROGRESS_INTERVAL,
     quiet: bool = False,
 ) -> BackfillSummary:
@@ -731,7 +741,7 @@ def run_backfill(
         raise BackfillError("batch size must be positive and limit nonnegative")
     conn = store.connection
     summary.encoder_id = embedder_info.encoder_id
-    selection = ChunkSelection.for_connection(conn, summary.encoder_id, scope, level)
+    selection = ChunkSelection.for_connection(conn, summary.encoder_id, scope, level, node_id)
     summary.embedding_backend = embedder_info.backend
     summary.embedding_model = embedder_info.model
     summary.embedding_dimensions = embedder_info.dimensions
@@ -890,7 +900,7 @@ def run_backfill(
 
 def verify_report(
     db: Path, *, scope: str | None, level: str | None, encoder_id: str | None = None,
-    before_drop: bool = False,
+    before_drop: bool = False, node_id: str | None = None,
 ) -> dict[str, Any]:
     """Read-only coverage, consistency and size report. Safe on the live DB."""
 
@@ -900,7 +910,7 @@ def verify_report(
         conn.execute("BEGIN")
         chunk_table = has_chunk_table(conn)
         embedding_column = has_node_column(conn, "embedding")
-        selection = ChunkSelection.for_connection(conn, encoder_id, scope, level)
+        selection = ChunkSelection.for_connection(conn, encoder_id, scope, level, node_id)
         active = conn.execute(
             f"SELECT COUNT(*) FROM nodes n WHERE {selection.active}", selection.filters
         ).fetchone()[0]
@@ -1066,6 +1076,7 @@ def cmd_backfill(args: argparse.Namespace) -> int:
             db,
             scope=args.scope,
             level=args.level,
+            node_id=args.node_id,
             limit=args.limit,
             dimensions=args.dimensions,
             encoder_id=args.encoder_id or LocalEmbeddingModel(model_name=args.model).encoder_id(),
@@ -1118,6 +1129,7 @@ def cmd_backfill(args: argparse.Namespace) -> int:
                 limit=args.limit,
                 scope=args.scope,
                 level=args.level,
+                node_id=args.node_id,
                 progress_interval=args.progress_interval,
                 quiet=args.quiet,
             )
@@ -1148,7 +1160,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     if not db.is_file():
         raise BackfillError(f"--db does not exist: {db}")
     report = verify_report(
-        db, scope=args.scope, level=args.level,
+        db, scope=args.scope, level=args.level, node_id=args.node_id,
         encoder_id=args.encoder_id or LocalEmbeddingModel(model_name=args.model).encoder_id(),
     )
     width = max(len(key) for key in report)
@@ -1283,6 +1295,7 @@ def _add_encoder_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_filter_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--node-id", help="Select one source by its exact ID.")
     parser.add_argument("--scope", default=None, help="Only nodes in this scope.")
     parser.add_argument(
         "--level",
