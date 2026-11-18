@@ -6,7 +6,7 @@ from dataclasses import asdict
 import pytest
 
 from living_memory import consolidation as c
-from living_memory.embeddings import LocalEmbeddingModel
+from living_memory.embeddings import EncodedVector, LocalEmbeddingModel
 from living_memory.retrieval import MemoryRecallService
 from living_memory.server import create_mcp_server
 from living_memory.storage import MemoryStore
@@ -390,7 +390,7 @@ def test_overlapping_promotions_follow_ancestors_without_broadcasting_new_source
 
 def test_promotion_edge_failure_is_atomic(store, monkeypatch):
     sources = [store.create_node(level="concept", content=f"Release evidence {scope}.",
-                                 context={"scope": f"project:{scope}"}, embedding=[1.0, 0.0])
+                                 context={"scope": f"project:{scope}"}, embedding=EncodedVector([1., 0.], "fixture:2"))
                for scope in ("alpha", "beta", "gamma")]
     before = list(store.connection.iterdump())
     write = c._connect_project_concepts_to_global

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from living_memory.embeddings import EncodedVector
 from living_memory.config import MemoryConfig
 from living_memory.consolidation import (
     DIGEST_MAX_CHARS,
@@ -267,7 +268,7 @@ def test_cross_scope_promotion_refreshes_confidence_after_source_decay(
             level="concept",
             content="database timeout connection pool retry budget",
             context={"scope": "project:alpha"},
-            embedding=[1.0, 0.0],
+            embedding=EncodedVector([1.0, 0.0], "fixture:2"),
             stats={"confidence": 0.8, "unique_agents": 2, "usefulness_score": 0.5},
             provenance={"source_traces": ["trace-alpha"]},
         )
@@ -275,7 +276,7 @@ def test_cross_scope_promotion_refreshes_confidence_after_source_decay(
             level="concept",
             content="database timeout connection pool retry budget",
             context={"scope": "project:beta"},
-            embedding=[1.0, 0.0],
+            embedding=EncodedVector([1.0, 0.0], "fixture:2"),
             stats={"confidence": 0.8, "unique_agents": 2, "usefulness_score": 0.5},
             provenance={"source_traces": ["trace-beta"]},
         )
@@ -283,7 +284,7 @@ def test_cross_scope_promotion_refreshes_confidence_after_source_decay(
             level="concept",
             content="database timeout connection pool retry budget",
             context={"scope": "project:gamma"},
-            embedding=[1.0, 0.0],
+            embedding=EncodedVector([1.0, 0.0], "fixture:2"),
             stats={"confidence": 0.8, "unique_agents": 2, "usefulness_score": 0.5},
             provenance={"source_traces": ["trace-gamma"]},
         )
@@ -496,7 +497,7 @@ def test_cross_scope_promotion_synthesizes_digest_from_distinct_sources(
             level="concept",
             content=f"{shared} Alpha keeps jitter backoff enabled.",
             context={"scope": "project:alpha"},
-            embedding=[1.0, 0.0],
+            embedding=EncodedVector([1.0, 0.0], "fixture:2"),
             stats={"confidence": 0.9, "unique_agents": 2, "usefulness_score": 0.5},
             provenance={"source_traces": ["trace-alpha"]},
         )
@@ -504,7 +505,7 @@ def test_cross_scope_promotion_synthesizes_digest_from_distinct_sources(
             level="concept",
             content=f"{shared} Beta caps retries at seven attempts.",
             context={"scope": "project:beta"},
-            embedding=[1.0, 0.0],
+            embedding=EncodedVector([1.0, 0.0], "fixture:2"),
             stats={"confidence": 0.8, "unique_agents": 2, "usefulness_score": 0.5},
             provenance={"source_traces": ["trace-beta"]},
         )
@@ -512,7 +513,7 @@ def test_cross_scope_promotion_synthesizes_digest_from_distinct_sources(
             level="concept",
             content=f"{shared} Gamma alerts when saturation persists.",
             context={"scope": "project:gamma"},
-            embedding=[1.0, 0.0],
+            embedding=EncodedVector([1.0, 0.0], "fixture:2"),
             stats={"confidence": 0.7, "unique_agents": 2, "usefulness_score": 0.5},
             provenance={"source_traces": ["trace-gamma"]},
         )

@@ -10,7 +10,7 @@ import pytest
 
 from living_memory import consolidation as c
 from living_memory.chunking import chunk_text
-from living_memory.embeddings import LocalEmbeddingModel
+from living_memory.embeddings import EncodedVector, LocalEmbeddingModel
 from living_memory.storage import MemoryStore
 
 SCOPE = "project:harbor"
@@ -39,7 +39,7 @@ def sources(store, *, level="trace"):
 def derived(store, name, members):
     return store.create_node(
         level="concept", content=f"Harbor {name} awaits its current evidence.",
-        context={"scope": SCOPE}, representative_embedding=[1., 0., 0.],
+        context={"scope": SCOPE}, representative_embedding=EncodedVector([1., 0., 0.], "fixture:3"),
         provenance={"strategy": "embedding-cosine", "cluster_key": name,
                     "source_traces": [member.id for member in members]},
     )

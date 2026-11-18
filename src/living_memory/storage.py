@@ -833,6 +833,8 @@ def _node_read_batches(
 
 
 def _record_embedding_space(provenance: dict[str, Any], vector: Iterable[float] | None) -> None:
+    # The legacy column can also be replaced by writers that store coordinates
+    # alone. Trust its producer only while the serialized vector still matches.
     provenance.pop("embedding_space", None)
     if isinstance(vector, EncodedVector):
         provenance["embedding_space"] = [vector.encoder_id, _content_fingerprint(_json_dumps(vector))]
@@ -1967,7 +1969,7 @@ class MemoryStore:
             provenance_data["embedding_space"] = existing.provenance["embedding_space"]
         else:
             provenance_data.pop("embedding_space", None)
-        if provenance is not None or provenance_data != existing.provenance and vector is not None:
+        if provenance is not None or vector is not None:
             json_values["provenance"] = provenance_data
             if provenance is not None and "source_traces" in provenance:
                 json_values["source_traces"] = source_traces

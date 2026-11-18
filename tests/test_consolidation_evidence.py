@@ -9,7 +9,7 @@ from threading import Event
 import pytest
 
 from living_memory import consolidation as c, server
-from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
+from living_memory.embeddings import EncodedVector, LocalEmbeddingModel, cosine_similarity
 from living_memory.storage import MemoryStore
 from test_lookup import FakeMCP
 
@@ -131,7 +131,7 @@ def test_invalid_traces_never_enter_new_concept(tmp_path, invalid):
 def peer(store, scope, *, embedding=(1., 0.), group=None):
     return store.create_node(level="concept", content=f"Authentication timeout evidence for {scope}.",
                              context={"scope": scope, **({"task_pattern": group} if group else {})},
-                             embedding=list(embedding) if embedding else None)
+                             embedding=embedding)
 
 
 @pytest.mark.parametrize("invalid", [None, "same_scope", "session", "group", "dissimilar",
@@ -150,7 +150,7 @@ def test_cross_scope_admission_through_consolidation(tmp_path, invalid):
         elif invalid == "group":
             store.update_node(gamma.id, context={"scope": gamma.scope, "task_pattern": "other"})
         elif invalid == "dissimilar":
-            store.update_node(gamma.id, embedding=[-v for v in vector])
+            store.update_node(gamma.id, embedding=EncodedVector([-v for v in vector], vector.encoder_id))
         elif invalid == "corrected":
             store.add_correction(gamma.id, old=gamma.content, new="obsolete", by="reviewer")
         elif invalid == "superseded":
@@ -181,7 +181,7 @@ def test_cross_scope_writer_rechecks_prepared_candidates(tmp_path, monkeypatch, 
             elif change == "group":
                 store.update_node(gamma.id, context={"scope": gamma.scope, "task_pattern": "different"})
             elif change == "vector":
-                store.update_node(gamma.id, embedding=[-v for v in vector])
+                store.update_node(gamma.id, embedding=EncodedVector([-v for v in vector], vector.encoder_id))
             elif change == "correction":
                 store.add_correction(gamma.id, old=gamma.content, new="obsolete", by="reviewer")
             elif change == "supersedes":
@@ -267,7 +267,7 @@ def test_later_scopes_remain_eligible_after_full_candidate_pages(tmp_path, monke
         seed(store)
         # Multiple early concepts are dissimilar and cannot be three scopes.
         for i in range(7):
-            peer(store, f"project:aaa-{i}", embedding=[-v for v in vector])
+            peer(store, f"project:aaa-{i}", embedding=EncodedVector([-v for v in vector], vector.encoder_id))
         beta = peer(store, "project:zzz-beta", embedding=vector)
         gamma = peer(store, "project:zzz-gamma", embedding=vector)
         pages = []

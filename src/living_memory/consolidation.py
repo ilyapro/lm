@@ -406,7 +406,7 @@ def memory_consolidate(
         merge_floor = resolve_min_cluster_size(min_cluster_size, trace_count=len(traces))
         embedder = LocalEmbeddingModel(model_name=store.config.embedding_model)
     embeddings = _trace_embeddings(store, traces, embedder, step)
-    clusters = _cluster_traces(traces, embedder=embedder, embeddings=embeddings)
+    clusters = _cluster_traces(traces, embeddings=embeddings)
     result = ConsolidationResult(
         clusters_considered=len(clusters),
         traces_considered=len(traces),
@@ -483,7 +483,7 @@ def _output_identity(scope: str, members: Sequence[Node], existing: Node | None)
     def identity(node: Node) -> tuple[Any, ...]:
         return (node.id, node.level, node.scope, node.content, node.materializer,
                 node.derivation_identity, node.decayed, node.corrections,
-                tuple(node.embedding or ()))
+                tuple(node.embedding or ()), _embedding_space(node))
 
     return scope, identity(existing) if existing is not None else None, tuple(map(identity, members))
 
@@ -1547,9 +1547,7 @@ def _trace_embeddings(
     a pass that falls back to hashing must not cache mixed encoder outputs.
     """
 
-    if embedder is None:
-        return {}
-    if not traces:
+    if embedder is None or not traces:
         return {}
     encoder = embedder.encoder_id()
     vectors = {node.id: EncodedVector(node.embedding, encoder) for node in traces
@@ -1587,8 +1585,7 @@ def _trace_embeddings(
 def _cluster_traces(
     traces: Iterable[Node],
     *,
-    embedder: LocalEmbeddingModel | None = None,
-    embeddings: Mapping[str, list[float]] | None = None,
+    embeddings: Mapping[str, list[float]],
 ) -> list[_TraceCluster]:
     """Greedy single-pass clustering in trace order.
 
@@ -1603,10 +1600,7 @@ def _cluster_traces(
     prepared: list[tuple[Node, set[str], list[float] | None]] = []
     for trace in traces:
         tokens = _significant_tokens(trace.content)
-        if embeddings is not None and trace.id in embeddings:
-            embedding = embeddings[trace.id]
-        else:
-            embedding = _trace_embedding(trace, embedder)
+        embedding = embeddings.get(trace.id)
         if not tokens and embedding is None:
             continue
         prepared.append((trace, tokens, embedding))
@@ -2232,6 +2226,8 @@ def _cross_scope_promotion(
             concept = store.get_node(concept.id)
             if not _promotion_source(concept) or _is_superseded(store, concept.id):
                 return []
+            if candidates is not None:
+                candidates = list(store.get_nodes(n.id for n in candidates).values())
         matches = _promotion_matches(store, [concept], candidates=candidates, step=step)[concept.id]
     scored = {node.id: (node, score) for node, score in matches}
     scored[concept.id] = (concept, 1.0)
@@ -2578,14 +2574,6 @@ def _active_promotion_confidence(project_sources: Iterable[Node], unique_agents:
         confidence = _promoted_confidence(sources)
     # Compare the effective stored value so a capped promotion remains a no-op.
     return min(confidence, 0.5) if unique_agents <= 1 else confidence
-
-
-def _trace_embedding(trace: Node, embedder: LocalEmbeddingModel | None) -> list[float] | None:
-    if embedder is None:
-        return None
-    if trace.embedding is not None:
-        return trace.embedding
-    return embedder.embed(trace.content)
 
 
 def _cluster_similarity(

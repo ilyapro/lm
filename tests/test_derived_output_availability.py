@@ -12,12 +12,12 @@ import pytest
 
 from living_memory import consolidation as c, embeddings
 from living_memory.chunking import chunk_text
-from living_memory.embeddings import LocalEmbeddingModel
+from living_memory.embeddings import EncodedVector, LocalEmbeddingModel
 from test_consolidation_availability import runtime
 
 
 SCOPE = "project:harbor"
-REPRESENTATIVE = [1.0, 0.0, 0.0]
+REPRESENTATIVE = EncodedVector([1.0, 0.0, 0.0], "st:harbor-representative:3")
 TEXTS = [
     "Harbor release requires the retired paper permit.",
     "Harbor release checks the signed package checksum.",
@@ -265,6 +265,9 @@ def test_output_wait_for_shared_encoder_leaves_native_lookup_available(runtime, 
         def __exit__(self, *args):
             shared_lock.release()
 
+    source_model = synthetic_model(REPRESENTATIVE)
+    source_model.model_name = "harbor-representative"
+    monkeypatch.setattr(c, "LocalEmbeddingModel", lambda **kwargs: source_model)
     output = synthetic_model([0.0, 1.0, 0.0])
     other = synthetic_model([0.0, 0.0, 1.0], entered=entered, release=release)
     store.set_chunk_embedder(output.embed_batch)

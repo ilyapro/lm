@@ -309,15 +309,13 @@ def test_consolidation_cache_keeps_vector_identity_across_preparation(tmp_path, 
                 model.embed("fail")
 
         vectors = consolidation._trace_embeddings(store, nodes, model, step)
-        first_hash = {"before_batch": 1, "during_batch": 2}.get(transition, len(nodes))
-        for node in nodes[first_hash:]:
-            expected[node.id] = hashed.embed(node.content)
+        switched = transition in ("before_batch", "during_batch", "before_identity")
+        if switched:
+            expected = {node.id: hashed.embed(node.content) for node in nodes}
         assert vectors == expected
-        cached = store.get_consolidation_embeddings(nodes, initial_identity)
-        if transition in ("stable", "scalar", "before_write"):
-            assert cached == vectors
-        else:
-            assert cached == {nodes[0].id: vectors[nodes[0].id]}
+        identity = hashed.encoder_id() if switched else initial_identity
+        assert all(vector.encoder_id == identity for vector in vectors.values())
+        assert store.get_consolidation_embeddings(nodes, identity) == vectors
         if transition in ("stable", "scalar"):
             assert model.encoder_id() == initial_identity
             calls = list(backend.calls)
@@ -325,7 +323,8 @@ def test_consolidation_cache_keeps_vector_identity_across_preparation(tmp_path, 
             assert backend.calls == calls
         else:
             assert model.encoder_id() == "hash:3"
-            assert store.get_consolidation_embeddings(nodes, model.encoder_id()) == {}
+            if transition == "before_write":
+                assert store.get_consolidation_embeddings(nodes, model.encoder_id()) == {}
             expected_hash = {node.id: hashed.embed(node.content) for node in nodes}
             assert consolidation._trace_embeddings(store, nodes, model, lambda: guard) == expected_hash
             assert store.get_consolidation_embeddings(nodes, model.encoder_id()) == expected_hash

@@ -17,7 +17,7 @@ from living_memory.consolidation import (
 )
 from living_memory.config import MemoryConfig
 from living_memory.delivery import DeliveryHistory, shape_recall_results
-from living_memory.embeddings import LocalEmbeddingModel
+from living_memory.embeddings import EncodedVector, LocalEmbeddingModel
 from living_memory.feedback import apply_pending_recall_feedback
 from living_memory.retrieval import MemoryRecallService
 from living_memory.server import create_mcp_server
@@ -291,7 +291,7 @@ def cluster(store, scope, texts):
     ]
     group = _TraceCluster(scope, traces, Counter({"workshop": len(traces)}))
     (concept, _), = _materialize_cluster(store, group, min_cluster_size=1)
-    store.update_node(concept.id, embedding=[1.0, 0.0])
+    store.update_node(concept.id, embedding=EncodedVector([1.0, 0.0], "fixture:2"))
     return traces, store.get_node(concept.id)
 
 
