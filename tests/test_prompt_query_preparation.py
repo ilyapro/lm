@@ -460,7 +460,7 @@ def test_direct_prompt_rejects_invalid_arguments(runtime, arguments, error):
 @pytest.mark.parametrize("native", [False, True], ids=["builder", "native"])
 def test_prompt_shares_chunk_and_anchor_preparation(runtime, monkeypatch, native):
     r = runtime
-    vector = MemoryRecallService(r.store).prepare_query(TASK).embedding
+    vector = MemoryRecallService(r.store).embedder.embed(TASK)
     r.store.insert_query_anchor(
         anchor_id="rollback-anchor", scope=SCOPE, query=TASK,
         fingerprint="rollback-anchor", embedding=vector,
