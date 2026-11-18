@@ -161,3 +161,26 @@ def test_verification_admits_only_rows_from_the_prepared_space(tmp_path):
         with store.transaction():
             store.connection.execute("UPDATE query_anchors SET query='changed' WHERE query='valid'")
         assert read() == []
+
+
+def test_known_foreign_collisions_cannot_displace_unlabelled_semantic_nominee(tmp_path):
+    from living_memory.embeddings import EncodedVector
+    from living_memory.storage import MemoryStore
+
+    class Model:
+        def embed(self, text):
+            direction = [1.0, 0.0] if text in ("needle", "lasso") else [0.0, 1.0]
+            return EncodedVector(direction, "current")
+
+    with MemoryStore(tmp_path / "mixed.db") as store:
+        node = store.create_node(level="trace", content="opaque target")
+        learned = store.insert_query_anchor(query="lasso", fingerprint="lasso", scope="global",
+                                            embedding=[0.8, 0.6])
+        store.upsert_query_anchor_edge(learned.id, node.id, weight=0.75)
+        for i in range(10):
+            store.insert_query_anchor(query=f"unrelated {i}", fingerprint=str(i), scope="global",
+                                      embedding=EncodedVector([1.0, 0.0], "foreign"))
+        service = MemoryRecallService(store, embedder=Model())
+        hit, = service.memory_recall("needle", repair_pending=False, log_access=False)
+        assert hit.node_id == node.id and hit.graph_score == pytest.approx(0.75)
+        assert hit.vector_score == hit.bm25_score == 0

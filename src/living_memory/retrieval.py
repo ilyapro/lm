@@ -353,7 +353,7 @@ class _AnchorTextIndex:
         return nsmallest(limit, scores, key=lambda key: (-scores[key], key))
 
 
-_AnchorBlockKey = tuple[int, tuple[str, bool] | None]
+_AnchorBlockKey = tuple[int, tuple[str | None, bool] | None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -378,7 +378,7 @@ class _AnchorVectorCache:
     text_indexes: dict[tuple[str, tuple[str, ...] | None, int | None], _AnchorTextIndex] = field(default_factory=dict)
 
     def query_anchor_corpus(
-        self, width: int, scopes: Sequence[str] | None = None, *, space: tuple[str, bool] | None = None,
+        self, width: int, scopes: Sequence[str] | None = None, *, space: tuple[str | None, bool] | None = None,
     ) -> _PreparedAnchorVectors:
         key = (width, space)
         corpus = self.by_width.get(key)
@@ -507,7 +507,7 @@ class MemoryRecallService:
         candidates = index.nearest(query.text, ANCHOR_MATCH_LIMIT)
         nominations = _rank_anchors(
             source, query.embedding, scopes, min_similarity=ANCHOR_MATCH_COSINE_THRESHOLD,
-            limit=ANCHOR_MATCH_LIMIT, space=(encoder, False),
+            limit=ANCHOR_MATCH_LIMIT, space=(None, True),
         )
         candidates.extend(anchor_id for anchor_id, _score in nominations)
         return {anchor_id: index.texts[anchor_id] for anchor_id in candidates if anchor_id in index.texts}

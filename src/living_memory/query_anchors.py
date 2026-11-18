@@ -348,7 +348,7 @@ def _rank_anchors(
     *,
     min_similarity: float,
     limit: int,
-    space: tuple[str, bool] | None = None,
+    space: tuple[str | None, bool] | None = None,
 ) -> list[tuple[str, float]]:
     """Top ``limit`` live anchors at or above ``min_similarity``, best first.
 

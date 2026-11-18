@@ -35,9 +35,20 @@ writing; missing or decayed targets without a live replacement are skipped.
 breaking ties by anchor ID before applying the limit. Scope order does not
 change membership or ordering for the same admitted anchors. Its defaults are
 a `0.60` similarity floor and a limit of five anchors. It compares vectors only
-at the same recorded width and respects the retrieval scope plan. Returned
-targets are live nodes ordered by edge weight;
-an anchor with no live targets can match with an empty target list.
+within the same producing encoder space and width. A prepared query retains
+the identity returned by its encoder, including after fallback. Graph seeds
+and query-relative demotions use the same scores and scope restrictions.
+
+For historical rows with a missing or different encoder ID, recall verifies
+candidate question texts in the prepared query's space. Up to five candidates
+come from text overlap and up to five from the old coordinates of unlabelled
+rows. A small historical pool of at most five is checked in full. Only verified
+cosines enter the final ranking alongside compatible stored vectors. This
+bounded search can miss historical paraphrases outside both shortlists.
+Recall reuses a bounded cache of verified text embeddings across requests.
+Read-only snapshots support the same verification without rewriting anchors.
+Returned targets are live nodes ordered by edge weight. An anchor with no live
+targets can match with an empty target list.
 
 The retrieval path can use these targets as graph seeds. Related queries can
 also receive ranking adjustments from

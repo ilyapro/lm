@@ -5234,12 +5234,14 @@ class MemoryStore:
     def _anchor_has_encoder(self) -> bool:
         return any(row[1] == "encoder_id" for row in self._conn.execute("PRAGMA table_info(query_anchors)"))
 
-    def _anchor_space_filter(self, space: tuple[str, bool] | None) -> tuple[str, tuple[str, ...]]:
+    def _anchor_space_filter(
+        self, space: tuple[str | None, bool] | None,
+    ) -> tuple[str, tuple[str | None, ...]]:
         if space is None:
             return "", ()
         encoder, compatible = space
         if not self._anchor_has_encoder():
-            return (" AND 0" if compatible else ""), ()
+            return ("" if (encoder is None) == compatible else " AND 0"), ()
         operator = "IS" if compatible else "IS NOT"
         return f" AND encoder_id {operator} ?", (encoder,)
 
@@ -5259,7 +5261,7 @@ class MemoryStore:
             yield anchor_id, text
 
     def query_anchor_vector_layout(
-        self, dimensions: int, *, space: tuple[str, bool] | None = None,
+        self, dimensions: int, *, space: tuple[str | None, bool] | None = None,
     ) -> list[tuple[str, str]]:
         """Live ids and scopes in vector scan order, without reading BLOBs."""
 
@@ -5280,7 +5282,7 @@ class MemoryStore:
         scopes: Sequence[str] | None = None,
         *,
         dimensions: int | None = None,
-        space: tuple[str, bool] | None = None,
+        space: tuple[str | None, bool] | None = None,
         include_decayed: bool = False,
         limit: int | None = None,
     ) -> Iterator[tuple[str, str, int, memoryview]]:
