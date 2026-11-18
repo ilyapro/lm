@@ -7,6 +7,7 @@ import sys
 
 import pytest
 
+from fixture_vectors import FIXTURE_SPACE, fixture_vector
 from living_memory import retrieval, storage
 from living_memory.embeddings import cosine_similarity
 from living_memory.retrieval import MemoryRecallService, _Candidate
@@ -22,13 +23,13 @@ SCOPE = "project:vector"
 
 class Encoder:
     def embed(self, text):
-        return list(VECTOR)
+        return fixture_vector(VECTOR)
 
 
 def put(store, node_id, *, scope=SCOPE, vector=VECTOR):
     return store.create_node(
         node_id=node_id, level="concept", content=f"Cobalt prism specimen {node_id}",
-        context={"scope": scope}, provenance={"detail": node_id}, embedding=vector,
+        context={"scope": scope}, provenance={"detail": node_id}, embedding=fixture_vector(vector),
         stats={"unique_agents": 2},
     )
 
@@ -159,8 +160,8 @@ def test_current_admission_after_chunk_selection(tmp_path, monkeypatch, entry, m
         decode = storage._node_from_row
         decoded = []
 
-        def change_after_selection(plan, dimension):
-            selected = blocks(plan, dimension)
+        def change_after_selection(plan, dimension, encoder_id):
+            selected = blocks(plan, dimension, encoder_id)
             assert not store.connection.in_transaction
             with writer.transaction():
                 if mutation == "remove":
@@ -182,7 +183,7 @@ def test_current_admission_after_chunk_selection(tmp_path, monkeypatch, entry, m
 
         def collect():
             candidates = {}
-            service._collect_vector(VECTOR, plan, candidates, max_results=2)
+            service._collect_vector(VECTOR, plan, candidates, max_results=2, encoder_id=FIXTURE_SPACE)
             return candidates
 
         with monkeypatch.context() as patch:
@@ -231,7 +232,7 @@ def test_healthy_candidates_keep_scores_order_chunks_limits_and_existing_bodies(
             strongest.id: _Candidate(node=strongest, vector_score=1.1, chunk_id="retained"),
         }
         service = MemoryRecallService(store, embedder=Encoder())
-        expected = selection_oracle(store, service._chunk_blocks(plan, 3), VECTOR, plan, initial)
+        expected = selection_oracle(store, service._chunk_blocks(plan, 3, FIXTURE_SPACE), VECTOR, plan, initial)
         actual = {key: replace(value) for key, value in initial.items()}
         decoded = []
         decode = storage._node_from_row
@@ -241,8 +242,8 @@ def test_healthy_candidates_keep_scores_order_chunks_limits_and_existing_bodies(
             decoded.append(row["id"])
             return decode(row)
 
-        def change_after_selection(plan, dimension):
-            selected = blocks(plan, dimension)
+        def change_after_selection(plan, dimension, encoder_id):
+            selected = blocks(plan, dimension, encoder_id)
             with store.transaction():
                 store.connection.execute(
                     "UPDATE nodes SET provenance = '[]', decayed = 1 WHERE id IN (?, ?)",
@@ -253,7 +254,7 @@ def test_healthy_candidates_keep_scores_order_chunks_limits_and_existing_bodies(
         with monkeypatch.context() as patch:
             patch.setattr(storage, "_node_from_row", count)
             patch.setattr(service, "_chunk_blocks", change_after_selection)
-            service._collect_vector(VECTOR, plan, actual, max_results=2)
+            service._collect_vector(VECTOR, plan, actual, max_results=2, encoder_id=FIXTURE_SPACE)
         # Existing candidates retain their bodies and vector evidence even when
         # the source changes after chunk selection; only new bodies are admitted.
         assert actual == expected
@@ -298,7 +299,7 @@ def test_vector_collection_propagates_body_and_index_sql_errors(tmp_path, table,
         store.connection.set_authorizer(deny_read)
         try:
             with pytest.raises(sqlite3.DatabaseError, match="prohibited"):
-                service._collect_vector(VECTOR, resolve_scope(scope=SCOPE), {}, max_results=2)
+                service._collect_vector(VECTOR, resolve_scope(scope=SCOPE), {}, max_results=2, encoder_id=FIXTURE_SPACE)
         finally:
             store.connection.set_authorizer(None)
 
@@ -314,7 +315,7 @@ def test_vector_discovery_retains_bounded_scores_and_winners(tmp_path, monkeypat
                 put(store, f"n{number:05}", vector=[score, sqrt(1 - score * score), 0.0])
         service = MemoryRecallService(store, embedder=Encoder())
         plan = ScopePlan(SCOPE, (SCOPE,))
-        blocks = service._chunk_blocks(plan, 3)
+        blocks = service._chunk_blocks(plan, 3, FIXTURE_SPACE)
         tail = store.get_node("n09999")
         candidates = {tail.id: _Candidate(node=tail, bm25_score=0.7)}
         expected = selection_oracle(store, blocks, VECTOR, plan, candidates)
@@ -325,7 +326,7 @@ def test_vector_discovery_retains_bounded_scores_and_winners(tmp_path, monkeypat
                 f"UPDATE nodes SET provenance = '[]' WHERE id NOT IN ({','.join('?' for _ in expected)})",
                 tuple(expected),
             )
-        peak = measure_vector_state(lambda: service._collect_vector(VECTOR, plan, candidates, max_results=2))
+        peak = measure_vector_state(lambda: service._collect_vector(VECTOR, plan, candidates, max_results=2, encoder_id=FIXTURE_SPACE))
         assert candidates == expected
         assert list(candidates) == list(expected)
         assert len(candidates) == 51
@@ -353,7 +354,7 @@ def test_streamed_pool_matches_full_arithmetic_and_first_winners(tmp_path, monke
         service = MemoryRecallService(store, embedder=Encoder())
         for plan in (ScopePlan(SCOPE, (SCOPE, "global")), ScopePlan("global", ("*",))):
             for query in (VECTOR, [0.3, 0.9, 0.2], [0.6, 0.8], [0.0, 0.0, 0.0]):
-                blocks = service._chunk_blocks(plan, len(query))
+                blocks = service._chunk_blocks(plan, len(query), FIXTURE_SPACE)
                 expected = full_pool_oracle(blocks, query)
                 actual = [row for block in blocks for row in retrieval._pooled_chunk_similarities(
                     block, query, retrieval._as_query_array(query),
@@ -363,7 +364,7 @@ def test_streamed_pool_matches_full_arithmetic_and_first_winners(tmp_path, monke
                 if expected:
                     monkeypatch.setattr(retrieval, "VECTOR_MATCH_THRESHOLD", expected[0][0])
                 candidates = {}
-                service._collect_vector(query, plan, candidates, max_results=2)
+                service._collect_vector(query, plan, candidates, max_results=2, encoder_id=FIXTURE_SPACE)
                 assert candidates == selection_oracle(store, blocks, query, plan, {})
 
 
@@ -384,5 +385,5 @@ def test_vector_scoring_error_after_discovery_cutoff_propagates(tmp_path, monkey
 
         monkeypatch.setattr(retrieval, "cosine_similarity", fail_late)
         with pytest.raises(ArithmeticError, match="required scoring failed"):
-            MemoryRecallService(store)._collect_vector(VECTOR, ScopePlan(SCOPE, (SCOPE,)), {}, max_results=2)
+            MemoryRecallService(store)._collect_vector(VECTOR, ScopePlan(SCOPE, (SCOPE,)), {}, max_results=2, encoder_id=FIXTURE_SPACE)
         assert calls == 51

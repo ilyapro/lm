@@ -6,6 +6,7 @@ import sqlite3
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory import retrieval
 from living_memory.chunking import TextChunk, chunk_text
 from living_memory.delivery import DeliveryHistory, recall_delivery_records, shape_recall_results
@@ -35,18 +36,18 @@ class QueryEmbedder:
 
     def embed(self, text):
         self.calls.append(text)
-        return [1.0, 0.0, 0.0]
+        return fixture_vector([1.0, 0.0, 0.0])
 
 
 def put_match(store, content, start, end, *, scope=SCOPE, level="trace"):
-    store.set_chunk_embedder(lambda texts: [[0.0, 1.0, 0.0] for _ in texts])
+    store.set_chunk_embedder(lambda texts: [fixture_vector([0.0, 1.0, 0.0]) for _ in texts])
     node = store.create_node(level=level, content=content, context={"scope": scope})
     # Overlapping windows, with the winning window starting inside the clause.
     spans = [(0, min(200, len(content))), (start, end), (max(0, start - 10), end)]
     store.replace_node_chunks(node.id, [
-        (TextChunk(content[a:b], index, index * 30, index * 30 + 60, a, b), vector)
-        for index, ((a, b), vector) in enumerate(zip(
-            spans, ([0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.8, 0.6, 0.0]), strict=True,
+        (TextChunk(content[a:b], index, index * 30, index * 30 + 60, a, b), fixture_vector(vector))
+        for index, ((a, b), fixture_vector(vector)) in enumerate(zip(
+            spans, (fixture_vector([0.0, 1.0, 0.0]), fixture_vector([1.0, 0.0, 0.0]), fixture_vector([0.8, 0.6, 0.0])), strict=True,
         ))
     ])
     return node
@@ -176,7 +177,7 @@ def test_exact_generation_and_content_binding(tmp_path, monkeypatch):
 
         def replace_generation(ids):
             # Same content, new windows and row ids between scoring and resolving.
-            store.replace_node_chunks(node.id, [(c, [1.0, 0.0, 0.0]) for c in chunk_text(content)])
+            store.replace_node_chunks(node.id, [(c, fixture_vector([1.0, 0.0, 0.0])) for c in chunk_text(content)])
             return original(ids)
 
         monkeypatch.setattr(store, "get_chunk_passages", replace_generation)
@@ -321,7 +322,7 @@ def test_source_aware_budget_through_mcp(tmp_path, monkeypatch, view, budget, ca
 
     class LexicalEmbedder(QueryEmbedder):
         def embed(self, text):
-            return [0.0, 0.0, 0.0]
+            return fixture_vector([0.0, 0.0, 0.0])
 
     embedder = LexicalEmbedder() if case == "lexical_only" else QueryEmbedder()
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")

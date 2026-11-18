@@ -8,6 +8,7 @@ import sqlite3
 from fastmcp import Client
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory import server
 from living_memory.retrieval import MemoryRecallService
 
@@ -23,12 +24,12 @@ FACTS = {
 
 class Encoder:
     def embed(self, text):
-        return [1.0, 0.0, 0.0] if text.endswith(" A") else [0.0, 1.0, 0.0]
+        return fixture_vector([1.0, 0.0, 0.0]) if text.endswith(" A") else fixture_vector([0.0, 1.0, 0.0])
 
     def embed_batch(self, texts):
-        return [[1.0, 0.0, 0.0] if "amber" in text else
-                [0.0, 1.0, 0.0] if "cobalt" in text else
-                [0.0, 0.0, 1.0] for text in texts]
+        return [fixture_vector([1.0, 0.0, 0.0]) if "amber" in text else
+                fixture_vector([0.0, 1.0, 0.0]) if "cobalt" in text else
+                fixture_vector([0.0, 0.0, 1.0]) for text in texts]
 
 
 def chunk_rows(store, node_id):
@@ -60,14 +61,14 @@ def test_failed_a_preserves_independent_b_and_bounds_repeated_work(monkeypatch, 
     try:
         nodes = {label: store.create_node(
             level="concept", content=PREFIX + fact, context={"scope": SCOPE},
-            representative_embedding=[0.0, 0.0, 1.0],
+            representative_embedding=fixture_vector([0.0, 0.0, 1.0]),
         ) for label, fact in FACTS.items()}
         old = store.append_trace("Open the cobalt hatch unconditionally.", {"scope": SCOPE})
         store.connect_nodes(nodes["B"].id, old.id, "supersedes")
         store.soft_delete_node(old.id, "replaced")
         foreign = store.create_node(
             level="concept", content=PREFIX + FACTS["B"],
-            context={"scope": "project:excluded"}, representative_embedding=[0.0, 0.0, 1.0],
+            context={"scope": "project:excluded"}, representative_embedding=fixture_vector([0.0, 0.0, 1.0]),
         )
         with store.transaction():
             store.connection.execute("UPDATE node_chunk_embeddings SET char_start=NULL, char_end=NULL")

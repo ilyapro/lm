@@ -5,6 +5,7 @@ import math
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory.embeddings import tokenize
 from living_memory.models import Node
 from living_memory.recall_map import RecallMapBuilder
@@ -30,7 +31,7 @@ class FrozenEncoder:
 
     def embed(self, text):
         cosine = 1.0 if text == self.query else self.scores.get(text, 0.0)
-        return [cosine, math.sqrt(1 - cosine**2)]
+        return fixture_vector([cosine, math.sqrt(1 - cosine**2)])
 
     def embed_batch(self, texts):
         return [self.embed(text) for text in texts]

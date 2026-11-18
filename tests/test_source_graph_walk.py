@@ -50,7 +50,7 @@ class SeededService(MemoryRecallService):
     def _collect_bm25(self, query, plan, candidates, *, max_results):
         candidates.update(_candidates(self.store))
 
-    def _collect_vector(self, query_embedding, plan, candidates, *, max_results):
+    def _collect_vector(self, query_embedding, plan, candidates, *, max_results, encoder_id):
         pass
 
     def rank_candidates(self, candidates, *args, **kwargs):

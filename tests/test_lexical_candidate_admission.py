@@ -7,6 +7,7 @@ import sqlite3
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory import storage
 from living_memory.retrieval import MemoryRecallService, _Candidate, _expanded_query
 from living_memory.scope import ScopePlan, resolve_scope
@@ -19,7 +20,7 @@ SCOPE = "project:lexical"
 
 class Encoder:
     def embed(self, text):
-        return [1.0, 0.0]
+        return fixture_vector([1.0, 0.0])
 
     def embed_batch(self, texts):
         return [self.embed(text) for text in texts]
@@ -29,7 +30,7 @@ def put(store, node_id, *, scope=SCOPE, **kwargs):
     return store.create_node(
         node_id=node_id, level="concept", content=f"{QUERY} {node_id}",
         context={"scope": scope, "detail": "x" * 1024},
-        provenance={"detail": "y" * 1024}, embedding=[1.0, 0.0],
+        provenance={"detail": "y" * 1024}, embedding=fixture_vector([1.0, 0.0]),
         stats={"unique_agents": 2, **kwargs.pop("stats", {})}, **kwargs,
     )
 

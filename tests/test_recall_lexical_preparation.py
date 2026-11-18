@@ -4,6 +4,7 @@ from collections import Counter
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory import embeddings, retrieval
 from living_memory.scope import resolve_scope
 from living_memory.storage import MemoryStore
@@ -15,7 +16,7 @@ QUERY = "amber quartz HTTP_429"
 
 class Encoder:
     def embed(self, text):
-        return [1.0, 0.0] if text in (QUERY, "Opaque vector source.") else [0.0, 1.0]
+        return fixture_vector([1.0, 0.0]) if text in (QUERY, "Opaque vector source.") else fixture_vector([0.0, 1.0])
 
     def embed_batch(self, texts):
         return [self.embed(text) for text in texts]

@@ -4,6 +4,7 @@ import math
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory.feedback import _method_signals
 from living_memory.retrieval import MemoryRecallService, _Candidate
 from living_memory.scope import resolve_scope
@@ -22,7 +23,7 @@ class FrozenEncoder:
 
     def embed(self, text):
         cosine = 1.0 if text == self.query else self.scores.get(text, 0.0)
-        return [cosine, math.sqrt(1 - cosine**2)]
+        return fixture_vector([cosine, math.sqrt(1 - cosine**2)])
 
     def embed_batch(self, texts):
         return [self.embed(text) for text in texts]

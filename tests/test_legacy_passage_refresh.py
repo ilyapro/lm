@@ -5,6 +5,7 @@ from dataclasses import replace
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory import retrieval, server, storage
 from living_memory.chunking import chunk_text
 from living_memory.health_audit import ReadOnlyAuditStore
@@ -28,13 +29,13 @@ class Encoder:
 
     def embed(self, text):
         self.queries.append(text)
-        return [1.0, 0.0, 0.0]
+        return fixture_vector([1.0, 0.0, 0.0])
 
     def embed_batch(self, texts):
         self.batches.append(list(texts))
         if self.fail:
             raise RuntimeError("fixture encoder failure")
-        return [[1.0, 0.0, 0.0] if "amber" in text else [0.0, 1.0, 0.0] for text in texts]
+        return [fixture_vector([1.0, 0.0, 0.0]) if "amber" in text else fixture_vector([0.0, 1.0, 0.0]) for text in texts]
 
 
 def legacy(store, content=CONTENT, *, level="concept", materializer=None):
@@ -42,7 +43,7 @@ def legacy(store, content=CONTENT, *, level="concept", materializer=None):
                   {"strategy": materializer} if materializer else None)
     node = store.create_node(
         level=level, content=content, context={"scope": SCOPE},
-        representative_embedding=[0.0, 0.0, 1.0],
+        representative_embedding=fixture_vector([0.0, 0.0, 1.0]),
         provenance=provenance,
     )
     with store.transaction():
@@ -158,7 +159,7 @@ def test_ineligible_reads_do_not_tokenize_or_encode(app, monkeypatch, case):
         # An old tokenizer can have more windows than the current one.
         chunk = chunk_text(content)[0]
         store.replace_node_chunks(node.id, [
-            (replace(chunk, chunk_index=i), [1.0, 0.0, 0.0]) for i in range(33)
+            (replace(chunk, chunk_index=i), fixture_vector([1.0, 0.0, 0.0])) for i in range(33)
         ])
         with store.transaction():
             store.connection.execute("UPDATE node_chunk_embeddings SET char_start=NULL, char_end=NULL")
@@ -218,7 +219,7 @@ def test_stale_source_or_generation_cannot_overwrite_a_concurrent_writer(tmp_pat
             if change == "content":
                 writer.update_node(node.id, content=FACT + " changed")
             else:
-                writer.replace_node_chunks(node.id, [(c, [0.0, 1.0, 0.0]) for c in chunk_text(node.content)])
+                writer.replace_node_chunks(node.id, [(c, fixture_vector([0.0, 1.0, 0.0])) for c in chunk_text(node.content)])
             replacement_rows[:] = rows(writer, node.id)
 
         def encode(texts):
@@ -239,7 +240,7 @@ def test_new_tokenizer_chunk_bound_is_checked_before_encoding(tmp_path):
     with MemoryStore(tmp_path / "memory.sqlite3", chunk_embedder=Encoder().embed_batch) as store:
         node = legacy(store)
         first = chunk_text(node.content)[0]
-        store.replace_node_chunks(node.id, [(replace(first, char_start=-1), [1.0, 0.0, 0.0])])
+        store.replace_node_chunks(node.id, [(replace(first, char_start=-1), fixture_vector([1.0, 0.0, 0.0]))])
         before = rows(store, node.id)
         store.set_chunk_embedder(lambda _: pytest.fail("oversized new generation encoded"))
         assert not refresh(store, node, max_chunks=1)
@@ -251,7 +252,7 @@ def test_changed_encoder_cannot_readdress_the_old_score(app, monkeypatch):
     node = legacy(mcp.memory_store)
     scored = service.memory_recall(QUERY, scope=SCOPE, depth=0, max_results=1, log_access=False)[0]
     monkeypatch.setattr(encoder, "embed_batch", lambda texts: [
-        [0.6, 0.8, 0.0] if "amber" in text else [0.0, 1.0, 0.0] for text in texts
+        fixture_vector([0.6, 0.8, 0.0]) if "amber" in text else fixture_vector([0.0, 1.0, 0.0]) for text in texts
     ])
     mcp.memory_store.set_chunk_embedder(encoder.embed_batch)
     first = call(mcp, view="full")["results"][0]

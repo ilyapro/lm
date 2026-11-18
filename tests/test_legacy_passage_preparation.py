@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from fastmcp import Client
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory import server
 from living_memory.chunking import chunk_text
 from living_memory.recall_map import RecallMapBuilder
@@ -147,7 +148,7 @@ def test_concurrent_writer_wins_while_native_legacy_encoding_waits(runtime, chan
                 with MemoryStore(r.store.db_path, chunk_embedder=Encoder().embed_batch) as writer:
                     if change == "edit":
                         writer.update_node(r.node.id, content=FACT + " Revised condition.",
-                                           embedding=[0.0, 1.0, 0.0])
+                                           embedding=fixture_vector([0.0, 1.0, 0.0]))
                     elif change == "delete":
                         with writer.transaction():
                             writer.delete_node_chunks(r.node.id)
@@ -158,7 +159,7 @@ def test_concurrent_writer_wins_while_native_legacy_encoding_waits(runtime, chan
                         writer.update_node(r.node.id, context={"scope": "project:moved"})
                     else:
                         writer.replace_node_chunks(r.node.id, [
-                            (chunk, [0.0, 1.0, 0.0]) for chunk in chunk_text(CONTENT)
+                            (chunk, fixture_vector([0.0, 1.0, 0.0])) for chunk in chunk_text(CONTENT)
                         ])
                     expected_rows = rows(writer, r.node.id)
                     current = writer.get_node(r.node.id)
@@ -186,11 +187,11 @@ def test_response_map_and_explicit_credit_keep_their_own_event(runtime, monkeypa
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
     with r.guard:
         prior = r.store.create_node(level="concept", content="Prior certificate rule.",
-                                    context={"scope": "project:prior"}, embedding=[1.0, 0.0, 0.0])
+                                    context={"scope": "project:prior"}, embedding=fixture_vector([1.0, 0.0, 0.0]))
         for index in range(4):
             r.store.create_node(level="concept", content=f"Amber logistics note {index}.",
                                 context={"scope": SCOPE, "topic": "amber logistics"},
-                                embedding=[0.6, 0.8, 0.0])
+                                embedding=fixture_vector([0.6, 0.8, 0.0]))
     builds = []
     build = RecallMapBuilder.build
 

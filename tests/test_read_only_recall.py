@@ -4,6 +4,7 @@ from threading import RLock
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory import retrieval
 from living_memory.chunking import chunk_text
 from living_memory.health_audit import ReadOnlyAuditStore, hot_recall_latency
@@ -14,7 +15,7 @@ from living_memory.storage import MemoryStore
 
 QUERY = "orbital telemetry drift"
 SCOPE = "project:telemetry"
-VECTOR = [1.0, 0.0, 0.0]
+VECTOR = fixture_vector([1.0, 0.0, 0.0])
 WRITE_OPERATIONS = {
     "INSERT", "UPDATE", "DELETE", "REPLACE", "CREATE", "DROP", "ALTER",
     "REINDEX", "VACUUM",
@@ -27,7 +28,7 @@ class Encoder:
 
     def embed(self, text):
         self.texts.append(text)
-        return list(VECTOR)
+        return fixture_vector(VECTOR)
 
     def embed_batch(self, texts):
         return [self.embed(text) for text in texts]

@@ -20,6 +20,7 @@ from typing import Any, Iterator, Sequence
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory import retrieval
 from living_memory.chunking import TextChunk
 from living_memory.embeddings import cosine_similarity
@@ -46,7 +47,7 @@ class FixedEmbedder:
     """
 
     def embed(self, text: str) -> list[float]:
-        return list(QUERY_VECTOR) if QUERY in text.lower() else list(ORTHOGONAL)
+        return fixture_vector(QUERY_VECTOR if QUERY in text.lower() else ORTHOGONAL)
 
 
 def make_chunk(text: str, index: int) -> TextChunk:
@@ -72,7 +73,7 @@ def put_chunks(store: MemoryStore, node_id: str, vectors: Sequence[Sequence[floa
     store.replace_node_chunks(
         node_id,
         [
-            (make_chunk(f"{node_id} window {index}", index), list(vector))
+            (make_chunk(f"{node_id} window {index}", index), fixture_vector(vector))
             for index, vector in enumerate(vectors)
         ],
     )
@@ -117,7 +118,7 @@ def add_node(
         level=level,
         content=content,
         context={"scope": SCOPE, "agent": "tester"},
-        embedding=list(vector),
+        embedding=fixture_vector(vector),
     )
     return node.id
 
@@ -258,7 +259,7 @@ def test_node_without_chunks_does_not_break_the_scan(store: MemoryStore) -> None
         level="trace",
         content="   ",
         context={"scope": SCOPE, "agent": "tester"},
-        embedding=list(QUERY_VECTOR),
+        embedding=fixture_vector(QUERY_VECTOR),
     )
     assert store.count_node_chunks(blank.id) == 0
 
@@ -404,7 +405,7 @@ def test_cache_does_not_serve_a_vector_whose_content_changed(
     )
 
     # Re-embedded edit: same chunk count, different vector.
-    store.update_node(edited, content="completely different subject matter", embedding=ORTHOGONAL)
+    store.update_node(edited, content="completely different subject matter", embedding=fixture_vector(ORTHOGONAL))
     assert store.count_node_chunks(edited) == 1
     scores = vector_scores(recall(service))
     assert scores.get(edited, 0.0) == 0.0
