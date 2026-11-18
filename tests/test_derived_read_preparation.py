@@ -8,7 +8,7 @@ from fastmcp import Client
 import pytest
 
 from living_memory.embeddings import EncodedVector
-from living_memory import feedback, retrieval, server
+from living_memory import embeddings, feedback, retrieval, server
 from living_memory.chunking import chunk_text
 from living_memory.irrelevance import list_query_irrelevance
 from living_memory.query_anchors import resolve_query_anchor
@@ -290,27 +290,33 @@ def test_missing_anchor_required_failure_rolls_back_knowledge_and_all_feedback(r
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("change", ["create", "replace", "delete"])
+@pytest.mark.parametrize("reverse_recalls", [False, True], ids=["forward", "reverse"])
+@pytest.mark.parametrize("change", ["absent", "create", "replace", "delete"])
 @pytest.mark.parametrize("route", ["lookup", "implicit"])
-def test_feedback_uses_current_anchor_identity_after_encoding(runtime, change, route):
+def test_feedback_uses_current_anchor_identity_after_encoding(runtime, monkeypatch, change, route, reverse_recalls):
     r = runtime
-    other_query = "other pending feedback query"
+    other_query = "amber inspection"
+    other_content = "Amber inspection requires a signed checklist."
+    other_vector = EncodedVector([0.0, 1.0, 0.0], "hash:3")
+    writer_vector = EncodedVector([0.0, 0.0, 1.0], "writer:3")
+    monkeypatch.setattr(embeddings, "_embed_hash", lambda text, dimensions: (
+        other_vector if text in (other_query, other_content) else VECTOR
+    ))
     with r.guard:
-        other = r.store.create_node(level="concept", content="Other pending rule.",
-                                    context={"scope": SCOPE}, embedding=VECTOR)
-        existing = None if change == "create" else resolve_query_anchor(r.store, QUERY, SCOPE, [0.0, 1.0])
+        other = r.store.create_node(level="concept", content=other_content,
+                                    context={"scope": SCOPE}, embedding=other_vector)
+        existing = None
+        if change in ("replace", "delete"):
+            existing = resolve_query_anchor(r.store, QUERY, SCOPE, [0.0, 1.0])
 
     async def scenario():
         async with Client(r.mcp) as owner, Client(r.mcp) as reader:
-            first = await recall(owner)
-            # A second delivered id forces missing preparation even when the
-            # first query already has an authoritative anchor.
-            with r.guard:
-                event = r.store.get_recall_event(first["recall_event_id"])
-                second = r.store.record_recall_event(
-                    query=other_query, scope=SCOPE, ambient_context={"transport_session_id": event.transport_session_id},
-                    results=[{"node_id": other.id, "vector_score": 1.0}],
-                )
+            events = {}
+            deliveries = [(QUERY, r.node.id), (other_query, other.id)]
+            for query, node_id in reversed(deliveries) if reverse_recalls else deliveries:
+                delivered = await recall(owner, query=query)
+                assert entry(delivered)["id"] == node_id
+                events[query] = delivered["recall_event_id"]
             r.feedback_hold = True
             operation = asyncio.create_task(
                 call(owner, "memory_lookup", node_ids=[r.node.id, other.id]) if route == "lookup" else
@@ -323,25 +329,34 @@ def test_feedback_uses_current_anchor_identity_after_encoding(runtime, change, r
                     if existing is not None:
                         with writer.transaction():
                             writer.connection.execute("DELETE FROM query_anchors WHERE id = ?", (existing.id,))
-                    if change != "delete":
-                        created = resolve_query_anchor(writer, QUERY, SCOPE, [0.0, 0.0, 1.0])
+                    if change in ("create", "replace"):
+                        created = resolve_query_anchor(writer, QUERY, SCOPE, writer_vector)
                 await asyncio.wait_for(call(reader, "memory_lookup", node_id=r.node.id), 3)
             finally:
                 r.release.set()
             await asyncio.wait_for(operation, 5)
             with r.guard:
-                final = anchor(r.store)
-                if created is not None:
-                    assert final.id == created.id and final.embedding == created.embedding
-                else:
-                    assert final.id != existing.id and final.embedding == tuple(VECTOR)
-                assert r.store.credited_node_ids(first["recall_event_id"]) == {r.node.id}
-                assert r.store.credited_node_ids(second.id) == {other.id}
-                assert r.store.list_query_anchor_edges(anchor_id=final.id)[0].hits == 1
-            assert r.batches == (
-                [(QUERY, other_query) if route == "lookup" else (other_query, QUERY)] if change == "create" else
-                [(other_query,), (QUERY,)] if change == "delete" else [(other_query,)]
-            )
+                assert r.store.count_query_anchors() == 2
+                for query, node_id in deliveries:
+                    final = anchor(r.store, query)
+                    expected = other_vector if query == other_query else VECTOR
+                    if query == QUERY:
+                        if existing is not None:
+                            assert final.id != existing.id
+                        if created is not None:
+                            assert final.id == created.id
+                            expected = writer_vector
+                    assert final.query == query
+                    assert final.embedding == tuple(expected)
+                    assert final.encoder_id == expected.encoder_id
+                    assert r.store.credited_node_ids(events[query]) == {node_id}
+                    edge, = r.store.list_query_anchor_edges(anchor_id=final.id)
+                    assert (edge.target_id, edge.hits) == (node_id, 1)
+            if existing is None:
+                batch, = r.batches
+                assert sorted(batch) == sorted([QUERY, other_query])
+            else:
+                assert r.batches == ([(other_query,), (QUERY,)] if change == "delete" else [(other_query,)])
 
     asyncio.run(scenario())
 
