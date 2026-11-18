@@ -1055,3 +1055,33 @@ def test_invalid_batch_provenance_leaves_page_untouched(source_db, erase_identit
         run_in_process(source_db, wrap=invalid, batch_nodes=3)
     with MemoryStore(source_db) as store:
         assert store.count_node_chunks() == 0
+
+
+def test_normal_recall_uses_completed_index_without_repair(tmp_path, monkeypatch):
+    from living_memory.server import create_mcp_server
+    from test_mcp_server import FakeMCP
+
+    path = tmp_path / "recall.sqlite3"
+    with MemoryStore(path) as store:
+        target = store.append_trace("orchestrators")
+        for i in range(40):
+            store.append_trace(f"blue pottery {i}")
+        assert not store.search_content_ids("orchestrator")
+    assert complete_run(path) == 0
+
+    server = create_mcp_server(path, mcp_factory=FakeMCP)
+    store = server.memory_store
+    try:
+        unexpected = lambda *args, **kwargs: pytest.fail("completed sources entered lazy repair")
+        monkeypatch.setattr(store, "refresh_pending_chunks", unexpected)
+        monkeypatch.setattr(store, "unknown_chunk_batches", unexpected)
+        selected = store.list_node_chunks(target.id)
+        reply = server.tools["memory_recall"]("orchestrator")
+        assert reply["results"][0]["content"] == target.content
+        event = store.get_recall_event(reply["recall_event_id"])
+        assert event.results[0]["bm25_score"] == 0
+        assert event.results[0]["methods"] == ["vector"]
+        assert store.list_node_chunks(target.id) == selected
+    finally:
+        server.auto_consolidation.close()
+        store.close()
