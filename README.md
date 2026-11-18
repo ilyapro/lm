@@ -690,6 +690,13 @@ python3 scripts/observe_live_task_recall.py compare \
   --installed-root "$PWD" --published-commit "$candidate_commit"
 ```
 
+For the checkout-cache environment used by `scripts/server.sh`, set
+`PYTHONPATH="$PWD/src:${LIVING_MEMORY_DEPS_DIR:-$PWD/.cache/python-deps}"`
+in the environment of the command above. With a service venv, run the
+command with that venv's Python. The isolated interpreter imports the
+committed candidate source first and uses the selected dependency directory
+and interpreter packages.
+
 Pass `--candidate-root /path/to/repository` if another local repository holds
 the trusted candidate. The installed checkout may be on a different revision.
 Use `compare --help` for the service host, port and TLS options.
