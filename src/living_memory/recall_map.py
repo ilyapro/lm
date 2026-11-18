@@ -769,9 +769,6 @@ class _CachedStructure:
     """One cache entry: templates plus the corpus revision that validates them."""
 
     revision: tuple[Any, ...]
-    #: Empty only for a freshly selected empty pool.  This is a revision-bound
-    #: negative structure result, not a wildcard: a later non-empty pool must
-    #: rebuild rather than treating it as a reusable structure.
     templates: tuple[_ClusterTemplate, ...]
 
 
@@ -1352,7 +1349,8 @@ class RecallMapBuilder:
         #: Whether the last :meth:`build` paid for a history read, or answered
         #: the curtail question from what it had already delivered itself.
         self.last_curtail_read: bool = False
-        self._cache: dict[str, _CachedStructure] = {}
+        self._cache: dict[str, _CachedStructure | tuple[int, int]] = {}
+        self._filtered_chunks: tuple[int | None, int] | None = None
         self._curtail_memo: dict[str, _CurtailMemo] = {}
         #: Corpus statistics for the build in flight, reset by :meth:`build`.
         #: Label enrichment asks the document-frequency index once per bucket
@@ -1438,24 +1436,8 @@ class RecallMapBuilder:
         pool = ensure_pool()
         assert selection is not None
         if not pool:
-            # A non-empty residual that policy filtered completely is evidence,
-            # not the same event as an empty residual.  It offered no cluster
-            # and therefore cannot advance curtailment.  Its empty structure
-            # is still a useful negative cache result, but only for a fresh
-            # empty selection under this corpus revision.  Keep
-            # this branch explicit: `_recount((), pool)` deliberately rejects
-            # so an empty entry can never hide a later eligible pool.
-            revision = self._corpus_revision()
-            cached = self._cache.get(key)
-            if (
-                revision is not None
-                and cached is not None
-                and cached.revision == revision
-                and not cached.templates
-            ):
-                self.last_cache_hit = True
-            else:
-                self._remember(key, revision, [])
+            if key:
+                self._record_filtered_key(key)
             self.last_curtailment = _Curtailment(streak=0, offers=0)
             built = RecallMap(
                 scope=map_scope,
@@ -1464,11 +1446,11 @@ class RecallMapBuilder:
                 pool_size=0,
                 covered=0,
                 selection=selection,
+                pool_digest=pool_digest,
                 selection_sample_limit=_selection_sample_limit(
                     (), 0, 0, selection=selection
                 ),
             )
-            built = replace(built, pool_digest=pool_digest)
             self._note_delivery(work, offered=False)
             return built
 
@@ -1488,7 +1470,7 @@ class RecallMapBuilder:
         groups: list[_Group] | None = None
         if (
             revision is not None
-            and cached is not None
+            and isinstance(cached, _CachedStructure)
             and cached.revision == revision
             and cached.templates
         ):
@@ -2360,6 +2342,25 @@ class RecallMapBuilder:
             return None
         return (tuple(sorted(chunk_revisions.items())), anchor_revision)
 
+    def _record_filtered_key(self, key: str) -> None:
+        """Preserve FIFO pressure without storing an empty cluster template."""
+        counters = self.store.recall_map_revision_counters()
+        if counters is None:
+            return
+        pending, anchors = counters
+        # Chunk mutations advance the pending counter. Chunkless source changes
+        # can advance it too, so a changed counter alone cannot reorder a key.
+        if pending is None or self._filtered_chunks is None or self._filtered_chunks[0] != pending:
+            revisions = self.store.chunk_corpus_revisions()
+            if revisions is None:
+                return
+            # Committed scope counters only advance, and even empty scopes keep
+            # their counters. Adding a scope at zero must change the stamp too.
+            self._filtered_chunks = pending, len(revisions) + sum(revisions.values())
+        marker = self._filtered_chunks[1], anchors
+        if self._cache.get(key) != marker:
+            self._put_cache_entry(key, marker)
+
     def _remember(
         self, key: str, revision: tuple[Any, ...] | None, groups: list[_Group]
     ) -> None:
@@ -2375,8 +2376,11 @@ class RecallMapBuilder:
             )
             for group in groups
         )
+        self._put_cache_entry(key, _CachedStructure(revision=revision, templates=templates))
+
+    def _put_cache_entry(self, key: str, entry: _CachedStructure | tuple[int, int]) -> None:
         self._cache.pop(key, None)
-        self._cache[key] = _CachedStructure(revision=revision, templates=templates)
+        self._cache[key] = entry
         while len(self._cache) > MAX_CACHE_ENTRIES:
             self._cache.pop(next(iter(self._cache)))
 

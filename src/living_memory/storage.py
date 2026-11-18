@@ -4403,6 +4403,20 @@ class MemoryStore:
         ).fetchone()
         return int(row[0]) if row is not None else None
 
+    def recall_map_revision_counters(self) -> tuple[int | None, int] | None:
+        """Pending-chunk and anchor counters from one committed, supported format."""
+        if self._conn.in_transaction or not self._anchor_tables_present():
+            return None
+        row = self._conn.execute(
+            "SELECT (SELECT value FROM metadata WHERE key = 'pending_chunk_revision'), "
+            "anchor.value FROM metadata anchor JOIN metadata format "
+            "ON format.key = ? AND format.value = ? WHERE anchor.key = 'query_anchor_revision'",
+            (_CHUNK_SCOPE_REVISION_FORMAT, _CHUNK_SCOPE_REVISION_VERSION),
+        ).fetchone()
+        if row is None:
+            return None
+        return (int(row[0]) if row[0] is not None else None, int(row[1]))
+
     def chunk_corpus_revisions(
         self, scopes: Sequence[str] | None = None,
     ) -> dict[str, int] | None:
