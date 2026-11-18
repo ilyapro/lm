@@ -418,6 +418,53 @@ def test_embedding_fallback_clusters_and_labels_by_ctfidf(bare_store: MemoryStor
         assert "memory" not in label and "server" not in label
 
 
+def test_medoid_preserves_a_one_ulp_lead():
+    members = [
+        recall_map._Member(i, Node(str(i), "trace", ""), (STAGE_EMBEDDING,))
+        for i in range(4)
+    ]
+    vectors = {str(i): [1.0, slope * 1e-8] for i, slope in enumerate((4, 5, 5, 6))}
+    group = recall_map._Group(STAGE_EMBEDDING, (), "", "", members, vectors)
+    # Ordered sum gives the last row a mean one ulp above 1.0. Repeated
+    # float addition rounds all four means to 1.0 and chooses the first rank.
+    assert RecallMapBuilder._medoid(group) is members[3]
+
+
+@pytest.mark.parametrize("cap", [3, 200])
+def test_medoid_reuses_pairs_and_preserves_each_ordered_row(monkeypatch, cap):
+    monkeypatch.setattr(recall_map, "MAX_POOL_NODES", cap)
+    ids = ("a", "missing", "b", "a", "c", "d")
+    members = [
+        recall_map._Member(rank, Node(key, "trace", ""), (STAGE_EMBEDDING,))
+        for key, rank in zip(ids, (8, 0, 9, 3, 4, 7), strict=True)
+    ]
+    # The two occurrences of a tie on mean and the later one has better rank.
+    vectors = {"a": [1., 0.], "b": [1., 1.], "c": [1., -1.], "d": [1., 0.]}
+    group = recall_map._Group(STAGE_EMBEDDING, (), "", "", members, vectors)
+    present = [key for key in ids if key in vectors]
+    cosine = recall_map.cosine_similarity
+    expected = [[cosine(vectors[key], vectors[other]) for other in present if key != other]
+                for key in present]
+    calls = 0
+    rows = []
+
+    def counted(left, right):
+        nonlocal calls
+        calls += 1
+        return cosine(left, right)
+
+    def observe_sum(values):
+        rows.append(list(values))
+        return sum(rows[-1])
+
+    monkeypatch.setattr(recall_map, "cosine_similarity", counted)
+    monkeypatch.setattr(recall_map, "sum", observe_sum, raising=False)
+    assert RecallMapBuilder._medoid(group) is members[3]
+    assert rows == expected
+    shared = sum(a != b for i, a in enumerate(present[:cap]) for b in present[i+1:cap])
+    assert calls == sum(map(len, expected)) - shared
+
+
 def test_embedding_medoid_is_the_most_central_member(store: MemoryStore) -> None:
     """With vectors in play the medoid is maximal mean similarity, not rank."""
 
