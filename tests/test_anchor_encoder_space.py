@@ -279,6 +279,7 @@ def test_historical_index_reads_and_nominees_match_full_scan(tmp_path, monkeypat
         # The incoming encoder can displace another space through either unique key.
         with writer.transaction():
             writer.connection.execute("PRAGMA recursive_triggers=OFF")
+            writer.connection.execute("DELETE FROM query_anchor_edges WHERE anchor_id='2'")
             writer.connection.execute(
                 "UPDATE OR REPLACE query_anchors SET fingerprint='2' WHERE id='0'"
             )
