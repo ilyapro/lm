@@ -438,8 +438,9 @@ def test_medoid_reuses_pairs_and_preserves_each_ordered_row(monkeypatch, cap):
         recall_map._Member(rank, Node(key, "trace", ""), (STAGE_EMBEDDING,))
         for key, rank in zip(ids, (8, 0, 9, 3, 4, 7), strict=True)
     ]
-    # The two occurrences of a tie on mean and the later one has better rank.
-    vectors = {"a": [1., 0.], "b": [1., 1.], "c": [1., -1.], "d": [1., 0.]}
+    # Both occurrences of "a" tie for the best mean. The later one has better rank.
+    vectors = {"a": [1.0, 0.0, 0.0], "b": [1.0, 1.0, 0.0],
+               "c": [1.0, -1.0, 0.0], "d": [0.0, 0.0, 1.0]}
     group = recall_map._Group(STAGE_EMBEDDING, (), "", "", members, vectors)
     present = [key for key in ids if key in vectors]
     cosine = recall_map.cosine_similarity
@@ -461,7 +462,7 @@ def test_medoid_reuses_pairs_and_preserves_each_ordered_row(monkeypatch, cap):
     monkeypatch.setattr(recall_map, "sum", observe_sum, raising=False)
     assert RecallMapBuilder._medoid(group) is members[3]
     assert rows == expected
-    shared = sum(a != b for i, a in enumerate(present[:cap]) for b in present[i+1:cap])
+    shared = sum(a != b for i, a in enumerate(present[:cap]) for b in present[i + 1:cap])
     assert calls == sum(map(len, expected)) - shared
 
 
