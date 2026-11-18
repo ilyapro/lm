@@ -77,6 +77,7 @@ import unicodedata
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -84,7 +85,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT / "src") not in sys.path:  # pragma: no cover - CLI convenience
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from living_memory import retrieval as retrieval_module
 from living_memory.config import MemoryConfig
 from living_memory.embeddings import cosine_similarity
 from living_memory.retrieval import GRAPH_SEED_LIMIT, MemoryRecallService
@@ -809,6 +809,13 @@ def _temporal_assertions(
 # ---------------------------------------------------------------------------
 
 
+def _set_match_policy(service: MemoryRecallService, threshold: float, limit: int) -> None:
+    """Sweep the final matches over the same production pool of verified candidates."""
+    service._match_query_anchors = partial(  # type: ignore[method-assign]
+        MemoryRecallService._match_query_anchors, service, min_similarity=threshold, limit=limit
+    )
+
+
 def _rank_all(service: MemoryRecallService, items: Sequence[GoldsetItem]) -> dict[str, list[RankedAnchor]]:
     """Every item's nearest anchors once, unfloored.
 
@@ -1063,8 +1070,7 @@ def _sweep_cell(
 ) -> dict[str, Any]:
     """One (threshold, limit) cell: coverage, precision, quality, cost."""
 
-    retrieval_module.ANCHOR_MATCH_COSINE_THRESHOLD = threshold
-    retrieval_module.ANCHOR_MATCH_LIMIT = limit
+    _set_match_policy(service, threshold, limit)
 
     matched_items = 0
     matched_anchors = 0
@@ -1243,8 +1249,7 @@ def _verify_inert(
 
     if sample <= 0:
         return {"checked": 0, "identical": 0, "ok": True, "skipped": True}
-    retrieval_module.ANCHOR_MATCH_COSINE_THRESHOLD = 1.01
-    retrieval_module.ANCHOR_MATCH_LIMIT = 5
+    _set_match_policy(service, 1.01, 5)
     query_ids = sorted(baseline_order)
     step = max(1, len(query_ids) // sample)
     checked = 0
@@ -1291,8 +1296,7 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
     try:
         service = MemoryRecallService(store, anchor_seeding=True)
         ranked = _rank_all(service, items)
-        retrieval_module.ANCHOR_MATCH_COSINE_THRESHOLD = args.threshold
-        retrieval_module.ANCHOR_MATCH_LIMIT = args.limit
+        _set_match_policy(service, args.threshold, args.limit)
 
         funnel = {
             "items": len(items),
@@ -1420,8 +1424,7 @@ def cmd_latency(args: argparse.Namespace) -> int:
         service = MemoryRecallService(store, anchor_seeding=True)
         ranked = _rank_all(service, items)
         for threshold in args.threshold:
-            retrieval_module.ANCHOR_MATCH_COSINE_THRESHOLD = threshold
-            retrieval_module.ANCHOR_MATCH_LIMIT = args.limit
+            _set_match_policy(service, threshold, args.limit)
             matched = [
                 item
                 for item in items
