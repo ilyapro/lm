@@ -335,6 +335,10 @@ def test_decision_reasons_decode_required_metadata_and_context(tmp_path: Path) -
             "Decision", {}, alternatives_considered=[{"approach": "option", "reason": "reason"}],
         )
         db = store.connection
+        db.execute("UPDATE connections SET weight = 'invalid' WHERE source_id = ?", (source.id,))
+        with pytest.raises(ValueError, match="invalid"):
+            store.rejected_alternative_reasons([primary.id], resolve_scope())
+        db.execute("UPDATE connections SET weight = 1 WHERE source_id = ?", (source.id,))
         db.execute("UPDATE nodes SET context = '[]' WHERE id = ?", (source.id,))
         with pytest.raises(AttributeError):
             store.rejected_alternative_reasons([primary.id], resolve_scope())

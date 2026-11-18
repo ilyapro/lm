@@ -2318,12 +2318,15 @@ class MemoryStore:
         for batch in _node_read_batches(primary_ids):
             placeholders = ",".join("?" for _ in batch)
             with closing(self._conn.execute(
-                f"""SELECT target_id, source_id, metadata FROM connections
+                f"""SELECT target_id, source_id, metadata, weight, created_at FROM connections
                     WHERE target_id IN ({placeholders}) AND type = 'contradicts'
                     ORDER BY target_id, weight DESC, created_at DESC, rowid""",
                 batch,
             )) as rows:
                 for row in rows:
+                    # SQLite can sort a nonnumeric stored weight. Preserve the
+                    # connection reader's failure for an unreadable ordering key.
+                    float(row["weight"])
                     metadata = _json_loads(row["metadata"], {})
                     if metadata.get("kind") == REJECTED_ALTERNATIVE_KIND:
                         reason = str(metadata.get("reason") or "").strip()
