@@ -302,10 +302,13 @@ def _maybe_retune_learning_rate(store: MemoryStore, scope: str) -> None:
     row = store.connection.execute(
         """
         SELECT COUNT(*) AS count
-        FROM nodes
-        WHERE level = 'trace' AND scope = ? AND decayed = 0
+        FROM (
+            SELECT 1 FROM nodes
+            WHERE level = 'trace' AND scope = ? AND decayed = 0
+            LIMIT ?
+        )
         """,
-        (scope,),
+        (scope, _ADAPTIVE_LR_LADDER[-1][0]),
     ).fetchone()
     target_lr = _adaptive_learning_rate(int(row["count"]) if row else 0)
     current = store.get_retrieval_weights(scope)

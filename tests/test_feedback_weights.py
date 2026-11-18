@@ -230,31 +230,31 @@ def test_adaptive_tuning_raises_learning_rate_for_young_scope(
         assert weights.learning_rate == pytest.approx(0.20)
 
 
-def test_adaptive_tuning_lowers_learning_rate_as_scope_matures(
+def test_adaptive_feedback_uses_live_scope_traces_at_each_boundary(
     tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
 ) -> None:
     monkeypatch.setenv("LM_RETRIEVAL_TUNING_POLICY", "adaptive")
-    with MemoryStore(tmp_path / "memory.sqlite3") as store:
-        for index in range(60):
-            store.append_trace(
-                f"fact {index}",
-                {"scope": "project:mature", "agent": f"agent-{index}"},
-            )
-        node = store.get_node(
-            store.list_nodes(level="trace", scope="project:mature", limit=1)[0].id
-        )
+    scope = "project:adaptive"
+    with MemoryStore(tmp_path / "memory.sqlite3") as store, store.transaction():
+        other = store.append_trace("other scope", {"scope": "project:other"})
+        store.create_node(level="concept", content="summary", context={"scope": scope})
+        retired = store.append_trace("retired", {"scope": scope})
+        store.connection.execute("UPDATE nodes SET decayed = 1 WHERE id = ?", (retired.id,))
         result = RecallResult(
-            node=node,
-            score=0.7,
-            bm25_score=0.7,
-            vector_score=0.0,
-            graph_score=0.0,
-            methods=("bm25",),
+            node=other, score=0.7, bm25_score=0.7, vector_score=0.0,
+            graph_score=0.0, methods=("bm25",),
         )
-        apply_retrieval_feedback(store, result, useful=True, signal=1.0)
-        weights = store.get_retrieval_weights("project:mature")
-        # trace_count=60 falls in 50..500 band → 0.05
-        assert weights.learning_rate == pytest.approx(0.05)
+        count = 0
+        for size, rate in (
+            (0, 0.20), (9, 0.20), (10, 0.10), (11, 0.10),
+            (49, 0.10), (50, 0.05), (51, 0.05),
+            (499, 0.05), (500, 0.02), (501, 0.02),
+        ):
+            for index in range(count, size):
+                store.append_trace(f"fact {index}", {"scope": scope})
+            count = size
+            update = apply_retrieval_feedback(store, result, scope=scope)
+            assert update.weights.learning_rate == rate
 
 
 def test_fixed_tuning_policy_leaves_learning_rate_untouched(
