@@ -313,6 +313,7 @@ def test_recall_keeps_selected_knowledge_consistent_across_teach(tmp_path, monke
     db = tmp_path / "memory.sqlite3"
     reader, writer = create_mcp_server(db), create_mcp_server(db)
     store = reader.memory_store
+    assert store.connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     text = "Amber hatch before pressure release."
     revised = "Amber hatch after pressure release."
     scope = "project:read-validity"
@@ -365,7 +366,7 @@ def test_recall_keeps_selected_knowledge_consistent_across_teach(tmp_path, monke
             assert old == [(original, text, "full", False, [], False)]
             assert new[0][:5] == (correction, revised, "full", False, [])
             stale, = [row for row in new if row[0] == original]
-            assert stale[3:5] == (True, [correction])
+            assert stale[3:] == (True, [correction], True)
             if threshold != "off":
                 assert stale[1:3] == ("", "below_threshold")
             assert content_and_validity(during) in (old, new)

@@ -208,6 +208,12 @@ class RecallResult:
         }
 
 
+_ResultSelector = Callable[
+    [list[RecallResult], list[RecallResult], int, QueryRelevance],
+    tuple[list[RecallResult], list[RecallResult]],
+]
+
+
 @dataclass(slots=True)
 class _Candidate:
     node: Node
@@ -580,7 +586,7 @@ class MemoryRecallService:
         log_access: bool = True,
         log_event: bool | None = None,
         repair_pending: bool = True,
-        select_results: Callable[[list[RecallResult], list[RecallResult], int, QueryRelevance], tuple[list[RecallResult], list[RecallResult]]] | None = None,
+        select_results: _ResultSelector | None = None,
     ) -> list[RecallResult]:
         """Retrieve and commit a complete direct response."""
         with self.recall_response(
@@ -603,7 +609,7 @@ class MemoryRecallService:
         log_event: bool | None = None,
         repair_pending: bool = True,
         repeatable_selection: bool = False,
-        select_results: Callable[[list[RecallResult], list[RecallResult], int, QueryRelevance], tuple[list[RecallResult], list[RecallResult]]] | None = None,
+        select_results: _ResultSelector | None = None,
     ) -> Iterator[list[RecallResult]]:
         """Form a response within the short consumption rollback boundary.
 
@@ -682,7 +688,7 @@ class MemoryRecallService:
     def _select_recall(
         self, prepared: _PreparedQuery, *, scope: str | None,
         ambient_context: dict[str, Any] | None, depth: int | str | None, max_results: int,
-        select_results: Callable[[list[RecallResult], list[RecallResult], int, QueryRelevance], tuple[list[RecallResult], list[RecallResult]]] | None,
+        select_results: _ResultSelector | None,
     ) -> tuple[ScopePlan, list[RecallResult]]:
         query, query_embedding = prepared.text, prepared.embedding
         plan = self.scope_resolver.resolve(
