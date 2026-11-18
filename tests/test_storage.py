@@ -766,7 +766,9 @@ def test_attach_reuses_current_union_and_resolves_lookup_epoch(
             assert store.connection.total_changes - before == 1 + sum(
                 old != new for (_, old), new in zip(prior, expected)
             )
-            assert store.get_recall_event(event.id).recall_map == payload
+            assert [row["recall_map"] for row in store.recent_recall_map_history()] == (
+                [payload] if payload is not None else []
+            )
 
         extra = {"clusters": [{"medoid": {"node_id": "C"}}]}
         for replacement in (empty, None):
@@ -774,6 +776,34 @@ def test_attach_reuses_current_union_and_resolves_lookup_epoch(
             assert [key for key, _ in outcomes()] == ["A", "B", "C"]
             store.attach_recall_map(event.id, replacement)
             assert outcomes() == list(zip(("A", "B"), expected))
+
+
+@pytest.mark.parametrize(
+    ("damage", "reason"),
+    [
+        ("DELETE FROM recall_history_events", "history_event_missing"),
+        ("UPDATE recall_events SET results = '{}'", "malformed_legacy_results"),
+        ("DELETE FROM recall_delivery_history", None),
+    ],
+)
+def test_attach_checks_stored_history_before_reusing_it(tmp_path, monkeypatch, damage, reason):
+    with MemoryStore(tmp_path / "history.db") as store:
+        event = _record_event_at(
+            store, monkeypatch, "2026-02-01T00:00:00Z", results=_organic_tail("A", "test")
+        )
+        # Remove dependents before the parent to keep the fixture referentially valid.
+        if reason == "history_event_missing":
+            store.connection.execute("DELETE FROM recall_delivery_history")
+            store.connection.execute("DELETE FROM recall_history_result_nodes")
+        store.connection.execute(damage)
+        store.attach_recall_map(event.id, {"clusters": []})
+        assert store.connection.execute(
+            "SELECT unavailable_reason FROM recall_delivery_history_state"
+        ).fetchone()[0] == reason
+        if reason is None:
+            assert [row[0] for row in store.connection.execute(
+                "SELECT node_id FROM recall_delivery_history"
+            )] == ["A"]
 
 
 def test_recall_history_backfill_is_idempotent_and_malformed_legacy_is_unavailable(
