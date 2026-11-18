@@ -1185,30 +1185,10 @@ def test_gist_floor_fitting_is_deterministic_cold_and_warm(store: MemoryStore) -
     assert first.to_dict() == second.to_dict() == cold.to_dict()
 
 
-def test_repeated_topic_and_query_fit_two_portable_reminders(store: MemoryStore) -> None:
-    nodes = [
-        make_node(store, f"medoid {index} explains " + "detail " * 24)
-        for index in range(2)
-    ]
-    queries = [f"anchor{index} production verification window" for index in range(2)]
-    for node, query in zip(nodes, queries, strict=True):
-        seed_anchor(store, query, [node])
-
-    built = RecallMapBuilder(store).build(pool(nodes), scope=SCOPE)
-    assert built is not None
-    assert payload_chars(built) <= MAX_RESPONSE_CHARS
-    for cluster, node, query in zip(built.clusters, nodes, queries, strict=True):
-        assert cluster.medoid.node_id == node.id
-        assert len(cluster.medoid.example) >= MIN_MEDOID_EXAMPLE_CHARS
-        assert cluster.ask_hint == cluster.label == query
-        assert cluster.plan_item == f"on touching '{query}' - recall it (1)"
-
-
-@pytest.mark.parametrize("budget", [MAX_RESPONSE_CHARS, 270])
-def test_unaffordable_pair_offers_one_useful_row_if_it_fits(
-    store: MemoryStore, monkeypatch: pytest.MonkeyPatch, budget: int,
+def test_a_map_that_cannot_afford_the_gist_floor_is_journal_only(
+    store: MemoryStore,
 ) -> None:
-    monkeypatch.setattr(recall_map, "MAX_RESPONSE_CHARS", budget)
+    """Long proven hints do not buy breadth by shipping sub-floor gists."""
 
     nodes = [
         make_node(
@@ -1239,20 +1219,6 @@ def test_unaffordable_pair_offers_one_useful_row_if_it_fits(
     built = builder.build(pool(nodes), scope=SCOPE, task="unaffordable-floor")
 
     assert built is not None
-    assert payload_chars(built) <= budget
-    if budget == MAX_RESPONSE_CHARS:
-        (cluster,) = built.clusters
-        assert cluster.medoid.node_id == nodes[0].id
-        assert len(cluster.medoid.example) >= MIN_MEDOID_EXAMPLE_CHARS
-        assert cluster.ask_hint.startswith("anchor0 production equivalence")
-        assert cluster.ask_hint in cluster.plan_item
-        assert built.to_dict()["covered"] == 1
-        assert built.to_dict()["more"] == 1
-        assert built.to_dict()["filtered"] == {
-            "withheld": 0, "dropped": 1, "names": [["d", "anchor1 production equi…", 1]]
-        }
-        assert built.render_compact()
-        return
     assert built.clusters == ()
     assert built.dropped == 2
     assert built.withheld == 0
