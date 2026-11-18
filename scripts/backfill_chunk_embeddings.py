@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline, resumable backfill of chunk embeddings for every active node.
+"""Live-safe, resumable backfill of chunk embeddings for every active node.
 
 What this is for
 ----------------
@@ -32,14 +32,11 @@ to the same WAL database throughout.
 
 Resumability
 ------------
-There is no run state on disk: the database itself records progress. A chunk row
-carries the ``content_fingerprint`` of the content it was cut from, so
-``MemoryStore.list_unchunked_nodes`` — which drives this loop — reports exactly
-the nodes whose chunks are missing or stale. Each node's chunk set is replaced in
-one transaction (``replace_node_chunks``), so a kill can only ever land *between*
-nodes: no node is left holding a partial set or two generations of chunks. Re-run
-after an interruption and it finishes the rest; re-run after a completed run and
-it writes nothing.
+A source is ready when its dense chunk set covers the current fingerprint in
+the selected encoder space and each BLOB has the expected width. Backfill
+encodes outside the transaction and checks the source and observed chunk IDs
+under the write lock before replacing a set. Re-run to continue from the
+remaining sources. Use --limit to budget source attempts per invocation.
 
 The bounded batch is ``--batch-size`` nodes: one page of pending nodes, one
 encode call, then one transaction per node. A single giant transaction would hold
@@ -109,10 +106,8 @@ from living_memory.chunking import (  # noqa: E402  (path bootstrap above)
 from living_memory.embeddings import (  # noqa: E402
     EncodedVector,
     DEFAULT_EMBEDDING_MODEL,
-    EMBEDDING_DIMENSIONS,
     LocalEmbeddingModel,
 )
-from living_memory.models import Node  # noqa: E402
 from living_memory.storage import (  # noqa: E402
     CHUNK_EMBEDDING_ITEMSIZE,
     CHUNK_EMBEDDING_TABLE,
@@ -167,82 +162,57 @@ class BackfillError(RuntimeError):
 # ---------------------------------------------------------------------------
 # Pending-node predicate
 #
-# The backfill loop itself drives off MemoryStore.list_unchunked_nodes, so the
-# staleness rule lives in storage.py. These clauses restate it for the two jobs
-# that method cannot do: COUNT the work without materializing it, and answer the
-# same question over a read-only connection that must not run migrations
-# (--dry-run, verify). Keep them in step with list_unchunked_nodes.
 # ---------------------------------------------------------------------------
 
 _ACTIVE_CONTENT_CLAUSES = (
     "n.decayed = 0",
     f"TRIM(n.content, {_SQL_WHITESPACE}) != ''",
 )
-_NO_CURRENT_CHUNK_CLAUSE = (
-    f"NOT EXISTS (SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} c "
-    "WHERE c.node_id = n.id AND c.content_fingerprint = n.content_fingerprint)"
-)
 
 
-def pending_where(
-    *,
-    chunk_table: bool,
-    scope: str | None = None,
-    level: str | None = None,
-) -> tuple[str, list[Any]]:
-    """Build the ``WHERE`` body selecting nodes that still need chunks.
+@dataclass(frozen=True)
+class ChunkSelection:
+    active: str
+    filters: tuple[str, ...]
+    pending: str
+    params: tuple[Any, ...]
 
-    ``chunk_table=False`` (a pre-v6 file, which is what the live database looks
-    like until the first real run migrates it) means every active node is
-    pending: there is no table to have chunked into yet.
-    """
+    @classmethod
+    def for_connection(
+        cls, conn: sqlite3.Connection, encoder_id: str, scope: str | None, level: str | None,
+    ) -> ChunkSelection:
+        clauses = list(_ACTIVE_CONTENT_CLAUSES)
+        filters = []
+        for column, value in (("scope", scope), ("level", level)):
+            if value is not None:
+                clauses.append(f"n.{column} = ?")
+                filters.append(value)
+        active = " AND ".join(clauses)
+        # A pre-v6 file or a chunk table predating producer identity has no
+        # provably compatible rows. Read-only commands must not migrate either.
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({CHUNK_EMBEDDING_TABLE})")}
+        if "encoder_id" not in columns:
+            return cls(active, tuple(filters), active, tuple(filters))
 
-    clauses = list(_ACTIVE_CONTENT_CLAUSES)
-    params: list[Any] = []
-    if chunk_table:
-        clauses.append(_NO_CURRENT_CHUNK_CLAUSE)
-    if level is not None:
-        clauses.append("n.level = ?")
-        params.append(level)
-    if scope is not None:
-        clauses.append("n.scope = ?")
-        params.append(scope)
-    return " AND ".join(clauses), params
+        width = encoder_width(encoder_id)
+        ready = f"""SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} c
+            WHERE c.node_id = n.id GROUP BY c.node_id
+            HAVING MIN(c.chunk_index) = 0 AND MAX(c.chunk_index) = COUNT(*) - 1
+               AND MIN(c.content_fingerprint IS n.content_fingerprint
+                       AND c.encoder_id IS ? AND c.dimensions = ?
+                       AND typeof(c.embedding) = 'blob' AND length(c.embedding) = ?) = 1"""
+        return cls(active, tuple(filters), f"{active} AND NOT EXISTS ({ready})",
+                   (*filters, encoder_id, width, width * CHUNK_EMBEDDING_ITEMSIZE))
+
+    def count(self, conn: sqlite3.Connection) -> int:
+        return conn.execute(f"SELECT COUNT(*) FROM nodes n WHERE {self.pending}", self.params).fetchone()[0]
 
 
-def count_pending(
-    conn: sqlite3.Connection,
-    *,
-    chunk_table: bool,
-    scope: str | None = None,
-    level: str | None = None,
-) -> int:
-    where, params = pending_where(chunk_table=chunk_table, scope=scope, level=level)
-    row = conn.execute(f"SELECT COUNT(*) FROM nodes n WHERE {where}", params).fetchone()
-    return int(row[0])
-
-
-def iter_pending_content(
-    conn: sqlite3.Connection,
-    *,
-    chunk_table: bool,
-    scope: str | None = None,
-    level: str | None = None,
-) -> Iterator[tuple[str, str]]:
-    """Stream ``(node_id, content)`` for pending nodes, cheapest-memory order."""
-
-    where, params = pending_where(chunk_table=chunk_table, scope=scope, level=level)
-    cursor = conn.cursor()
-    cursor.row_factory = None
-    cursor.execute(
-        f"SELECT n.id, n.content FROM nodes n WHERE {where} ORDER BY n.id ASC", params
-    )
-    while True:
-        batch = cursor.fetchmany(256)
-        if not batch:
-            return
-        for node_id, content in batch:
-            yield str(node_id), str(content or "")
+def encoder_width(encoder_id: str) -> int:
+    suffix = encoder_id.rsplit(":", 1)[-1]
+    if not suffix.isascii() or not suffix.isdigit() or int(suffix) <= 0:
+        raise BackfillError(f"expected an encoder ID ending in a positive width: {encoder_id!r}")
+    return int(suffix)
 
 
 # ---------------------------------------------------------------------------
@@ -417,6 +387,7 @@ class EmbedderInfo:
     backend: str
     model: str
     dimensions: int
+    encoder_id: str
 
 
 def build_chunk_embedder(
@@ -477,7 +448,7 @@ def build_chunk_embedder(
         backend = "sentence-transformers"
 
     return embed, EmbedderInfo(
-        backend=backend, model=model_name, dimensions=int(model.dimensions)
+        backend=backend, model=model_name, dimensions=int(model.dimensions), encoder_id=model.encoder_id()
     )
 
 
@@ -569,6 +540,7 @@ class BackfillSummary:
     nodes_per_second: float = 0.0
     chunks_per_second: float = 0.0
     max_chunks_in_one_node: int = 0
+    encoder_id: str = ""
     embedding_backend: str = ""
     embedding_model: str = ""
     embedding_dimensions: int = 0
@@ -604,30 +576,28 @@ def dry_run(
     assumed_rate: float,
     progress_interval: float,
     quiet: bool,
+    encoder_id: str | None = None,
 ) -> BackfillSummary:
     """Report what a real run would write, touching nothing.
 
     Chunks every pending node for real (the chunker is cheap; the encoder is not)
     so the chunk and byte totals are counted rather than extrapolated. The vector
-    width comes from the rows already in the table when there are any, and from
-    the model's configured dimension otherwise.
+    width defaults to that of the selected encoder space.
     """
 
     summary = BackfillSummary(mode="dry-run", db=str(db), started_at=_utc_now_iso())
+    summary.encoder_id = encoder_id or LocalEmbeddingModel().encoder_id()
+    width = encoder_width(summary.encoder_id)
+    if dimensions is not None and dimensions != width:
+        raise BackfillError("--dimensions must match the selected encoder width")
     started = time.perf_counter()
     conn = open_readonly(db)
     try:
-        chunk_table = has_chunk_table(conn)
+        conn.execute("BEGIN")
+        selection = ChunkSelection.for_connection(conn, summary.encoder_id, scope, level)
         summary.node_embedding_column_present = has_node_embedding_column(conn)
         summary.tokenizer = get_tokenizer().name
-        if chunk_table:
-            widths = [
-                int(row[0])
-                for row in conn.execute(
-                    f"SELECT DISTINCT dimensions FROM {CHUNK_EMBEDDING_TABLE} "
-                    "ORDER BY dimensions"
-                ).fetchall()
-            ]
+        if has_chunk_table(conn):
             summary.chunk_rows_total = int(
                 conn.execute(f"SELECT COUNT(*) FROM {CHUNK_EMBEDDING_TABLE}").fetchone()[0]
             )
@@ -636,37 +606,22 @@ def dry_run(
                     f"SELECT COALESCE(SUM(LENGTH(embedding)), 0) FROM {CHUNK_EMBEDDING_TABLE}"
                 ).fetchone()[0]
             )
-        else:
-            widths = []
-        if dimensions is not None:
-            width = dimensions
-            width_source = "--dimensions"
-        elif len(widths) == 1:
-            width = widths[0]
-            width_source = f"{CHUNK_EMBEDDING_TABLE}.dimensions"
-        else:
-            width = EMBEDDING_DIMENSIONS
-            width_source = "embeddings.EMBEDDING_DIMENSIONS"
         summary.embedding_dimensions = width
-
-        summary.pending_before = count_pending(
-            conn, chunk_table=chunk_table, scope=scope, level=level
-        )
+        summary.pending_before = selection.count(conn)
         if not quiet:
             print(
                 f"dry run: {summary.pending_before} pending nodes, "
                 f"tokenizer {summary.tokenizer}, vector width {width} "
-                f"(from {width_source})",
+                f"({summary.encoder_id})",
                 flush=True,
             )
         reporter = ProgressReporter(
             summary.pending_before, interval=progress_interval, enabled=not quiet
         )
-        for node_id, content in iter_pending_content(
-            conn, chunk_table=chunk_table, scope=scope, level=level
+        for (content,) in conn.execute(
+            f"SELECT n.content FROM nodes n WHERE {selection.pending} ORDER BY n.id LIMIT ?",
+            (*selection.params, limit or -1),
         ):
-            if limit and summary.nodes_processed >= limit:
-                break
             chunks = chunk_text(content)
             summary.nodes_processed += 1
             if not chunks:
@@ -711,47 +666,40 @@ def _is_busy(exc: sqlite3.OperationalError) -> bool:
     return "locked" in message or "busy" in message
 
 
-def _fetch_content_and_fingerprint(
-    conn: sqlite3.Connection, node_ids: Sequence[str]
-) -> dict[str, tuple[str, str]]:
-    """Read each node's ``(content, content_fingerprint)`` as one atomic pair.
-
-    Both values must come from the same row read: pairing content fetched at one
-    instant with a fingerprint fetched at another is exactly how a node ends up
-    with chunks stamped with a fingerprint they were not cut from.
-    """
-
-    found: dict[str, tuple[str, str]] = {}
-    ids = list(node_ids)
-    for start in range(0, len(ids), 500):
-        window = ids[start : start + 500]
-        placeholders = ",".join("?" for _ in window)
-        rows = conn.execute(
-            f"SELECT id, content, content_fingerprint FROM nodes WHERE id IN ({placeholders})",
-            window,
-        ).fetchall()
-        for row in rows:
-            found[str(row["id"])] = (
-                str(row["content"] or ""),
-                str(row["content_fingerprint"] or ""),
-            )
-    return found
+def _chunk_ids(conn: sqlite3.Connection, node_id: str) -> tuple[str, ...]:
+    return tuple(row[0] for row in conn.execute(
+        f"SELECT id FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ? ORDER BY chunk_index",
+        (node_id,),
+    ))
 
 
 def _write_chunks_with_retry(
     store: MemoryStore,
     node_id: str,
     pairs: Sequence[tuple[TextChunk, Sequence[float]]],
-    fingerprint: str,
+    source: sqlite3.Row,
+    chunk_ids: tuple[str, ...],
+    selection: ChunkSelection,
     summary: BackfillSummary,
 ) -> int:
     """One node's chunk set, one transaction, retried while the server holds the lock."""
 
     for attempt in range(BUSY_RETRIES + 1):
         try:
-            return store.replace_node_chunks(
-                node_id, pairs, content_fingerprint=fingerprint
-            )
+            with store.transaction(immediate=True):
+                current = store.connection.execute(
+                    f"SELECT n.id, n.content, n.content_fingerprint, n.scope, n.level, "
+                    f"({selection.pending}) AS pending FROM nodes n WHERE n.id = ?",
+                    (*selection.params, node_id),
+                ).fetchone()
+                if current is None:
+                    raise KeyError(node_id)
+                if (not current["pending"] or current[:-1] != tuple(source)
+                        or _chunk_ids(store.connection, node_id) != chunk_ids):
+                    return 0
+                return store.replace_node_chunks(
+                    node_id, pairs, content_fingerprint=source["content_fingerprint"]
+                )
         except sqlite3.OperationalError as exc:
             if not _is_busy(exc) or attempt == BUSY_RETRIES:
                 raise
@@ -765,33 +713,6 @@ def _write_chunks_with_retry(
             )
             time.sleep(delay)
     raise AssertionError("unreachable")  # pragma: no cover
-
-
-def _next_page(
-    store: MemoryStore,
-    *,
-    batch_nodes: int,
-    scope: str | None,
-    level: str | None,
-    skipped: set[str],
-) -> list[Node]:
-    """One page of pending nodes with the permanently-skipped ones filtered out.
-
-    ``list_unchunked_nodes`` always returns the same ordered head of the pending
-    set, so nodes this run cannot finish (no chunkable content, no fingerprint,
-    too many content changes) stay at that head forever. Growing the requested
-    limit by the number of skipped nodes keeps them from crowding real work out
-    of the page — and an all-skipped page that came back short is how the loop
-    learns it has reached the end.
-    """
-
-    requested = batch_nodes + len(skipped)
-    while True:
-        page = store.list_unchunked_nodes(scope=scope, level=level, limit=requested)
-        workable = [node for node in page if node.id not in skipped]
-        if workable or len(page) < requested:
-            return workable
-        requested += batch_nodes
 
 
 def run_backfill(
@@ -814,14 +735,16 @@ def run_backfill(
     committed before the failure.
     """
 
+    if batch_nodes <= 0 or limit < 0:
+        raise BackfillError("batch size must be positive and limit nonnegative")
     conn = store.connection
+    summary.encoder_id = embedder_info.encoder_id
+    selection = ChunkSelection.for_connection(conn, summary.encoder_id, scope, level)
     summary.embedding_backend = embedder_info.backend
     summary.embedding_model = embedder_info.model
     summary.embedding_dimensions = embedder_info.dimensions
     summary.tokenizer = get_tokenizer().name
-    summary.pending_before = count_pending(
-        conn, chunk_table=True, scope=scope, level=level
-    )
+    summary.pending_before = selection.count(conn)
     summary.node_embedding_column_present = has_node_embedding_column(conn)
 
     if not quiet:
@@ -836,56 +759,51 @@ def run_backfill(
         summary.pending_before, interval=progress_interval, enabled=not quiet
     )
     attempts: dict[str, int] = {}
+    after_id = ""
+    retry_pass = False
     skipped: set[str] = set()
 
     try:
         while True:
             if limit and summary.nodes_processed >= limit:
                 break
-            page = _next_page(
-                store,
-                batch_nodes=batch_nodes,
-                scope=scope,
-                level=level,
-                skipped=skipped,
-            )
+            size = min(batch_nodes, limit - summary.nodes_processed) if limit else batch_nodes
+            with store.transaction():
+                page = conn.execute(
+                    f"SELECT n.id, n.content, n.content_fingerprint, n.scope, n.level "
+                    f"FROM nodes n WHERE n.id > ? AND {selection.pending} ORDER BY n.id LIMIT ?",
+                    (after_id, *selection.params, size),
+                ).fetchall()
+                generations = {row["id"]: _chunk_ids(conn, row["id"]) for row in page}
             if not page:
-                break
-            if limit:
-                page = page[: max(limit - summary.nodes_processed, 0)]
-
-            rows = _fetch_content_and_fingerprint(conn, [node.id for node in page])
-
-            # Chunk the whole page, then encode all of its texts in one call: the
-            # encoder amortizes across texts, and a per-node call would spend the
-            # batch dimension it was measured with.
-            planned: list[tuple[str, str, list[TextChunk]]] = []
-            texts: list[str] = []
-            for node in page:
-                row = rows.get(node.id)
-                if row is None:
-                    summary.nodes_processed += 1
-                    summary.nodes_vanished += 1
-                    skipped.add(node.id)
+                if retry_pass:
+                    after_id, retry_pass = "", False
                     continue
-                content, fingerprint = row
+                break
+            after_id = page[-1]["id"]
+            planned: list[tuple[sqlite3.Row, list[TextChunk]]] = []
+            texts: list[str] = []
+            for source in page:
+                node_id, content, fingerprint = source[:3]
+                if node_id in skipped:
+                    continue
                 if not fingerprint:
                     summary.nodes_processed += 1
                     summary.nodes_skipped_no_fingerprint += 1
-                    skipped.add(node.id)
+                    skipped.add(node_id)
                     LOG.warning(
                         "node %s has no content_fingerprint; skipping (its chunks "
                         "could never be recognized as current)",
-                        node.id,
+                        node_id,
                     )
                     continue
                 chunks = chunk_text(content)
                 if not chunks:
                     summary.nodes_processed += 1
                     summary.nodes_skipped_no_chunks += 1
-                    skipped.add(node.id)
+                    skipped.add(node_id)
                     continue
-                planned.append((node.id, fingerprint, chunks))
+                planned.append((source, chunks))
                 texts.extend(chunk.text for chunk in chunks)
 
             if not planned:
@@ -897,8 +815,13 @@ def run_backfill(
                     f"encoder returned {len(vectors)} vectors for {len(texts)} chunk texts"
                 )
 
+            if any(not isinstance(v, EncodedVector) or v.encoder_id != summary.encoder_id
+                   or len(v) != embedder_info.dimensions for v in vectors):
+                raise BackfillError(f"encoder returned vectors outside {summary.encoder_id}")
+
             cursor = 0
-            for node_id, fingerprint, chunks in planned:
+            for source, chunks in planned:
+                node_id = source["id"]
                 pairs = [
                     (chunk, vectors[cursor + offset])
                     for offset, chunk in enumerate(chunks)
@@ -909,7 +832,7 @@ def run_backfill(
                 )
                 try:
                     written = _write_chunks_with_retry(
-                        store, node_id, pairs, fingerprint, summary
+                        store, node_id, pairs, source, generations[node_id], selection, summary
                     )
                 except KeyError:
                     # The node row is gone between the read and the write. Living
@@ -922,6 +845,17 @@ def run_backfill(
                     LOG.warning("node %s disappeared mid-run; skipping", node_id)
                     continue
                 summary.nodes_processed += 1
+                if not written:
+                    seen = attempts.get(node_id, 0) + 1
+                    attempts[node_id] = seen
+                    if seen >= MAX_NODE_ATTEMPTS:
+                        skipped.add(node_id)
+                        summary.nodes_skipped_attempt_limit += 1
+                    else:
+                        retry_pass = True
+                    continue
+                if node_id in attempts:
+                    summary.nodes_rechunked_after_content_change += 1
                 summary.nodes_written += 1
                 summary.chunk_writes += 1
                 summary.chunks_written += written
@@ -931,24 +865,6 @@ def run_backfill(
                 summary.max_chunks_in_one_node = max(
                     summary.max_chunks_in_one_node, written
                 )
-                seen = attempts.get(node_id, 0) + 1
-                attempts[node_id] = seen
-                if seen > 1:
-                    # The node came back pending after being written: its content
-                    # changed under us, so the chunks just written are already
-                    # stale. They are still internally consistent — one
-                    # generation, one fingerprint — and the next attempt replaces
-                    # them wholesale.
-                    summary.nodes_rechunked_after_content_change += 1
-                if seen >= MAX_NODE_ATTEMPTS:
-                    summary.nodes_skipped_attempt_limit += 1
-                    skipped.add(node_id)
-                    LOG.warning(
-                        "node %s changed content %d times during the run; leaving "
-                        "it for the next pass",
-                        node_id,
-                        seen,
-                    )
                 reporter.update(summary.nodes_processed, summary.chunks_written)
     finally:
         summary.elapsed_seconds = round(time.perf_counter() - reporter.started, 3)
@@ -958,9 +874,7 @@ def run_backfill(
         summary.chunks_per_second = _rate(
             summary.chunks_written, summary.elapsed_seconds
         )
-        summary.pending_after = count_pending(
-            conn, chunk_table=True, scope=scope, level=level
-        )
+        summary.pending_after = selection.count(conn)
         summary.chunk_rows_total = store.count_node_chunks()
         summary.chunk_bytes_total = int(
             conn.execute(
@@ -982,26 +896,23 @@ def run_backfill(
 # ---------------------------------------------------------------------------
 
 
-def verify_report(db: Path, *, scope: str | None, level: str | None) -> dict[str, Any]:
+def verify_report(db: Path, *, scope: str | None, level: str | None, encoder_id: str | None = None) -> dict[str, Any]:
     """Read-only coverage, consistency and size report. Safe on the live DB."""
 
+    encoder_id = encoder_id or LocalEmbeddingModel().encoder_id()
     conn = open_readonly(db)
     try:
+        conn.execute("BEGIN")
         chunk_table = has_chunk_table(conn)
         embedding_column = has_node_embedding_column(conn)
-        active_where, active_params = pending_where(
-            chunk_table=False, scope=scope, level=level
-        )
-        active = int(
-            conn.execute(
-                f"SELECT COUNT(*) FROM nodes n WHERE {active_where}", active_params
-            ).fetchone()[0]
-        )
-        pending = count_pending(
-            conn, chunk_table=chunk_table, scope=scope, level=level
-        )
+        selection = ChunkSelection.for_connection(conn, encoder_id, scope, level)
+        active = conn.execute(
+            f"SELECT COUNT(*) FROM nodes n WHERE {selection.active}", selection.filters
+        ).fetchone()[0]
+        pending = selection.count(conn)
         report: dict[str, Any] = {
             "db": str(db),
+            "encoder_id": encoder_id,
             "checked_at": _utc_now_iso(),
             "schema_version": _schema_version(conn),
             "chunk_table_present": chunk_table,
@@ -1056,15 +967,16 @@ def verify_report(db: Path, *, scope: str | None, level: str | None) -> dict[str
             str(r[0])
             for r in conn.execute(
                 f"""
-                SELECT node_id FROM {CHUNK_EMBEDDING_TABLE}
-                GROUP BY node_id
-                HAVING COUNT(DISTINCT content_fingerprint) > 1
+                SELECT c.node_id FROM {CHUNK_EMBEDDING_TABLE} c JOIN nodes n ON n.id=c.node_id
+                WHERE {selection.active}
+                GROUP BY c.node_id
+                HAVING COUNT(DISTINCT c.content_fingerprint) > 1
                     OR COUNT(DISTINCT dimensions) > 1
                     OR MIN(chunk_index) != 0
                     OR MAX(chunk_index) != COUNT(*) - 1
                 ORDER BY node_id
                 LIMIT 50
-                """
+                """, selection.filters
             ).fetchall()
         ]
         report["inconsistent_nodes"] = len(inconsistent)
@@ -1078,7 +990,6 @@ def verify_report(db: Path, *, scope: str | None, level: str | None) -> dict[str
         report["ok"] = (
             pending == 0
             and not inconsistent
-            and len(report["dimensions"]) <= 1
         )
         return report
     finally:
@@ -1115,6 +1026,7 @@ def _print_summary(summary: BackfillSummary) -> None:
     print(f"{summary.mode} summary")
     print(f"  elapsed            {format_duration(summary.elapsed_seconds)} "
           f"({summary.elapsed_seconds:.3f}s)")
+    print(f"  encoder ID         {summary.encoder_id}")
     print(f"  pending before     {summary.pending_before}")
     print(f"  pending after      {summary.pending_after}")
     print(f"  nodes processed    {summary.nodes_processed}")
@@ -1150,6 +1062,8 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     if not db.is_file():
         raise BackfillError(f"--db does not exist: {db}")
 
+    if args.limit < 0 or min(args.batch_size, args.encode_batch) <= 0:
+        raise BackfillError("batch sizes must be positive and limit nonnegative")
     if args.dry_run:
         summary = dry_run(
             db,
@@ -1157,6 +1071,7 @@ def cmd_backfill(args: argparse.Namespace) -> int:
             level=args.level,
             limit=args.limit,
             dimensions=args.dimensions,
+            encoder_id=args.encoder_id or LocalEmbeddingModel(model_name=args.model).encoder_id(),
             assumed_rate=args.assumed_rate,
             progress_interval=args.progress_interval,
             quiet=args.quiet,
@@ -1185,6 +1100,8 @@ def cmd_backfill(args: argparse.Namespace) -> int:
         encode_batch=args.encode_batch,
         allow_fallback=args.allow_fallback_embeddings,
     )
+    if args.encoder_id and args.encoder_id != info.encoder_id:
+        raise BackfillError(f"requested {args.encoder_id}, encoder resolved to {info.encoder_id}")
     summary = BackfillSummary(
         mode="backfill", db=str(db), started_at=_utc_now_iso(), backup=asdict(backup)
     )
@@ -1233,7 +1150,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     db = args.db.expanduser()
     if not db.is_file():
         raise BackfillError(f"--db does not exist: {db}")
-    report = verify_report(db, scope=args.scope, level=args.level)
+    report = verify_report(db, scope=args.scope, level=args.level,
+                           encoder_id=args.encoder_id or LocalEmbeddingModel(model_name=args.model).encoder_id())
     width = max(len(key) for key in report)
     for key, value in report.items():
         if key == "inconsistent_node_ids" and not value:
@@ -1357,6 +1275,9 @@ def _add_backup_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_filter_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--model", default=DEFAULT_EMBEDDING_MODEL, help="Embedding model to resolve.")
+    parser.add_argument("--encoder-id", help="Target producer ID, e.g. st:MODEL:384. "
+                        "Defaults to the resolved encoder. Writes require an exact match.")
     parser.add_argument("--scope", default=None, help="Only nodes in this scope.")
     parser.add_argument(
         "--level",
@@ -1411,11 +1332,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stop after this many nodes (0 = until nothing is pending).",
     )
     run.add_argument(
-        "--model",
-        default=DEFAULT_EMBEDDING_MODEL,
-        help=f"Embedding model (default {DEFAULT_EMBEDDING_MODEL}).",
-    )
-    run.add_argument(
         "--allow-fallback-embeddings",
         action="store_true",
         help="Proceed even if the model did not load and vectors would come from "
@@ -1425,8 +1341,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--dimensions",
         type=int,
         default=None,
-        help="Vector width to assume for --dry-run byte totals (default: the "
-        "width already recorded in the chunk table, else the model's).",
+        help="Check the vector width used for --dry-run byte totals.",
     )
     run.add_argument(
         "--assumed-rate",
