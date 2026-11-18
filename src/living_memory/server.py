@@ -60,7 +60,9 @@ from living_memory.delivery import (
 )
 from living_memory.edge_derivation import derive_edges_for_new_trace
 from living_memory.models import Node, duplicate_bearers
-from living_memory.prompts import MEMORY_GUIDANCE, retrieval_context_prompt
+from living_memory.prompts import (
+    DEFAULT_CONTEXT_CONCEPTS, DEFAULT_CONTEXT_SCHEMAS, MEMORY_GUIDANCE, retrieval_context_prompt,
+)
 from living_memory.recall_map import RecallMapBuilder
 from living_memory.resources import (
     connection_to_dict,
@@ -1794,28 +1796,33 @@ def _register_prompts(
     def retrieval_context(
         task: str = "",
         scope: str | None = None,
-        max_concepts: int = 5,
+        max_concepts: int = DEFAULT_CONTEXT_CONCEPTS,
         min_confidence: float = 0.0,
         retrieval_policy: str = "balanced",
         agent: str | None = None,
         ambient_context: dict[str, Any] | None = None,
+        max_schemas: int = DEFAULT_CONTEXT_SCHEMAS,
     ) -> str:
         """Return a formatted active memory context block."""
 
-        prepared_query = recall_service.prepare_query(str(task or ""))
-        if prepared_query.text:
+        query = str(task or "").strip()
+        if query and (max_concepts > 0 or max_schemas > 0):
+            prepared_query = recall_service.prepare_query(query)
             recall_service.refresh_pending_chunks(
                 query=prepared_query, scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
             )
-        prepared_query = recall_service.prepare_anchor_history(
-            prepared_query, scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
-        )
+            prompt_task = recall_service.prepare_anchor_history(
+                prepared_query, scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
+            )
+        else:
+            prompt_task = query
         with runtime_lock:
             return retrieval_context_prompt(
                 store,
-                task=prepared_query,
+                task=prompt_task,
                 scope=scope,
                 max_concepts=max_concepts,
+                max_schemas=max_schemas,
                 min_confidence=min_confidence,
                 retrieval_policy=retrieval_policy,
                 agent=agent,
