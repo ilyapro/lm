@@ -1654,7 +1654,7 @@ class MemoryStore:
             return {str(row["id"]) for row in rows}
 
     def _recall_node_rows(
-        self, node_ids: Iterable[str], plan: ScopePlan, *, columns: Literal["*", "id"],
+        self, node_ids: Iterable[str], plan: ScopePlan, *, columns: str,
     ) -> Iterator[sqlite3.Row]:
         """Stream admitted rows; consumers must close this iterator on exit."""
         scopes = plan.named_scopes if plan.restricted else ()
@@ -2309,6 +2309,50 @@ class MemoryStore:
             params,
         ).fetchall()
         return [_connection_from_row(row) for row in rows if row["checked_weight"] is not None]
+
+    def rejected_alternative_reasons(
+        self, primary_ids: Iterable[str], plan: ScopePlan,
+    ) -> dict[str, list[str]]:
+        """Read reasons in incoming contradiction order, then qualify their sources."""
+        candidates: list[tuple[str, str, str]] = []
+        for batch in _node_read_batches(primary_ids):
+            placeholders = ",".join("?" for _ in batch)
+            with closing(self._conn.execute(
+                f"""SELECT target_id, source_id, metadata FROM connections
+                    WHERE target_id IN ({placeholders}) AND type = 'contradicts'
+                    ORDER BY target_id, weight DESC, created_at DESC, rowid""",
+                batch,
+            )) as rows:
+                for row in rows:
+                    metadata = _json_loads(row["metadata"], {})
+                    if metadata.get("kind") == REJECTED_ALTERNATIVE_KIND:
+                        reason = str(metadata.get("reason") or "").strip()
+                        if reason:
+                            candidates.append((row["target_id"], row["source_id"], reason))
+
+        # The writer stores a boolean. Read its last occurrence (as json.loads
+        # does for duplicate keys), keeping Python decoding for other shapes.
+        columns = """id, CASE (
+            SELECT field.type FROM json_each(CASE WHEN json_valid(context) THEN context END) AS field
+            WHERE field.key = 'is_rejected_alternative' ORDER BY field.id DESC LIMIT 1
+        ) WHEN 'true' THEN 1 WHEN 'false' THEN 0 ELSE context END AS marker"""
+        sources = (source for _, source, _ in candidates)
+        with closing(self._recall_node_rows(sources, plan, columns=columns)) as rows:
+            visible = set()
+            for row in rows:
+                marker = row["marker"]
+                if isinstance(marker, int) or marker is None:
+                    rejected = marker
+                else:
+                    rejected = _json_loads(marker, {}).get("is_rejected_alternative")
+                if rejected:
+                    visible.add(row["id"])
+
+        reasons: dict[str, list[str]] = {}
+        for primary, source, reason in candidates:
+            if source in visible:
+                reasons.setdefault(primary, []).append(reason)
+        return reasons
 
     def list_supersedes_pairs(self, node_ids: Iterable[str]) -> list[tuple[str, str]]:
         """Return unique (correction, original) pairs touching any requested id.

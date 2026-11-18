@@ -7,7 +7,7 @@ from typing import Any
 import json
 import re
 
-from living_memory.models import REJECTED_ALTERNATIVE_KIND, Node
+from living_memory.models import Node
 from living_memory.retrieval import SCOPE_RANK_BOOST_STEP, MemoryRecallService, _PreparedQuery
 from living_memory.scope import ScopePlan, resolve_scope
 from living_memory.storage import ConceptBrowseFields, MemoryStore
@@ -293,12 +293,15 @@ def select_decision_history(
         repair_pending=repair_pending,
     )
 
+    candidates = [
+        result for result in recall_results
+        if not result.node.context.get("is_rejected_alternative") and plan.allows(result.node.scope)
+    ]
+    by_primary = store.rejected_alternative_reasons((result.node.id for result in candidates), plan)
     selected: dict[str, DecisionHistory] = {}
-    for result in recall_results:
+    for result in candidates:
         node = result.node
-        if node.context.get("is_rejected_alternative") or not plan.allows(node.scope):
-            continue
-        reasons = _rejected_alternative_reasons(store, node, plan)
+        reasons = by_primary.get(node.id)
         if not reasons:
             continue
         selected[node.id] = DecisionHistory(
@@ -441,24 +444,3 @@ def _browse_score(
 
 def _single_line(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
-
-
-def _rejected_alternative_reasons(
-    store: MemoryStore,
-    primary: Node,
-    plan: ScopePlan,
-) -> list[str]:
-    reasons: list[str] = []
-    for connection in store.list_connections(target_id=primary.id, relation_type="contradicts"):
-        if connection.metadata.get("kind") != REJECTED_ALTERNATIVE_KIND:
-            continue
-        reason = str(connection.metadata.get("reason") or "").strip()
-        if not reason:
-            continue
-        rejected = store.get_node(connection.source_id)
-        if rejected is None or rejected.decayed or not plan.allows(rejected.scope):
-            continue
-        if not rejected.context.get("is_rejected_alternative"):
-            continue
-        reasons.append(reason)
-    return reasons
