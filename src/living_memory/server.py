@@ -295,14 +295,16 @@ def create_mcp_server(
         expose_operator_tools = (
             os.environ.get("LM_EXPOSE_OPERATOR_TOOLS", "") == "1"
         )
-    _register_tools(mcp, store, runtime_lock, expose_attest=expose_attest)
+    recall_service = MemoryRecallService(store)
+    recall_service._share_embedder_with_store()
+    _register_tools(mcp, store, runtime_lock, recall_service, expose_attest=expose_attest)
     _configure_tool_list_visibility(
         mcp,
         expose_attest=expose_attest,
         expose_operator_tools=expose_operator_tools,
     )
     _register_resources(mcp, store, runtime_lock)
-    _register_prompts(mcp, store, runtime_lock)
+    _register_prompts(mcp, store, runtime_lock, recall_service)
     _register_admin_routes(
         mcp,
         store=store,
@@ -1000,10 +1002,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _register_tools(
-    mcp: Any, store: MemoryStore, runtime_lock: Any, *, expose_attest: bool = False
+    mcp: Any, store: MemoryStore, runtime_lock: Any, recall_service: MemoryRecallService,
+    *, expose_attest: bool = False,
 ) -> None:
-    recall_service = MemoryRecallService(store)
-    recall_service._share_embedder_with_store()
     # One builder per server, like the service's own caches: the map's
     # stability guarantee is "same task, same structure across sessions",
     # which only holds if the thing remembering the structure outlives a call.
@@ -1783,9 +1784,9 @@ def _register_resources(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None
         return {"uri": "memory://latency", "metrics": metrics}
 
 
-def _register_prompts(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
-    recall_service = MemoryRecallService(store)
-    recall_service._share_embedder_with_store()
+def _register_prompts(
+    mcp: Any, store: MemoryStore, runtime_lock: Any, recall_service: MemoryRecallService,
+) -> None:
 
     @mcp.prompt(name="memory://prompt/retrieval_context")
     def retrieval_context(
