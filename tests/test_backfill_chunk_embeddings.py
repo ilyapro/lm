@@ -976,3 +976,82 @@ def test_dropped_database_still_reopens_and_backfills(source_db: Path) -> None:
     summary = run_in_process(db, batch_nodes=4)
     assert summary.nodes_written == 1
     assert summary.pending_after == 0
+
+
+@pytest.mark.parametrize("legacy_column_missing", [False, True])
+def test_space_upgrade_rehearses_resumes_and_verifies(source_db, legacy_column_missing):
+    assert complete_run(source_db) == 0
+    with sqlite3.connect(source_db) as conn:
+        if legacy_column_missing:
+            conn.executescript("""
+                DROP TRIGGER chunk_corpus_update;
+                DROP INDEX idx_chunk_source_space;
+                ALTER TABLE node_chunk_embeddings DROP COLUMN encoder_id;
+                UPDATE metadata SET value='1' WHERE key='chunk_scope_revision_format';
+            """)
+        else:
+            # A matching window in a multi-window source cannot vouch for the rest.
+            conn.execute("UPDATE node_chunk_embeddings SET encoder_id = CASE "
+                         "WHEN chunk_index=1 THEN 'hash:384' WHEN chunk_index=2 THEN 'other:384' END")
+    report = source_db.parent / "report.json"
+    args = ["--db", str(source_db), "--encoder-id", "hash:384", "--json", str(report)]
+    def summary():
+        return json.loads(report.read_text())
+
+    assert cli("verify", *args) == 1
+    assert summary()["pending_nodes"] == FIXTURE_NODES
+    assert cli("backfill", *args, "--dry-run", "--limit", "3") == 0
+    dry = summary()
+    assert dry["nodes_processed"] == 3 and dry["pending_before"] == FIXTURE_NODES
+    if legacy_column_missing:
+        with sqlite3.connect(source_db) as conn:
+            assert "encoder_id" not in {r[1] for r in conn.execute("pragma table_info(node_chunk_embeddings)")}
+    run = ["backfill", *args, "--allow-fallback-embeddings",
+           "--existing-backup", str(source_db.parent / "backup-complete.sqlite3")]
+    assert cli(*run, "--limit", "3") == 0
+    assert (summary()["nodes_written"], summary()["chunks_written"]) == (3, dry["chunks_written"])
+    assert cli("verify", *args) == 1 and summary()["pending_nodes"] == FIXTURE_NODES - 3
+    assert cli(*run) == 0 and summary()["nodes_written"] == FIXTURE_NODES - 3
+    assert cli("verify", *args) == 0
+    assert cli(*run) == 0 and summary()["nodes_processed"] == 0
+    assert cli("verify", *args, "--encoder-id", "st:other:384") == 1
+    assert summary()["pending_nodes"] == FIXTURE_NODES
+
+
+def test_surviving_concurrent_replacement_wins_the_limited_attempt(source_db):
+    with MemoryStore(source_db) as store:
+        first = store.list_unchunked_nodes(limit=1)[0]
+    winner_ids = []
+
+    def racing(embed):
+        def wrapped(texts):
+            with MemoryStore(source_db) as writer:
+                cuts = chunk_text(first.content)
+                writer.replace_node_chunks(first.id, list(zip(cuts, embed([c.text for c in cuts]), strict=True)))
+                winner_ids.extend(c.id for c in writer.list_node_chunks(first.id))
+            return embed(texts)
+        return wrapped
+
+    summary = run_in_process(source_db, wrap=racing, limit=1)
+    assert summary.nodes_processed == 1 and summary.nodes_written == 0
+    assert summary.pending_after == FIXTURE_NODES - 1
+    with MemoryStore(source_db) as store:
+        assert [c.id for c in store.list_node_chunks(first.id)] == winner_ids
+
+
+@pytest.mark.parametrize("erase_identity", [True, False])
+def test_invalid_batch_provenance_leaves_page_untouched(source_db, erase_identity):
+    def invalid(embed):
+        def wrapped(texts):
+            vectors = embed(texts)
+            if erase_identity:
+                vectors[-1] = list(vectors[-1])
+            else:
+                vectors[-1].encoder_id = "another-space"
+            return vectors
+        return wrapped
+
+    with pytest.raises(bf.BackfillError, match="outside hash:384"):
+        run_in_process(source_db, wrap=invalid, batch_nodes=3)
+    with MemoryStore(source_db) as store:
+        assert store.count_node_chunks() == 0
