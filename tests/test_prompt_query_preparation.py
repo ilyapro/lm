@@ -34,9 +34,9 @@ def runtime(tmp_path, monkeypatch):
     state = SimpleNamespace(entered=Event(), release=Event(), hold=False, fail=False, encoded=[])
     register = server._register_prompts
 
-    def register_prompts(mcp, store, guard):
+    def register_prompts(mcp, store, guard, recall_service):
         state.guard = guard
-        register(mcp, store, guard)
+        register(mcp, store, guard, recall_service)
 
     monkeypatch.setattr(server, "_register_prompts", register_prompts)
     state.mcp = server.create_mcp_server(tmp_path / "memory.sqlite3")

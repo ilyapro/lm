@@ -151,9 +151,9 @@ def native(tmp_path, monkeypatch):
     guards = []
     register = server._register_prompts
 
-    def capture(mcp, store, guard):
+    def capture(mcp, store, guard, recall_service):
         guards.append(guard)
-        register(mcp, store, guard)
+        register(mcp, store, guard, recall_service)
 
     monkeypatch.setattr(server, "_register_prompts", capture)
     mcp = server.create_mcp_server(tmp_path / "memory.sqlite3")
