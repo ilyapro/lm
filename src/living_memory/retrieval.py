@@ -745,7 +745,7 @@ class MemoryRecallService:
         demotions = _merge_demotions(
             self._collect_query_demotions(plan, query_embedding, matches=anchor_matches, encoder_id=prepared.encoder_id,
                                           historical_scores=prepared.historical_scores),
-            self._collect_hub_demotions(),
+            self._collect_hub_demotions(candidates),
         )
         supersedes = supersedes_sets(self.store, candidates)
         ranked = self.rank_candidates(
@@ -1480,11 +1480,11 @@ class MemoryRecallService:
         except Exception:  # pragma: no cover - derived signal, never fatal
             return {}
 
-    def _collect_hub_demotions(self) -> dict[str, float]:
+    def _collect_hub_demotions(self, candidate_ids: Iterable[str]) -> dict[str, float]:
         """Global hub multipliers (``living_memory.hubs``). Never raises."""
 
         try:
-            return hub_demotions(self.store)
+            return hub_demotions(self.store, candidate_ids=candidate_ids)
         except Exception:  # pragma: no cover - derived signal, never fatal
             return {}
 

@@ -26,7 +26,8 @@ was useful once and later turned into noise still counts as a hub.
 `basis='lookup'` records a read, so it stays in the ledger without lifting a
 hub. Lookup of any node remains available.
 
-`MemoryRecallService._collect_hub_demotions` returns `{node_id: factor}`. The
+`MemoryRecallService._collect_hub_demotions` selects `{node_id: factor}` from the global
+cache for the candidates present after graph expansion. The
 result is merged with the query-relative demotions, and when both apply to a
 node the smaller multiplier wins (`retrieval._merge_demotions`). The merged
 map is applied in `rank_candidates`, so the hub's final score is multiplied by

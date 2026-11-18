@@ -448,8 +448,11 @@ def test_cache_serves_unchanged_store(tmp_path: Path, monkeypatch: pytest.Monkey
         calls: list[int] = []
         original = hubs._full
         monkeypatch.setattr(hubs, "_full", lambda *a, **k: calls.append(1) or original(*a, **k))
-        assert hub_demotions(store) == {ids[0]: 0.3}
-        assert hub_demotions(store) == {ids[0]: 0.3}
+        _mark_distinct(store, ids[1], QUERIES[:3])
+        assert hub_demotions(store, candidate_ids=ids[2:]) == {}
+        assert hub_demotions(store, candidate_ids=ids[:1]) == {ids[0]: 0.3}
+        assert hub_demotions(store, candidate_ids=ids[1:]) == {ids[1]: 0.3}
+        assert hub_demotions(store) == {ids[0]: 0.3, ids[1]: 0.3}
         assert len(calls) == 1
 
 

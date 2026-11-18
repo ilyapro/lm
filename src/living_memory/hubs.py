@@ -50,6 +50,7 @@ arrived.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 import math
 import os
@@ -402,9 +403,10 @@ def _lift(conn: sqlite3.Connection, cache: _HubCache, revision: tuple[Any, ...])
         cache.hubs.pop(node_id, None)
 
 
-def hub_demotions(store: Any) -> dict[str, float]:
+def hub_demotions(store: Any, *, candidate_ids: Iterable[str] | None = None) -> dict[str, float]:
     """``{node_id: multiplier in [0, 1)}`` for globally demoted hubs; ``{}`` when off.
 
+    With candidate_ids, return only matching multipliers from the same global cache.
     Unchanged inputs are served from the cache on ``store``. When rows were
     appended, positive evidence among them lifts its hubs at once (an
     index-range read of the new rows only); a full recount, the only way a
@@ -442,4 +444,8 @@ def hub_demotions(store: Any) -> dict[str, float]:
             pass
     except sqlite3.Error:
         return {}
-    return {node_id: factor for node_id in cache.hubs}
+    if candidate_ids is None:
+        return {node_id: factor for node_id in cache.hubs}
+    if not cache.hubs:
+        return {}
+    return {node_id: factor for node_id in candidate_ids if node_id in cache.hubs}
