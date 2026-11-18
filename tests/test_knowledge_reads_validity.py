@@ -303,7 +303,9 @@ def test_lookup_keeps_one_snapshot_across_teach(tmp_path, monkeypatch, selectors
 
 
 @pytest.mark.parametrize("view", ["knowledge", "full"])
-def test_recall_keeps_selected_knowledge_consistent_across_teach(tmp_path, monkeypatch, view):
+@pytest.mark.parametrize("threshold", ["off", "0.35"])
+def test_recall_keeps_selected_knowledge_consistent_across_teach(tmp_path, monkeypatch, view, threshold):
+    monkeypatch.setenv("LM_RECALL_MIN_SCORE", threshold)
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     monkeypatch.setenv("LIVING_MEMORY_CHUNK_TOKENIZER", "heuristic")
     monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
@@ -330,7 +332,7 @@ def test_recall_keeps_selected_knowledge_consistent_across_teach(tmp_path, monke
 
             async def recall():
                 response = (await client.call_tool("memory_recall", {
-                    "query": text, "depth": 0, "scope": scope, "max_results": 5, "view": view,
+                    "query": text, "depth": 0, "max_results": 5, "view": view,
                 })).data
                 entries = response["results"]
                 assert store.get_recall_event(response["recall_event_id"]).result_ids == [
@@ -364,7 +366,15 @@ def test_recall_keeps_selected_knowledge_consistent_across_teach(tmp_path, monke
             assert new[0][:5] == (correction, revised, "full", False, [])
             stale, = [row for row in new if row[0] == original]
             assert stale[3:5] == (True, [correction])
+            if threshold != "off":
+                assert stale[1:3] == ("", "below_threshold")
             assert content_and_validity(during) in (old, new)
+            for node_id in (original, correction):
+                assert store.get_node(node_id).access_count == sum(
+                    entry.get("node", entry)["id"] == node_id
+                    for entries in (before, during, after) for entry in entries
+                )
+            assert len(store.list_recall_events()) == 3
 
     try:
         asyncio.run(scenario())
