@@ -2708,14 +2708,15 @@ class MemoryStore:
 
         encoded = _encode_recall_map(recall_map)
         with self.transaction():
-            updated = self._conn.execute(
-                "UPDATE recall_events SET recall_map = ? WHERE id = ?",
+            row = self._conn.execute(
+                "UPDATE recall_events SET recall_map = ? WHERE id = ? RETURNING results",
                 (encoded, event_id),
-            ).rowcount
-            if updated:
-                self._replace_recall_history_deliveries(event_id, recall_map)
-        if not updated:
-            raise KeyError(event_id)
+            ).fetchone()
+            if row is None:
+                raise KeyError(event_id)
+            self._replace_recall_history_deliveries(
+                event_id, recall_map, stored_results=row["results"]
+            )
 
     def record_lookup_event(
         self,
@@ -3250,6 +3251,7 @@ class MemoryStore:
         recall_map: Mapping[str, Any] | None,
         *,
         result_ids: Sequence[str] | None = None,
+        stored_results: str | None = None,
     ) -> None:
         """Replace one event's organic/map union and resolve later outcomes."""
 
@@ -3266,10 +3268,7 @@ class MemoryStore:
             return
         attaching_map = result_ids is None
         if result_ids is None:
-            raw = self._conn.execute(
-                "SELECT results FROM recall_events WHERE id = ?", (event_id,)
-            ).fetchone()
-            parsed = _decode_recall_results(None if raw is None else raw["results"])
+            parsed = _decode_recall_results(stored_results)
             if parsed is None:
                 self._mark_recall_history_unavailable("malformed_legacy_results")
                 return
