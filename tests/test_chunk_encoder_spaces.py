@@ -165,3 +165,19 @@ def test_first_semantic_recall_confirms_off_page_unknown_sources(tmp_path, monke
         finally:
             server.auto_consolidation.close()
             store.close()
+
+
+def test_switched_space_nominates_source_by_alias_without_scoring_old_coordinates(tmp_path):
+    model = LocalEmbeddingModel(backend="hash")
+    old_vector = EncodedVector(model.embed("unrelated"), "previous")
+    with MemoryStore(tmp_path / "switch.db") as store:
+        for i in range(4 * LAZY_CHUNK_NODE_LIMIT):
+            store.create_node(level="trace", content=f"violet pottery {i}", embedding=old_vector)
+        target = store.create_node(level="trace", content=SOURCE, embedding=old_vector)
+        service = MemoryRecallService(store, embedder=model)
+        assert not read(service, QUERY, repair=False)
+        scored = read(service, QUERY)[0]
+        assert scored.node_id == target.id and scored.bm25_score == 0
+        assert scored.vector_score == pytest.approx(
+            embeddings.cosine_similarity(model.embed(QUERY), model.embed(SOURCE)))
+        assert scored.scored_chunk_id == store.list_node_chunks(target.id)[0].id
