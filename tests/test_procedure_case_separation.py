@@ -1027,18 +1027,16 @@ def test_same_trigger_carriers_do_not_crowd_out_a_record_recall_delivers_directl
         # and recall-schema-trigger.md promises no title-only priority.
         # Fix vectors at the embedding boundary after ordinary consolidation
         # so hash collisions/FTS position cannot define that semantic premise.
-        def embed(_model, text):
+        def embed(text):
             cosine = 1.0 if text == query else 0.95 if text == recipe else 0.1
             return [cosine, math.sqrt(1 - cosine**2)]
 
-        monkeypatch.setattr(LocalEmbeddingModel, "embed", embed)
-        monkeypatch.setattr(
-            LocalEmbeddingModel, "embed_batch",
-            lambda model, texts: [embed(model, text) for text in texts],
-        )
+        monkeypatch.setattr(LocalEmbeddingModel, "embed", staticmethod(embed))
         store = mcp.memory_store
+        # The store binds its own batch encoder for multi-window content.
+        store.set_chunk_embedder(lambda texts: [embed(text) for text in texts])
         for node in store.list_nodes(scope=SCOPE, limit=1000):
-            store.update_node(node.id, embedding=embed(None, node.content))
+            store.update_node(node.id, embedding=embed(node.content))
 
         # Confirm the real ranker received the intended evidence without
         # adding access/feedback before the public recall-and-lookup consumer.
@@ -1095,8 +1093,12 @@ def _relabel_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         store.append_trace(text, {"scope": SCOPE, "agent": "agent-a", "procedure_id": label, "task_pattern": "grp-relabel"})
         for (text, _extra), label in zip(_cases("sweep", 4), labels)
     ]
-    for index in range(12):  # records that share the query's words, not the group
-        store.append_trace(f"relay drain audit note {index}: the relay drained in {index + 2} minutes", {"scope": SCOPE})
+    # Index the competing notes on write so the first recall can repair the
+    # consolidated carrier within its ordinary pending-index budget.
+    for index in range(12):
+        mcp.tools["memory_remember"](
+            f"relay drain audit note {index}: the relay drained in {index + 2} minutes", {"scope": SCOPE},
+        )
     schema = _legacy_schema(store, records, "relay drain audit", "grp-relabel")
     return mcp, schema, records
 
