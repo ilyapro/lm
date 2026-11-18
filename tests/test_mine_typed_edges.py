@@ -49,9 +49,10 @@ def test_explicit_and_unknown_corrections_remain_eligible() -> None:
 def test_edge_inventory_excludes_historical_heuristic_corrections() -> None:
     with sqlite3.connect(":memory:") as connection:
         connection.row_factory = sqlite3.Row
-        connection.execute("CREATE TABLE connections (source_id TEXT, target_id TEXT, type TEXT, metadata TEXT)")
+        connection.execute("CREATE TABLE nodes (id TEXT, scope TEXT, context TEXT)")
+        connection.execute("CREATE TABLE connections (source_id TEXT, target_id TEXT, type TEXT, metadata TEXT, weight REAL DEFAULT 1)")
         connection.executemany(
-            "INSERT INTO connections VALUES (?, ?, ?, ?)",
+            "INSERT INTO connections (source_id, target_id, type, metadata) VALUES (?, ?, ?, ?)",
             [("a", "b", "supersedes", json.dumps({"kind": "drain_near_duplicate"})),
              ("b", "c", "supersedes", json.dumps({"kind": "teach"})),
              ("d", "e", "supersedes", json.dumps({"rule": "R1c", "kind": "content_correction"})),

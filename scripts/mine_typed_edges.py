@@ -42,7 +42,7 @@ from typing import Any, Iterable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from living_memory.file_evidence import file_citations  # noqa: E402
-from living_memory.relations import is_correction, semantic_relation_sql  # noqa: E402
+from living_memory.relations import current_relation_sql, is_correction, register_file_evidence  # noqa: E402
 
 DEFAULT_DB = str(Path.home() / ".local/share/living-memory/global.sqlite3")
 
@@ -172,9 +172,10 @@ def load_corpus(con: sqlite3.Connection) -> dict[str, NodeRow]:
 
 
 def load_edges(con: sqlite3.Connection) -> list[tuple[str, str, str, dict[str, Any]]]:
+    register_file_evidence(con)
     edges = []
     for row in con.execute(
-        f"SELECT source_id, target_id, type, metadata FROM connections WHERE {semantic_relation_sql()}"
+        f"SELECT source_id, target_id, type, metadata FROM connections WHERE {current_relation_sql()}"
     ):
         edges.append((row["source_id"], row["target_id"], row["type"], load_json(row["metadata"], {})))
     return edges

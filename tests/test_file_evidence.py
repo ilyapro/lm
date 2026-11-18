@@ -18,6 +18,7 @@ from living_memory.storage import MemoryStore
     ({"scope": "project:a", "repo": "/code/x"}, {"scope": "project:b", "repo": "/code/x"}, True),
     ({"worktree": "/code/x/.worktrees/first"}, {"repo": "/code/x/.worktrees/second"}, True),
     ({"worktree": "/code/x/.worktrees/first", "repo": "/code/y"}, {"repo": "/code/y"}, False),
+    ({"repo": "x", "worktree": "/src/y"}, {"repo": "/src/y"}, False),
     ({"project": "a"}, {"scope": "project:a"}, True),
     ({}, {}, False),
     ({"scope": "session:s"}, {"scope": "session:s"}, False),
@@ -65,6 +66,7 @@ def test_fanout_counts_each_repository_independently(tmp_path):
 @pytest.mark.parametrize("extra,weight,source", [
     ({}, None, None),
     ({"commit": "abc1234"}, .9, .9),
+    ({"basis": "same_commit", "rule": "R4a"}, .9, .9),
     ({"kind": "content_reference"}, .9, .9),
     ({"kind": "derived_from"}, .6, .6),
     ({"basis": "cluster"}, .2, .2),
@@ -114,9 +116,11 @@ def test_broad_recall_only_follows_shared_source_and_observes_changes(tmp_path):
             store.create_connection(seed.id, node.id, "related", weight=.65,
                                     metadata={"rule": "R4b", "basis": "shared_files", "files": ["README.md"]})
         service = MemoryRecallService(store, embedder=ZeroSemantic(), anchor_seeding=False)
+
         def scores():
             results = service.memory_recall("orchid pollination", log_event=False, log_access=False)
             return {r.node.id: r.graph_score for r in results}
+
         result = scores()
         assert other.id not in result
         assert result[control.id] == pytest.approx(.4225)

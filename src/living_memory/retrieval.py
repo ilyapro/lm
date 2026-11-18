@@ -1635,6 +1635,8 @@ class MemoryRecallService:
                     for edge in edges:
                         if not source_only and (
                             source_relation_weight(edge.type, edge.weight, edge.metadata) != edge.weight
+                            or (isinstance(edge.metadata.get("files"), list)
+                                and edge.metadata.get("rule") != "R4b")
                             or (edge.metadata.get("rule") == "R4b"
                                 and edge.metadata.get("basis") in ("co_access", "cluster"))
                         ):

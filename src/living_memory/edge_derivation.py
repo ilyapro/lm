@@ -297,7 +297,7 @@ def derive_edges_for_new_trace(store: "MemoryStore", node: Node) -> list[Connect
     All lookups are bounded: primary-key fetches for content ULIDs, an
     expression-indexed commit-prefix probe capped at the group limit,
     grouped citation probes capped per file at the fanout limit over the partial
-    files-present index. The recall query path is untouched.
+    files-present index.
     """
 
     if node is None or node.decayed or node.level != "trace":

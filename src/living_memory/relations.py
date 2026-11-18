@@ -13,7 +13,7 @@ import json
 import sqlite3
 from typing import Any
 
-from living_memory.file_evidence import file_key, file_owner
+from living_memory.file_evidence import citations_for_owner, file_owner
 
 
 _NON_CORRECTION_KINDS = ("drain_near_duplicate", "duplicate_content", "content_correction")
@@ -85,20 +85,21 @@ def source_relation_weight_sql(alias: str = "") -> str:
     )
 
 
-def _checked_file_weight(metadata_json, weight, left_scope, left_json, right_scope, right_json, source_only):
+def _endpoint_citations(scope: str, fields: str) -> set[tuple[str, str]]:
+    repo, worktree, project, paths = json.loads(fields)
+    return set(citations_for_owner(file_owner(scope, repo, worktree, project), paths))
+
+
+def _checked_file_weight(
+    metadata_json: str, weight: float, left_scope: str, left_json: str,
+    right_scope: str, right_json: str, source_only: int,
+) -> float | None:
     """Project a stored maximum onto the contributions its endpoints support."""
     metadata = json.loads(metadata_json)
     files = metadata.get("files")
     names = {f for f in files if isinstance(f, str)} if isinstance(files, list) else set()
-    def citations(scope, fields):
-        repo, worktree, project, paths = json.loads(fields)
-        owner = file_owner(scope, repo, worktree, project)
-        if not isinstance(paths, list):
-            return set()
-        return {(key, path) for path in paths if (key := file_key(owner, path)) is not None}
-
-    left = citations(left_scope, left_json)
-    right = citations(right_scope, right_json)
+    left = _endpoint_citations(left_scope, left_json)
+    right = _endpoint_citations(right_scope, right_json)
     recorded = {key for key, name in left | right if name in names}
     shared = recorded.intersection((k for k, _ in left), (k for k, _ in right))
     count = len(shared)
@@ -108,7 +109,8 @@ def _checked_file_weight(metadata_json, weight, left_scope, left_json, right_sco
     if count:
         contributions.append(shared_files_weight(shared))
     commit = metadata.get("commit")
-    if (isinstance(commit, str) and len(commit) == 7) or metadata.get("kind") == "content_reference":
+    if (metadata.get("rule") == "R4a" or (isinstance(commit, str) and len(commit) == 7)
+            or metadata.get("kind") == "content_reference"):
         contributions.append(CONTENT_REFERENCE_WEIGHT)
     if metadata.get("kind") == "derived_from":
         contributions.append(DERIVED_FROM_WEIGHT)
@@ -137,7 +139,9 @@ def checked_weight_sql(alias: str = "connections", *, source_only: bool = False)
     return (
         f"CASE WHEN {alias}.type = 'related' AND (json_extract({meta}, '$.rule') = 'R4b'"
         f" OR json_extract({meta}, '$.basis') = 'shared_files'"
-        f" OR json_extract({meta}, '$.rule_basis') = 'shared_files') THEN ("
+        f" OR json_extract({meta}, '$.rule_basis') = 'shared_files'"
+        f" OR (json_type({meta}, '$.files') = 'array'"
+        f" AND json_extract({meta}, '$.rule') IN ('R4a', 'R5a', 'R6'))) THEN ("
         f"SELECT lm_checked_file_weight({meta}, {weight}, a.scope, json_extract(a.context, {fields}),"
         f" b.scope, json_extract(b.context, {fields}), {int(source_only)}) FROM nodes a JOIN nodes b"
         f" ON b.id = {alias}.target_id WHERE a.id = {alias}.source_id)"

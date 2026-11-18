@@ -2360,7 +2360,7 @@ class MemoryStore:
             try:
                 for row in cursor:
                     if row["checked_weight"] is None or (source_only and row["checked_weight"] <= 0):
-                        continue
+                        break  # Projected weights are descending, NULL last.
                     if row["id"] in seen:
                         continue
                     targets = [
@@ -6988,12 +6988,13 @@ def _node_from_row(row: sqlite3.Row) -> Node:
 
 
 def _connection_from_row(row: sqlite3.Row) -> Connection:
+    checked = row["checked_weight"] if "checked_weight" in row.keys() else None
     return Connection(
         id=str(row["id"]),
         source_id=str(row["source_id"]),
         target_id=str(row["target_id"]),
         type=row["type"],
-        weight=float(row["checked_weight"] if "checked_weight" in row.keys() and row["checked_weight"] is not None else row["weight"]),
+        weight=float(row["weight"] if checked is None else checked),
         metadata=_json_loads(row["metadata"], {}),
         created_at=str(row["created_at"]),
         updated_at=str(row["updated_at"]),

@@ -8,7 +8,7 @@ from typing import Any
 def _path(value: Any) -> str | None:
     if not isinstance(value, str) or not value.strip() or "\0" in value:
         return None
-    if ".." in value.split("/") or value.endswith("/"):
+    if ".." in value.split("/") or value.endswith(("/", "/.")):
         return None
     path = posixpath.normpath(value)
     return path if path not in (".", "/") else None
@@ -35,7 +35,10 @@ def file_owner(scope: str, repo: Any, worktree: Any, project: Any) -> str | None
     if len(roots) > 1:
         return None
     if roots:
-        return roots.pop()
+        root = roots.pop()
+        if repo and not repo.startswith("/") and repo != posixpath.basename(root):
+            return None
+        return root or None
     if repo is not None:
         return "repo:" + repo if _path(repo) else None
     if project is not None:
@@ -43,7 +46,7 @@ def file_owner(scope: str, repo: Any, worktree: Any, project: Any) -> str | None
             return None
         name = project.removeprefix("project:")
         return "project:" + name if name.strip() and "\0" not in name else None
-    return scope if scope.startswith("project:") and scope[8:].strip() else None
+    return scope if scope.startswith("project:") and scope[8:].strip() and "\0" not in scope else None
 
 
 def file_key(owner: str | None, name: Any) -> str | None:
@@ -62,12 +65,15 @@ def file_key(owner: str | None, name: Any) -> str | None:
     return owner + "\0" + path
 
 
-def file_citations(scope: str, context: Mapping[str, Any]) -> Iterator[tuple[str, str]]:
+def citations_for_owner(owner: str | None, files: Any) -> Iterator[tuple[str, str]]:
     """Yield (identity, recorded spelling) once per genuine file occurrence."""
-    files = context.get("files")
     if isinstance(files, list):
-        owner = file_owner(scope, context.get("repo"), context.get("worktree"), context.get("project"))
         for name in files:
             key = file_key(owner, name)
             if key is not None:
                 yield key, name
+
+
+def file_citations(scope: str, context: Mapping[str, Any]) -> Iterator[tuple[str, str]]:
+    owner = file_owner(scope, context.get("repo"), context.get("worktree"), context.get("project"))
+    return citations_for_owner(owner, context.get("files"))
