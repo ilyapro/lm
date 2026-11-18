@@ -608,3 +608,47 @@ def test_native_warm_prompt_rechecks_changed_corpus(runtime, change):
                 assert "scope_plan: project:foreign > global > *" in actual
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("native", [False, True], ids=["builder", "get_prompt"])
+@pytest.mark.parametrize("task", ["", TASK], ids=["browse", "recall"])
+def test_whole_prompt_shares_wal_snapshot(runtime, monkeypatch, native, task):
+    r = runtime
+    expected = standalone_context(r.store, task=task)
+    new_content = "Cobalt release rollback requires two migration checks."
+    with MemoryStore(r.store.db_path) as writer:
+        def publish_correction():
+            with writer.transaction():
+                new = writer.create_node(level="concept", content=new_content, context={"scope": SCOPE})
+                writer.connect_nodes(new.id, r.concept.id, "supersedes")
+                writer.update_node(r.schema.id, content="Use the revised migration checklist.")
+            return new
+
+        boundary = "select_context_schemas" if task else "read_validity"
+        read = getattr(prompts, boundary)
+        corrections = []
+
+        def commit_then_read(*args, **kwargs):
+            if not corrections:
+                corrections.append(publish_correction())
+            return read(*args, **kwargs)
+
+        monkeypatch.setattr(prompts, boundary, commit_then_read)
+
+        async def fetch_twice():
+            async with Client(r.mcp) as client:
+                return await get_prompt(client, task=task), await get_prompt(client, task=task)
+
+        if native:
+            first, second = asyncio.run(fetch_twice())
+        else:
+            first, second = [prompts.retrieval_context_prompt(r.store, task=task, scope=SCOPE) for _ in range(2)]
+
+    assert first == expected
+    new, = corrections
+    assert new_content in second
+    old_line = next(line for line in second.splitlines() if f"id={r.concept.id} " in line)
+    assert f'superseded=true superseded_by=["{new.id}"]' in old_line
+    if task:
+        assert "Use the revised migration checklist." in second
+    assert not r.store.connection.in_transaction
