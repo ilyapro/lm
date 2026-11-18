@@ -488,11 +488,19 @@ def multipart() -> list[tuple[str, str]]:
     return uploads
 
 
-def digest(path: Path) -> str:
-    sha = hashlib.sha256()
+def hash_file(path: Path, *hashes) -> int:
+    size = 0
     with path.open("rb") as stream:
         for block in iter(lambda: stream.read(8 * 1024 * 1024), b""):
-            sha.update(block)
+            size += len(block)
+            for checksum in hashes:
+                checksum.update(block)
+    return size
+
+
+def digest(path: Path) -> str:
+    sha = hashlib.sha256()
+    hash_file(path, sha)
     return sha.hexdigest()
 
 
@@ -593,38 +601,43 @@ def temporary_sqlite(path: Path):
             yield path
 
 
-@contextmanager
 def checked_download(target: str, work: Path, name: str, expected: dict | None = None,
-                     *, keep_for_md5: bool = False):
+                     *, previous: dict | None = None) -> tuple[dict, bool]:
+    """Return the verified image identity and whether it matches the previous backup."""
     info(target, content=False)  # Fresh ACL/policy check at each verification.
-    archive = work / f"{name}.sqlite3.gz"
-    with ExitStack() as downloaded:
-        downloaded.enter_context(temporary_file(archive))
+    with temporary_sqlite(work / f"{name}.sqlite3") as restored:
+        with temporary_file(work / f"{name}.sqlite3.gz") as archive:
+            def download():
+                # Each attempt uses a fresh child/connection and a clean local file.
+                archive.unlink(missing_ok=True)
+                return s3("get", target, str(archive))
 
-        def download():
-            # Each attempt uses a fresh child/connection and a clean local file.
-            archive.unlink(missing_ok=True)
-            return s3("get", target, str(archive))
-
-        retry_read(download)
-        archive_hash = digest(archive)
-        if expected and archive_hash != expected["archive_sha256"]:
-            raise RuntimeError(f"{name} archive checksum mismatch")
-        with temporary_sqlite(work / f"{name}.sqlite3") as restored:
+            retry_read(download)
+            # Before safety verification, only the original HEAD metadata is durable.
+            if previous and "archive_sha256" not in previous:
+                sha = hashlib.sha256()
+                md5 = hashlib.md5(usedforsecurity=False)
+                size = hash_file(archive, sha, md5)
+                archive_hash = sha.hexdigest()
+                matches_head = (str(size) == previous.get("File size")
+                                and md5.hexdigest() == previous.get("MD5 sum"))
+            else:
+                archive_hash = digest(archive)
+                matches_head = False
+            if expected and archive_hash != expected["archive_sha256"]:
+                raise RuntimeError(f"{name} archive checksum mismatch")
             decompress(archive, restored)
-            if not keep_for_md5:
-                downloaded.close()
-            checksum = digest(restored)
-            if expected and checksum != expected["sha256"]:
-                raise RuntimeError(f"{name} download checksum mismatch")
-            check_sqlite(restored)
-            observed = {"archive_sha256": archive_hash, "sha256": checksum, "bytes": restored.stat().st_size}
-        yield observed, archive
+        checksum = digest(restored)
+        observed = {"archive_sha256": archive_hash, "sha256": checksum, "bytes": restored.stat().st_size}
+        if expected and observed != expected:
+            raise RuntimeError(f"{name} download checksum mismatch")
+        check_sqlite(restored)
+        return observed, matches_head or observed == previous
 
 
 def verify_download(target: str, work: Path, name: str, expected: dict | None = None) -> dict:
-    with checked_download(target, work, name, expected) as (observed, _):
-        return observed
+    observed, _ = checked_download(target, work, name, expected)
+    return observed
 
 
 def preserve_previous(transaction: dict, work: Path, before: dict) -> None:
@@ -634,9 +647,9 @@ def preserve_previous(transaction: dict, work: Path, before: dict) -> None:
     for key in ("File size", "MD5 sum"):
         if not before.get(key) or copied.get(key) != before[key]:
             raise RuntimeError("previous safety metadata mismatch")
-    with checked_download(safety, work, "previous", keep_for_md5=True) as (previous, archive):
-        if not matches_previous(previous, archive, before):
-            raise RuntimeError("previous safety content mismatch")
+    previous, matches = checked_download(safety, work, "previous", previous=before)
+    if not matches:
+        raise RuntimeError("previous safety content mismatch")
     transaction.update(phase="safety_verified", previous=previous)
     save_status(transaction=transaction)
 
@@ -669,18 +682,6 @@ def preflight() -> dict | None:
         return None
     previous = info(FINAL)
     return {key: previous.get(key, "") for key in ("File size", "MD5 sum")}
-
-
-def matches_previous(observed: dict, archive: Path, previous: dict) -> bool:
-    if "archive_sha256" in previous:
-        return observed == previous
-    # Before safety verification, only the original HEAD metadata is durable.
-    md5 = hashlib.md5(usedforsecurity=False)
-    with archive.open("rb") as stream:
-        for block in iter(lambda: stream.read(8 * 1024 * 1024), b""):
-            md5.update(block)
-    return (str(archive.stat().st_size) == previous.get("File size")
-            and md5.hexdigest() == previous.get("MD5 sum"))
 
 
 def record_success(transaction: dict) -> None:
@@ -734,24 +735,21 @@ def recover(transaction: dict) -> int | None:
 
     with tempfile.TemporaryDirectory(prefix="recovery-", dir=STATE_DIR) as directory:
         work = Path(directory)
-        need_md5 = bool(previous and "archive_sha256" not in previous)
         if FINAL in keys:
-            with checked_download(FINAL, work, "current", keep_for_md5=need_md5) as (observed, archive):
-                current_is_new = bool(expected and observed == expected)
-                if not current_is_new:
-                    if not previous:
-                        raise RuntimeError("unexpected FINAL during first-backup recovery")
-                    if not matches_previous(observed, archive, previous):
-                        raise RuntimeError("FINAL matches neither recorded backup; preserving all copies")
-            if current_is_new:
+            observed, matches = checked_download(FINAL, work, "current", previous=previous)
+            if expected and observed == expected:
                 record_success(transaction)
                 return finish(transaction)
+            if not previous:
+                raise RuntimeError("unexpected FINAL during first-backup recovery")
+            if not matches:
+                raise RuntimeError("FINAL matches neither recorded backup; preserving all copies")
         elif previous:
             raise RuntimeError("FINAL matches neither recorded backup; preserving all copies")
         if safety in keys:
-            with checked_download(safety, work, "retained", keep_for_md5=need_md5) as (retained, archive):
-                if not previous or not matches_previous(retained, archive, previous):
-                    raise RuntimeError("retained safety does not match previous backup")
+            _, matches = checked_download(safety, work, "retained", previous=previous)
+            if not matches:
+                raise RuntimeError("retained safety does not match previous backup")
         elif previous and phase not in {"preparing", "safety_copied"}:
             raise RuntimeError("retained safety is missing; preserving recovery state")
 
