@@ -207,8 +207,8 @@ def test_native_embedding_read_finishes_before_map_writes(tmp_path, monkeypatch,
     active = False
 
     @contextmanager
-    def stream(ids):
-        with original_stream(ids) as groups:
+    def stream(ids, **kwargs):
+        with original_stream(ids, **kwargs) as groups:
             def rows():
                 for index, group in enumerate(groups):
                     if active and failure == "read" and index == 1:
@@ -219,12 +219,12 @@ def test_native_embedding_read_finishes_before_map_writes(tmp_path, monkeypatch,
         if active and failure == "close":
             raise sqlite3.OperationalError("late embedding close")
 
-    def reduce(builder, node, chunks):
-        reductions.append(node.id)
+    def reduce(builder, chunks):
+        reductions.append(len(chunks))
         if active and failure == "reduce" and len(reductions) == 2:
             raise ValueError("late embedding reducer")
-        vector = original_reduce(builder, node, chunks)
-        assert vector == [float(axis == int(node.id[-2:]) % 2) for axis in range(384)]
+        vector = original_reduce(builder, chunks)
+        assert vector == chunks[0] and vector.encoder_id == "hash:384"
         return vector
 
     def build(builder, *args, **kwargs):

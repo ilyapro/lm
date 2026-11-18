@@ -4248,10 +4248,12 @@ class MemoryStore:
 
     @contextmanager
     def iter_node_chunk_vectors(
-        self, node_ids: Sequence[str],
+        self, node_ids: Sequence[str], *, current_encoded_only: bool = False,
     ) -> Iterator[Iterator[tuple[str, list[list[float]]]]]:
         """Yield selected nodes' decoded chunks one node at a time.
 
+        With current_encoded_only, yield EncodedVector rows from live, current
+        sources with a recorded producer. Old snapshots can lack that column.
         Each node appears once, with all its chunks in ordinal order. Release
         each group before advancing to bound decoded storage by the largest
         selected node. Exiting the context closes any active batch cursor.
@@ -4260,13 +4262,23 @@ class MemoryStore:
         def groups() -> Iterator[tuple[str, list[list[float]]]]:
             if not node_ids or not self._chunk_table_present():
                 return
+            encoder_column = ""
+            source_filter = ""
+            if current_encoded_only:
+                columns = self._conn.execute(f"PRAGMA table_info({CHUNK_EMBEDDING_TABLE})")
+                if not any(column[1] == "encoder_id" for column in columns):
+                    return
+                encoder_column = ", encoder_id"
+                source_filter = """AND c.encoder_id != '' AND EXISTS (
+                    SELECT 1 FROM nodes n WHERE n.id = c.node_id AND n.decayed = 0
+                      AND n.content_fingerprint = c.content_fingerprint)"""
             batch_size = min(999, self._conn.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER))
             for batch in _node_read_batches(map(str, node_ids), batch_size=batch_size):
                 placeholders = ",".join("?" for _ in batch)
                 rows = self._conn.execute(
-                    f"""SELECT node_id, chunk_index, dimensions, embedding
-                    FROM {CHUNK_EMBEDDING_TABLE}
-                    WHERE node_id IN ({placeholders})
+                    f"""SELECT node_id, chunk_index, dimensions, embedding{encoder_column}
+                    FROM {CHUNK_EMBEDDING_TABLE} c
+                    WHERE node_id IN ({placeholders}) {source_filter}
                     ORDER BY node_id, chunk_index""",
                     batch,
                 )
@@ -4276,9 +4288,10 @@ class MemoryStore:
                         for row in node_rows:
                             # Validate every selected row, including unused widths.
                             int(row["chunk_index"])
-                            chunks.append(unpack_chunk_embedding(
-                                row["embedding"], int(row["dimensions"]),
-                            ))
+                            values = unpack_chunk_embedding(row["embedding"], int(row["dimensions"]))
+                            chunks.append(EncodedVector(values, row["encoder_id"])
+                                          if current_encoded_only else values)
+                            del values
                         yield node_id, chunks
                         del chunks
                 finally:

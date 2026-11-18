@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from living_memory.chunking import TextChunk
+from living_memory.embeddings import EncodedVector
 from living_memory.health_audit import ReadOnlyAuditStore
 from living_memory.recall_map import RecallMapBuilder, STAGE_EMBEDDING, _Curtailment, _Member
 from living_memory.retrieval import RecallResult
@@ -23,8 +24,8 @@ def store(tmp_path, monkeypatch):
 
 def embedded(store, node_id="embedded"):
     node = store.create_node(
-        node_id=node_id, level="trace", content="orbital telemetry calibration",
-        context={"scope": SCOPE}, embedding=[1.0, 0.0],
+        node_id=node_id, level="trace", content=f"orbital telemetry calibration {node_id}",
+        context={"scope": SCOPE}, embedding=EncodedVector([1.0, 0.0], "fixture"),
     )
     return RecallResult(node=node, score=0.8, vector_score=1.0)
 
@@ -38,7 +39,7 @@ def test_build_reads_only_consumed_source_fields_and_stage_survivors(store, verd
     allowed = {
         "query_anchors": {"id", "query", "decayed"},
         "query_anchor_edges": {"target_id", "anchor_id", "weight"},
-        "node_chunk_embeddings": {"node_id", "dimensions", "embedding", "chunk_index"},
+        "node_chunk_embeddings": {"node_id", "dimensions", "embedding", "chunk_index", "encoder_id", "content_fingerprint"},
     }
 
     def authorize(action, table, column, database, trigger):
@@ -79,21 +80,23 @@ def test_source_batches_fit_sqlite_variable_limit_and_deduplicate_ids(store, lim
     assert store.get_node_chunk_vectors(requested) == expected_vectors
 
 
-def test_chunk_ordinal_width_and_node_fallback_define_vectors(store):
+def test_current_chunk_ordinal_space_and_width_define_vectors(store):
     results = [embedded(store, node_id) for node_id in ("mixed", "empty", "fallback", "absent")]
     chunk = TextChunk("sample", 0, 0, 1, 0, 6)
     store.replace_node_chunks(results[0].node.id, [
-        (replace(chunk, chunk_index=0), [0.0, 1.0]),
-        (replace(chunk, chunk_index=1), [1.0, 0.0, 0.0]),
-        (replace(chunk, chunk_index=2), [0.0, 0.0, 1.0]),
-        (replace(chunk, chunk_index=3), [0.0, 1.0, 0.0]),
+        (replace(chunk, chunk_index=0), EncodedVector([0.0, 1.0], "fixture")),
+        (replace(chunk, chunk_index=1), EncodedVector([1.0, 0.0, 0.0], "fixture")),
+        (replace(chunk, chunk_index=2), EncodedVector([0.0, 0.0, 1.0], "fixture")),
+        (replace(chunk, chunk_index=3), EncodedVector([0.0, 1.0, 0.0], "fixture")),
+        (replace(chunk, chunk_index=4), EncodedVector([1.0, 0.0, 0.0], "other")),
+        (replace(chunk, chunk_index=5), [1.0, 0.0, 0.0]),
     ])
     with store.connection:
         store.connection.execute(
             "UPDATE node_chunk_embeddings SET chunk_index = chunk_index + 10 WHERE node_id = 'mixed'"
         )
         store.connection.execute("""UPDATE node_chunk_embeddings SET chunk_index =
-            CASE chunk_index WHEN 10 THEN 8 WHEN 11 THEN 3 WHEN 12 THEN 7 WHEN 13 THEN 4 END
+            CASE chunk_index WHEN 10 THEN 8 WHEN 11 THEN 3 WHEN 12 THEN 7 WHEN 13 THEN 4 ELSE chunk_index END
             WHERE node_id = 'mixed'""")
     # Older unconstrained tables can contain an empty vector.
     store.connection.execute("PRAGMA ignore_check_constraints = ON")
@@ -109,9 +112,8 @@ def test_chunk_ordinal_width_and_node_fallback_define_vectors(store):
     members = [_Member(rank, result.node, topic=(STAGE_EMBEDDING,)) for rank, result in enumerate(results)]
     _, vectors, rest = RecallMapBuilder(store)._embedding_membership(members)
     assert vectors["mixed"] == pytest.approx([3 ** -0.5] * 3)
-    assert vectors["empty"] == [0.0, 1.0]
-    assert vectors["fallback"] == [0.0, 0.0, 1.0]
-    assert [member.node.id for member in rest] == ["absent"]
+    assert set(vectors) == {"mixed"}
+    assert [member.node.id for member in rest] == ["empty", "fallback", "absent"]
 
 
 @pytest.mark.parametrize("missing", [(), ("query_anchors",), ("query_anchor_edges",),
@@ -135,10 +137,11 @@ def test_read_only_sources_tolerate_missing_tables_and_chunk_coordinates(store, 
             {"member-0": "anchor-a", "member-1": "anchor-a", "member-2": "anchor-b"}
         )
         _, vectors, _ = builder._embedding_membership(members)
-        assert vectors == {"embedded": [1.0, 0.0]}
+        assert vectors == ({} if "node_chunk_embeddings" in missing else {"embedded": [1.0, 0.0]})
         with patch.object(builder, "_curtailment", return_value=due()):
             result = build(builder, results)
-        assert result is not None and result.clusters
+        assert result is not None
+        assert bool(result.clusters) == bool(assignment.by_node or vectors)
         assert reader.connection.total_changes == 0
         assert not reader.connection.in_transaction
 
@@ -194,3 +197,17 @@ def test_empty_source_sets_do_not_probe_storage(store):
     finally:
         store.connection.set_trace_callback(None)
     assert statements == []
+
+def test_snapshot_without_encoder_column_preserves_nonvector_groups(store):
+    results = seed_pool(store, early_stages=True) + [embedded(store)]
+    store.connection.executescript("""
+        DROP TRIGGER chunk_corpus_update;
+        DROP INDEX idx_chunk_source_space;
+        ALTER TABLE node_chunk_embeddings DROP COLUMN encoder_id;
+    """)
+    with ReadOnlyAuditStore.open_path(store.db_path) as reader:
+        builder = RecallMapBuilder(reader)
+        result = build(builder, results)
+        assert result and result.clusters
+        assert all(group.stage != STAGE_EMBEDDING for group in result.clusters)
+        assert reader.connection.total_changes == 0
