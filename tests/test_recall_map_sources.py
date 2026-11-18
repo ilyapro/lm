@@ -87,8 +87,8 @@ def test_current_chunk_ordinal_space_and_width_define_vectors(store):
         (replace(chunk, chunk_index=0), EncodedVector([0.0, 1.0], "fixture")),
         (replace(chunk, chunk_index=1), EncodedVector([1.0, 0.0, 0.0], "fixture")),
         (replace(chunk, chunk_index=2), EncodedVector([0.0, 0.0, 1.0], "fixture")),
-        (replace(chunk, chunk_index=4), EncodedVector([1.0, 0.0, 0.0], "other")),
         (replace(chunk, chunk_index=3), EncodedVector([0.0, 1.0, 0.0], "fixture")),
+        (replace(chunk, chunk_index=4), EncodedVector([1.0, 0.0, 0.0], "other")),
     ])
     with store.connection:
         store.connection.execute(
@@ -139,7 +139,8 @@ def test_read_only_sources_tolerate_missing_tables_and_chunk_coordinates(store, 
         assert vectors == ({} if "node_chunk_embeddings" in missing else {"embedded": [1.0, 0.0]})
         with patch.object(builder, "_curtailment", return_value=due()):
             result = build(builder, results)
-        assert result is not None and result.clusters
+        assert result is not None
+        assert bool(result.clusters) == bool(assignment.by_node or vectors)
         assert reader.connection.total_changes == 0
         assert not reader.connection.in_transaction
 
@@ -195,3 +196,17 @@ def test_empty_source_sets_do_not_probe_storage(store):
     finally:
         store.connection.set_trace_callback(None)
     assert statements == []
+
+def test_snapshot_without_encoder_column_preserves_nonvector_groups(store):
+    results = seed_pool(store, early_stages=True) + [embedded(store)]
+    store.connection.executescript("""
+        DROP TRIGGER chunk_corpus_update;
+        DROP INDEX idx_chunk_source_space;
+        ALTER TABLE node_chunk_embeddings DROP COLUMN encoder_id;
+    """)
+    with ReadOnlyAuditStore.open_path(store.db_path) as reader:
+        builder = RecallMapBuilder(reader)
+        result = build(builder, results)
+        assert result and result.clusters
+        assert all(group.stage != STAGE_EMBEDDING for group in result.clusters)
+        assert reader.connection.total_changes == 0
