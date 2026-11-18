@@ -26,6 +26,7 @@ No model call, new history table or background process is needed.
 
 from __future__ import annotations
 
+from array import array
 from collections import Counter, deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -2794,18 +2795,28 @@ class RecallMapBuilder:
         vectors = group.vectors
         if not vectors or len(group.members) < 2:
             return min(group.members, key=lambda member: member.rank)
+        members = [member for member in group.members if member.node.id in vectors]
+        # Earlier members fill each row's prefix in member order. Keep packed
+        # scores only inside the ordinary pool bound; an oversized custom pool
+        # computes pairs involving later members directly.
+        prefixes = [array("d") for _ in members[:MAX_POOL_NODES]]
         scored: list[tuple[float, int, _Member]] = []
-        for member in group.members:
-            own = vectors.get(member.node.id)
-            if own is None:  # pragma: no cover - members always carry a vector
-                continue
-            others = [
-                cosine_similarity(own, vectors[other.node.id])
-                for other in group.members
-                if other.node.id != member.node.id and other.node.id in vectors
-            ]
-            mean = sum(others) / len(others) if others else 0.0
-            scored.append((-mean, member.rank, member))
+        for i, member in enumerate(members):
+            own = vectors[member.node.id]
+            cached = i < len(prefixes)
+            row = prefixes[i] if cached else array("d")
+            for j in range(i + 1 if cached else 0, len(members)):
+                other_id = members[j].node.id
+                if member.node.id == other_id:
+                    continue
+                similarity = cosine_similarity(own, vectors[other_id])
+                row.append(similarity)
+                if cached and j < len(prefixes):
+                    prefixes[j].append(similarity)
+            if own is not None:
+                mean = sum(row) / len(row) if row else 0.0
+                scored.append((-mean, member.rank, member))
+            del row[:]
         if not scored:  # pragma: no cover - defensive
             return min(group.members, key=lambda member: member.rank)
         return min(scored, key=lambda item: item[:2])[2]
