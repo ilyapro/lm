@@ -102,6 +102,7 @@ _SQL_WHITESPACE = "' ' || CHAR(9) || CHAR(10) || CHAR(11) || CHAR(12) || CHAR(13
 # their revision so deleting and repopulating a scope cannot reuse an identity.
 _CHUNK_SCOPE_REVISION_PREFIX = "chunk_scope_revision:"
 _CHUNK_SCOPE_REVISION_FORMAT = "chunk_scope_revision_format"
+_CHUNK_SCOPE_REVISION_VERSION = "3"
 
 
 def _chunk_scope_revision_write(scopes: str) -> str:
@@ -123,8 +124,9 @@ _CHUNK_CORPUS_TRIGGERS = (
         {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id = OLD.node_id")}
     END""",
     f"""CREATE TRIGGER chunk_corpus_update
-    BEFORE UPDATE OF id, node_id, chunk_index, embedding, encoder_id ON node_chunk_embeddings
+    BEFORE UPDATE OF id, node_id, chunk_index, embedding, encoder_id, content_fingerprint ON node_chunk_embeddings
     WHEN OLD.id IS NOT NEW.id OR OLD.node_id IS NOT NEW.node_id
+        OR OLD.content_fingerprint IS NOT NEW.content_fingerprint
         OR OLD.encoder_id IS NOT NEW.encoder_id
         OR OLD.chunk_index IS NOT NEW.chunk_index
         OR OLD.embedding IS NOT NEW.embedding
@@ -135,9 +137,9 @@ _CHUNK_CORPUS_TRIGGERS = (
 
 _CHUNK_MEMBERSHIP_TRIGGERS = (
     f"""CREATE TRIGGER chunk_corpus_membership
-    BEFORE UPDATE OF id, scope, decayed ON nodes
+    BEFORE UPDATE OF id, scope, decayed, content_fingerprint ON nodes
     WHEN (OLD.id IS NOT NEW.id OR OLD.scope IS NOT NEW.scope
-          OR OLD.decayed IS NOT NEW.decayed)
+          OR OLD.decayed IS NOT NEW.decayed OR OLD.content_fingerprint IS NOT NEW.content_fingerprint)
         AND EXISTS (SELECT 1 FROM node_chunk_embeddings
                     WHERE node_id IN (OLD.id, NEW.id))
     BEGIN
@@ -235,7 +237,7 @@ def install_derived_only_authorizer(
         ).fetchone()
         return (
             actual == expected and shadow is None and revision is not None
-            and (corpus != "chunks" or revision[0] == "2")
+            and (corpus != "chunks" or revision[0] == _CHUNK_SCOPE_REVISION_VERSION)
         )
 
     def authorizer(
@@ -4057,6 +4059,7 @@ class MemoryStore:
         include_identity: bool = False,
         include_encoder: bool = False,
         known_only: bool = False,
+        current_only: bool = False,
     ) -> Iterator[
         tuple[str, int, memoryview] | tuple[str, int, memoryview, str | None]
         | tuple[str, int, memoryview, str, str | None]
@@ -4095,6 +4098,7 @@ class MemoryStore:
         ``include_encoder`` appends the producer's space. Historical rows and
         unmigrated snapshots return None for that field. With ``known_only``,
         SQLite excludes those payloads before they reach the caller.
+        With ``current_only``, each window must match a nonempty source fingerprint.
 
         Yields nothing on a pre-v6 database rather than raising, so a snapshot
         opened without migrations degrades instead of crashing.
@@ -4104,6 +4108,8 @@ class MemoryStore:
             return
 
         clauses = ["n.decayed = 0"] if not include_decayed else []
+        if current_only:
+            clauses.extend(["n.content_fingerprint != ''", "c.content_fingerprint = n.content_fingerprint"])
         params: list[Any] = []
         if level is not None:
             self._validate_level(level)
@@ -4200,7 +4206,7 @@ class MemoryStore:
                 keys,
             ).fetchall()
         values = dict(rows)
-        if values.pop(_CHUNK_SCOPE_REVISION_FORMAT, None) != "2":
+        if values.pop(_CHUNK_SCOPE_REVISION_FORMAT, None) != _CHUNK_SCOPE_REVISION_VERSION:
             return None
         revisions = {key[len(_CHUNK_SCOPE_REVISION_PREFIX):]: int(value)
                      for key, value in values.items()}
@@ -5619,8 +5625,12 @@ class MemoryStore:
                 "SELECT value FROM metadata WHERE key = ?",
                 (_CHUNK_SCOPE_REVISION_FORMAT,),
             ).fetchone()
-            if row is not None and row[0] == "2":
+            if row is not None and row[0] == _CHUNK_SCOPE_REVISION_VERSION:
                 return
+            self._conn.execute(
+                "UPDATE metadata SET value = value + 1 WHERE key >= ? AND key < ?",
+                (_CHUNK_SCOPE_REVISION_PREFIX, "chunk_scope_revision;"),
+            )
             for sql in (*_CHUNK_CORPUS_TRIGGERS, *_CHUNK_MEMBERSHIP_TRIGGERS):
                 name = sql.split()[2]
                 self._conn.execute(f"DROP TRIGGER IF EXISTS {name}")
@@ -5633,8 +5643,8 @@ class MemoryStore:
             )
             self._conn.execute("DELETE FROM metadata WHERE key = 'chunk_corpus_revision'")
             self._conn.execute(
-                "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, '2')",
-                (_CHUNK_SCOPE_REVISION_FORMAT,),
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
+                (_CHUNK_SCOPE_REVISION_FORMAT, _CHUNK_SCOPE_REVISION_VERSION),
             )
 
     def _initialize_schema(self) -> None:
