@@ -1826,6 +1826,7 @@ class MemoryRecallService:
             # Prepare each path-dependent transition once, in traversal order.
             # best_seen must also be checked when consuming the transitions:
             # an earlier item at this level can strengthen the same neighbor.
+            final_source_level = source_pass and current_depth + 1 == max_depth
             transitions = []
             needed_neighbor_ids = set()
             for node_id, activation, depth, path in level_items:
@@ -1835,6 +1836,12 @@ class MemoryRecallService:
 
                     next_score = activation * relation_score * (0.72 ** depth)
                     if next_score <= best_seen.get(neighbor_id, 0.0):
+                        continue
+
+                    if final_source_level:
+                        candidate = candidates.get(neighbor_id)
+                        if candidate is not None and not candidate.node.decayed and plan.allows(candidate.node.scope):
+                            candidate.source_graph_score = max(candidate.source_graph_score, min(1.5, next_score))
                         continue
 
                     transitions.append((neighbor_id, next_score, depth + 1, path + (neighbor_id,)))
