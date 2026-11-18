@@ -401,3 +401,54 @@ def test_native_status_and_stats_read_only_provenance_under_runtime_lock(tmp_pat
     finally:
         mcp.auto_consolidation.close()
         store.close()
+
+
+@pytest.mark.parametrize(("surface", "scope"), [
+    ("memory://stats", None), ("memory_status", None), ("memory_status", "project:x"),
+])
+def test_native_promotions_share_population_snapshot(promotion_runtime, monkeypatch, surface, scope):
+    mcp, _, _ = promotion_runtime
+    store = mcp.memory_store
+    conn = store.connection
+    policy_scope = scope or "global"
+    summarize = resources.promotion_summary
+
+    async def read(client):
+        if surface == "memory_status":
+            return (await client.call_tool(surface, {"scope": scope})).data
+        response, = await client.read_resource(surface)
+        return json.loads(response.text)
+
+    async def exercise(writer):
+        def write_then_summarize(*args, **kwargs):
+            with writer.transaction():
+                writer.create_node(level="concept", content="Shared concept",
+                                   provenance={"promoted_from": ["project:x"]})
+                writer.set_retrieval_weights(policy_scope, bm25=0.75, vector=0.25, graph=0.0)
+            return summarize(*args, **kwargs)
+
+        async with Client(mcp) as client:
+            with monkeypatch.context() as patch:
+                patch.setattr(resources, "promotion_summary", write_then_summarize)
+                during = await read(client)
+            after = await read(client)
+
+        for report, promoted in ((during, 0), (after, 1)):
+            concepts = report["counts"]["by_level"]["concept"]
+            assert concepts["active"] == concepts["total"] == (0 if scope else promoted)
+            assert report["promotions"] == {
+                "promoted_concepts": promoted, "promotion_events": promoted,
+                "source_scopes": ["project:x"] if promoted else [],
+            }
+            if surface == "memory_status":
+                weights = report["retrieval_policy"]
+            else:
+                weights, = [w for w in report["retrieval_weights"] if w["scope"] == policy_scope]
+            assert weights["scope"] == policy_scope and weights["bm25"] == 0.75
+
+    with MemoryStore(store.config) as writer:
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        conn.execute("PRAGMA query_only=ON")
+        changes = conn.total_changes
+        asyncio.run(exercise(writer))
+        assert conn.total_changes == changes and not conn.in_transaction

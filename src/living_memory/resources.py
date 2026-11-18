@@ -86,11 +86,12 @@ def memory_stats(store: MemoryStore) -> dict[str, Any]:
     with store.read_snapshot():
         counts, scopes = _stats_population(store)
         confidence = confidence_summary(store)
+        promotions = promotion_summary(store)
     return {
         "uri": "memory://stats",
         "counts": counts,
         "confidence": confidence,
-        "promotions": promotion_summary(store),
+        "promotions": promotions,
         "scopes": scopes,
         "retrieval_weights": retrieval_weights_summary(store),
     }
@@ -123,12 +124,13 @@ def memory_status(store: MemoryStore, scope: str | None = None) -> dict[str, Any
         counts = count_nodes(store, scope=normalized_scope)
         confidence = confidence_summary(store, scope=normalized_scope)
         coverage = coverage_summary(store, scope=normalized_scope)
+        promotions = promotion_summary(store, scope=normalized_scope)
     return {
         "scope": normalized_scope or "all",
         "counts": counts,
         "confidence": confidence,
         "coverage": coverage,
-        "promotions": promotion_summary(store, scope=normalized_scope),
+        "promotions": promotions,
         "retrieval_policy": retrieval_policy_for_scope(store, normalized_scope or "global"),
     }
 
