@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Observe a restarted LM reader through /health and public MCP recall.
+"""Compare a published LM candidate or observe recall after a reader update.
+
+Use the compare subcommand for an independent disk and /health comparison.
+Run with compare --help for options. The default invocation checks recall.
 
 Put private cases in a file outside Git, for example
 {"queries": [{"query": "...", "expected_node_id": "..."}, ...]}.
@@ -20,17 +23,16 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
-import io
 import ipaddress
 import asyncio
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import re
 import ssl
 import subprocess
 import sys
-import tarfile
 import tempfile
 import time
 from typing import Any
@@ -81,6 +83,18 @@ def _health(
         return json.load(response)
 
 
+def _known_digest(identity: Any) -> str:
+    if (
+        not isinstance(identity, dict)
+        or identity.get("status") != "known"
+        or identity.get("scheme") != CODE_IDENTITY_SCHEME
+        or not isinstance(identity.get("digest"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", identity["digest"])
+    ):
+        raise ObservationError("loaded-code identity unavailable")
+    return identity["digest"]
+
+
 def _validated_identity(
     health: dict[str, Any], prior_boot_id: str, prior_digest: str, prior_scheme: str
 ) -> tuple[str, str]:
@@ -89,13 +103,7 @@ def _validated_identity(
     digest = identity.get("digest")
     if not health.get("ok") or not isinstance(boot_id, str) or not boot_id:
         raise ObservationError("unhealthy service")
-    if (
-        identity.get("status") != "known"
-        or identity.get("scheme") != CODE_IDENTITY_SCHEME
-        or not isinstance(digest, str)
-        or len(digest) != 64
-    ):
-        raise ObservationError("loaded-code identity unavailable")
+    _known_digest(identity)
     if prior_scheme != identity["scheme"]:
         raise ObservationError("prior and current loaded-code schemes differ")
     if boot_id == prior_boot_id or digest == prior_digest:
@@ -205,25 +213,26 @@ def _product_sources(source: dict[str, bytes], anchors: list[str]) -> list[str]:
     return sorted(selected)
 
 
-def _candidate(
-    root: Path, commit: str, loaded_paths: list[str],
-) -> tuple[dict[str, Any], dict[str, bytes], dict[str, str]]:
+def _published_sources(root: Path, commit: str) -> dict[str, bytes]:
+    if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit):
+        raise ObservationError("expected a full published commit ID")
     revision = _git(root, "rev-parse", "--verify", commit + "^{commit}").decode().strip()
-    if revision != commit or _git(root, "rev-parse", "HEAD").decode().strip() != revision:
-        raise ObservationError("installed checkout is not the published commit")
-    paths = _git(root, "ls-tree", "-r", "--name-only", revision, "src/living_memory").decode().splitlines()
-    source = {path: _git(root, "show", f"{revision}:{path}") for path in paths if path.endswith(".py")}
-    source["pyproject.toml"] = _git(root, "show", f"{revision}:pyproject.toml")
-    if not source or not loaded_paths or len(set(loaded_paths)) != len(loaded_paths):
-        raise ObservationError("invalid loaded population")
-    if any(path not in source for path in loaded_paths):
-        raise ObservationError("loaded path is not a published Python source")
-    product_paths = _product_sources(source, loaded_paths)
-    archive = _git(root, "archive", revision, "src/living_memory", "pyproject.toml")
+    if revision != commit:
+        raise ObservationError("candidate is not a commit")
+    paths = _git(root, "ls-tree", "-rz", "--name-only", revision, "src/living_memory")
+    files = [os.fsdecode(path) for path in paths.split(b"\0") if path.endswith(b".py")]
+    if "src/living_memory/server.py" not in files or "src/living_memory/__init__.py" not in files:
+        raise ObservationError("candidate package unavailable")
+    return {path: _git(root, "show", f"{revision}:{path}") for path in [*files, "pyproject.toml"]}
+
+
+def _candidate_identity(source: dict[str, bytes]) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="lm-candidate-") as temporary:
         directory = Path(temporary)
-        with tarfile.open(fileobj=io.BytesIO(archive)) as packed:
-            packed.extractall(directory, filter="data")
+        for relative, content in source.items():
+            path = directory / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
         # Separate interpreter and temporary database reproduce the server's
         # import population without reading or changing the real memory DB.
         program = (
@@ -240,11 +249,8 @@ def _candidate(
             capture_output=True, text=True, check=True, timeout=60,
         )
         identity = json.loads(result.stdout)
-    if identity.get("status") != "known" or identity.get("scheme") != CODE_IDENTITY_SCHEME:
-        raise ObservationError("candidate function identity unavailable")
-    return identity, source, {
-        path: hashlib.sha256(source[path]).hexdigest() for path in product_paths
-    }
+    _known_digest(identity)
+    return identity
 
 
 def _installed_sources(
@@ -317,9 +323,18 @@ def _native_before(args: Any, health: dict[str, Any], base: str, token: str | No
     if Path(f"/proc/{process['pid']}/exe").resolve() != Path(sys.executable).resolve():
         raise ObservationError("candidate and reader use different interpreters")
     _installed_import(args.installed_root, process)
-    candidate_identity, source, loaded = _candidate(
-        args.installed_root, args.published_commit, args.loaded_path,
-    )
+    if _git(args.installed_root, "rev-parse", "HEAD").decode().strip() != args.published_commit:
+        raise ObservationError("installed checkout is not the published commit")
+    source = _published_sources(args.installed_root, args.published_commit)
+    if len(set(args.loaded_path)) != len(args.loaded_path) or any(
+        path == "pyproject.toml" or path not in source for path in args.loaded_path
+    ):
+        raise ObservationError("invalid loaded population")
+    loaded = {
+        path: hashlib.sha256(source[path]).hexdigest()
+        for path in _product_sources(source, args.loaded_path)
+    }
+    candidate_identity = _candidate_identity(source)
     if candidate_identity != health["code_identity"]:
         raise ObservationError("loaded functions differ from published candidate")
     source_state = _installed_sources(args.installed_root, source, process)
@@ -373,21 +388,99 @@ def _write_receipt(path: Path, receipt: dict[str, Any]) -> None:
     os.replace(temp_path, path)
 
 
+def _connection_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--tls", action="store_true")
+    parser.add_argument("--ca-cert", type=Path)
+    parser.add_argument("--insecure", action="store_true")
+    parser.add_argument("--timeout", type=float, default=20.0)
+
+
+def _disk_comparison(root: Path, source: dict[str, bytes]) -> dict[str, Any]:
+    root = root.resolve(strict=True)
+    if not root.is_dir():
+        raise ObservationError("installed root unavailable")
+
+    def raise_error(error: OSError) -> None:
+        raise error
+
+    package = root / "src/living_memory"
+    if not package.resolve().is_relative_to(root):
+        raise ObservationError("installed package escaped checkout")
+    actual = {"pyproject.toml"} if (root / "pyproject.toml").is_file() else set()
+    if package.is_dir():
+        for directory, dirs, files in os.walk(package, onerror=raise_error):
+            if any((Path(directory) / name).is_symlink() for name in dirs):
+                raise ObservationError("installed package contains a linked directory")
+            actual.update(str((Path(directory) / name).relative_to(root))
+                          for name in files if name.endswith(".py"))
+    different = set(source) ^ actual
+    for relative in source.keys() & actual:
+        path = root / relative
+        if path.is_symlink() or not path.is_file():
+            different.add(relative)
+        elif path.read_bytes() != source[relative]:
+            different.add(relative)
+    return {"status": "mismatch" if different else "match",
+            "different_paths": sorted(different), "candidate_files": len(source)}
+
+
+def _compare(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Compare candidate sources and covered functions.")
+    parser.add_argument("--installed-root", required=True, type=Path)
+    parser.add_argument("--candidate-root", type=Path, help="Git repository (default: installed root)")
+    parser.add_argument("--published-commit", required=True, help="Full ID of a trusted candidate commit")
+    _connection_options(parser)
+    args = parser.parse_args(argv)
+    disk = {"status": "unknown", "reason": "candidate sources unavailable"}
+    process = disk.copy()
+    try:
+        source = _published_sources(args.candidate_root or args.installed_root, args.published_commit)
+    except (OSError, subprocess.SubprocessError, ObservationError):
+        pass
+    else:
+        try:
+            disk = _disk_comparison(args.installed_root, source)
+        except (OSError, ObservationError):
+            disk = {"status": "unknown", "reason": "installed sources unavailable"}
+        process = {"status": "unknown", "reason": "candidate function identity unavailable"}
+        try:
+            expected = _candidate_identity(source)["digest"]
+            process = {"status": "unknown", "candidate_digest": expected,
+                       "reason": "healthy service identity unavailable"}
+            base = build_url(args.host, args.port, tls=args.tls)
+            health = _health(base.replace("/mcp/", "/health"), args.timeout,
+                             build_verify(args.ca_cert, insecure=args.insecure))
+            if health.get("ok") is True and isinstance(health.get("boot_id"), str) and health["boot_id"]:
+                digest = _known_digest(health.get("code_identity"))
+                process = {"status": "match" if digest == expected else "mismatch",
+                           "scheme": CODE_IDENTITY_SCHEME, "candidate_digest": expected,
+                           "service_digest": digest, "boot_id": health["boot_id"]}
+        except Exception:  # Transport and child stderr may contain private configuration.
+            pass
+    print(json.dumps({"published_commit": args.published_commit, "disk": disk,
+                      "process": process, "recall": "not_run"}, sort_keys=True))
+    statuses = {disk["status"], process["status"]}
+    if "mismatch" in statuses:
+        return 1
+    return 2 if "unknown" in statuses else 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv[:1] == ["compare"]:
+        return _compare(argv[1:])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases-file", type=Path, required=True)
     parser.add_argument("--prior-boot-id", required=True)
     parser.add_argument("--prior-digest", required=True)
     parser.add_argument("--prior-scheme", required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--tls", action="store_true")
-    parser.add_argument("--ca-cert", type=Path)
-    parser.add_argument("--insecure", action="store_true")
+    _connection_options(parser)
     parser.add_argument("--token")
     parser.add_argument("--env-file", type=Path, default=Path.home() / ".config/living-memory/env")
-    parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--max-results", type=int, default=6)
     parser.add_argument("--scope")
     parser.add_argument("--native-completion", action="store_true")
