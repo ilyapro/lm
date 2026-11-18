@@ -9,6 +9,7 @@ import pytest
 pytest.importorskip("fastmcp")
 from fastmcp import Client
 
+from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.server import create_mcp_server
 from test_transport_identity import _structured
 
@@ -430,9 +431,11 @@ def test_broad_recall_reuses_windows_across_lookup_and_scope_move(tmp_path, monk
 
     async def scenario():
         nonlocal on_validity
+        encoder = LocalEmbeddingModel()
         for i in range(128):
+            content = query if i == 0 else f"spare parts inventory {i}"
             store.create_node(node_id=f"window-{i:03}", level="trace",
-                              content=query if i == 0 else f"spare parts inventory {i}",
+                              content=content, embedding=encoder.embed(content),
                               context={"scope": f"project:s{i % 4}"})
         monkeypatch.setattr(store, "list_supersedes_pairs", validity)
         monkeypatch.setattr(store, "iter_chunk_embedding_rows", counted_rows)
