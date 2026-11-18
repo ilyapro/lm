@@ -440,6 +440,50 @@ def test_cached_hub_lifts_immediately(tmp_path: Path, monkeypatch: pytest.Monkey
         assert set(hub_demotions(store)) == set(hub_ids(store.connection))
 
 
+@pytest.mark.parametrize("warm", [False, True], ids=["first-fill", "retained"])
+@pytest.mark.parametrize("outcome", ["commit", "rollback", "reuse-rowid"])
+def test_recall_hub_cache_follows_transaction(
+    monkeypatch: pytest.MonkeyPatch, warm: bool, outcome: str,
+) -> None:
+    def check_recall(store: MemoryStore, expected_hubs: set[str]) -> None:
+        with MemoryStore(":memory:") as reference:
+            reference.connection.deserialize(store.connection.serialize())
+            assert set(hub_ids(reference.connection)) == expected_hubs
+            ranking = _recall(reference)
+            assert len(ranking) == len(BODIES)
+            assert _recall(store) == ranking
+
+    class Rollback(Exception):
+        pass
+
+    with MemoryStore(":memory:") as store:
+        first, second, *_ = _seed(store)
+        _recall(store)  # finish embedding backfill before comparing rankings
+        for node in (first, second):
+            _mark_distinct(store, node, QUERIES[:3])
+        event = _event(store, "confirmed useful")
+        monkeypatch.setenv("LM_HUB_SUPPRESSION_FACTOR", "0.2")
+        if warm:
+            check_recall(store, {first, second})
+        retained = getattr(store, "_hub_suppression_cache", None)
+        try:
+            with store.transaction():
+                _mark(store, event, first, "used")
+                revision = hubs.store_revision(store.connection)
+                check_recall(store, {second})
+                if outcome != "commit":
+                    raise Rollback
+        except Rollback:
+            pass
+        assert getattr(store, "_hub_suppression_cache", None) is retained
+        if outcome == "reuse-rowid":
+            _mark(store, event, second, "used")
+            assert hubs.store_revision(store.connection) == revision
+            check_recall(store, {first})
+        else:
+            check_recall(store, {second} if outcome == "commit" else {first, second})
+
+
 def test_cache_serves_unchanged_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LM_HUB_SUPPRESSION_FACTOR", "0.3")
     with MemoryStore(tmp_path / "m.sqlite3") as store:

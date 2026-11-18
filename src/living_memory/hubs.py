@@ -407,7 +407,8 @@ def hub_demotions(store: Any, *, candidate_ids: Iterable[str] | None = None) -> 
     """``{node_id: multiplier in [0, 1)}`` for globally demoted hubs; ``{}`` when off.
 
     With candidate_ids, return only matching multipliers from the same global cache.
-    Unchanged inputs are served from the cache on ``store``. When rows were
+    Caller-owned transactions count their visible evidence without retaining it.
+    Otherwise unchanged inputs are served from the cache on ``store``. When rows were
     appended, positive evidence among them lifts its hubs at once (an
     index-range read of the new rows only); a full recount, the only way a
     node *becomes* a hub, runs when new irrelevant marks arrived and the last
@@ -423,7 +424,8 @@ def hub_demotions(store: Any, *, candidate_ids: Iterable[str] | None = None) -> 
     min_queries = hub_min_queries()
     try:
         revision = store_revision(conn)
-        cache: _HubCache | None = getattr(store, "_hub_suppression_cache", None)
+        cacheable = getattr(store, "cacheable_read", not conn.in_transaction)
+        cache: _HubCache | None = getattr(store, "_hub_suppression_cache", None) if cacheable else None
         if cache is None or cache.min_queries != min_queries:
             cache = _full(conn, min_queries, revision)
         else:
@@ -438,10 +440,11 @@ def hub_demotions(store: Any, *, candidate_ids: Iterable[str] | None = None) -> 
                     cache = _full(conn, min_queries, revision)
                 else:
                     cache.counted_marks = revision[0]
-        try:
-            store._hub_suppression_cache = cache
-        except AttributeError:  # pragma: no cover - slotted stand-ins
-            pass
+        if cacheable:
+            try:
+                store._hub_suppression_cache = cache
+            except AttributeError:  # pragma: no cover - slotted stand-ins
+                pass
     except sqlite3.Error:
         return {}
     if candidate_ids is None:
