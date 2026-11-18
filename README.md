@@ -670,6 +670,42 @@ the first rotation. The token value never appears in the response, logs, or any
 tracked file. (Send the rotation over HTTPS so the new token is not exposed on
 the wire.)
 
+## Compare a delivery with the running service
+
+From the installed LM checkout, use the service's Python environment and the
+full commit ID from the public delivery receipt for this host:
+
+```sh
+python3 scripts/observe_live_task_recall.py compare \
+  --installed-root "$PWD" --published-commit "$candidate_commit"
+```
+
+Pass `--candidate-root /path/to/repository` if another local repository holds
+the trusted candidate. The installed checkout may be on a different revision.
+Use `compare --help` for the service host, port and TLS options.
+
+The JSON report has three independent fields:
+
+- `disk` compares the names and bytes of every Python source under
+  `src/living_memory/` and of `pyproject.toml` in the specified installation
+  with the committed files. It lists missing, extra or changed paths.
+- `process` compares the healthy reader's boot-time digest from `/health`
+  with the digest from starting the candidate in a separate interpreter with
+  a temporary SQLite store. Coverage is the functions and methods captured
+  by the reported scheme. Module globals, later imports and the reader's Git
+  revision are outside its coverage.
+- `recall` is `not_run`. The only request to the service is `GET /health`.
+
+Exit 0 means both comparisons matched. Exit 1 means at least one comparison
+found a mismatch. Exit 2 means the available evidence was insufficient to
+decide. Each comparison reports its own status even if the other is unknown.
+
+To verify changed code after a restart and the result of fresh recall cases,
+use the same script without the `compare` subcommand. Its `--help` lists the
+prior identity and private case inputs. The strict `--native-completion` mode
+also binds the authenticated local process, installed import, source bytes
+and timestamps to the published commit across the recall observation.
+
 ## Documentation
 
 - [Architecture](docs/architecture.md)
