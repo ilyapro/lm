@@ -24,7 +24,7 @@ def store(tmp_path, monkeypatch):
 
 def embedded(store, node_id="embedded"):
     node = store.create_node(
-        node_id=node_id, level="trace", content="orbital telemetry calibration",
+        node_id=node_id, level="trace", content=f"orbital telemetry calibration {node_id}",
         context={"scope": SCOPE}, embedding=EncodedVector([1.0, 0.0], "fixture"),
     )
     return RecallResult(node=node, score=0.8, vector_score=1.0)
@@ -89,6 +89,7 @@ def test_current_chunk_ordinal_space_and_width_define_vectors(store):
         (replace(chunk, chunk_index=2), EncodedVector([0.0, 0.0, 1.0], "fixture")),
         (replace(chunk, chunk_index=3), EncodedVector([0.0, 1.0, 0.0], "fixture")),
         (replace(chunk, chunk_index=4), EncodedVector([1.0, 0.0, 0.0], "other")),
+        (replace(chunk, chunk_index=5), [1.0, 0.0, 0.0]),
     ])
     with store.connection:
         store.connection.execute(
