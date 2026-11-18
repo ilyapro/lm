@@ -350,3 +350,14 @@ def test_effective_label_across_pattern_encodings(sample, pattern):
     rows = store.recall_work_followups(work, since=SINCE, medoid_ids=[])
     expected = {"repair": [overridden.id, matched.id], "different": []}
     assert [row["event_id"] for row in rows] == expected.get(pattern, [matched.id])
+
+
+def test_one_bound_across_interleaved_pattern_ranges(sample):
+    store, _, work = sample
+    events = [event(store, query=str(i)) for i in range(6)]
+    for row, pattern in zip(events, (None, "", "repair") * 2):
+        store.connection.execute("UPDATE recall_events SET task_pattern=? WHERE id=?",
+                                 (pattern, row.id))
+    rows = store.recall_work_followups(work, since=SINCE, medoid_ids=[], limit=6)
+    assert [row["event_id"] for row in rows] == [row.id for row in reversed(events)]
+    assert store.recall_work_followups(work, since=SINCE, medoid_ids=[], limit=5) is None
