@@ -2,6 +2,7 @@
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from unittest.mock import Mock
 import json
 
@@ -250,6 +251,19 @@ def test_prompt_projects_validity_for_schemas_and_decision_history(tmp_path, mon
         assert list(store.connection.iterdump()) == before
 
 
+@contextmanager
+def teach_before_validity_read(store, monkeypatch, teach):
+    read_pairs = store.list_supersedes_pairs
+    corrections = []
+    with ThreadPoolExecutor(max_workers=1) as executor, monkeypatch.context() as patch:
+        def teach_then_read_pairs(ids):
+            corrections.append(executor.submit(asyncio.run, teach()).result(timeout=30))
+            return read_pairs(ids)
+
+        patch.setattr(store, "list_supersedes_pairs", teach_then_read_pairs)
+        yield corrections
+
+
 @pytest.mark.parametrize("selectors", [{}, {"context_key": "task_pattern"}, {"view": "full"},
                                       {"task_pattern": "amber-hatch"}])
 def test_lookup_keeps_one_snapshot_across_teach(tmp_path, monkeypatch, selectors):
@@ -277,15 +291,7 @@ def test_lookup_keeps_one_snapshot_across_teach(tmp_path, monkeypatch, selectors
     async def scenario():
         async with Client(reader) as client:
             before = (await client.call_tool("memory_lookup", args)).data
-            read_pairs = store.list_supersedes_pairs
-            with ThreadPoolExecutor(max_workers=1) as executor, monkeypatch.context() as patch:
-                corrections = []
-
-                def teach_then_read_pairs(ids):
-                    corrections.append(executor.submit(asyncio.run, teach()).result(timeout=30))
-                    return read_pairs(ids)
-
-                patch.setattr(store, "list_supersedes_pairs", teach_then_read_pairs)
+            with teach_before_validity_read(store, monkeypatch, teach) as corrections:
                 during = (await client.call_tool("memory_lookup", args)).data
             after = (await client.call_tool("memory_lookup", args)).data
             assert during == before
@@ -335,15 +341,7 @@ def test_resource_keeps_one_snapshot_across_teach(tmp_path, monkeypatch, uri, sc
                 return json.loads((await client.read_resource(uri))[0].text)
 
             before = await read()
-            read_pairs = store.list_supersedes_pairs
-            with ThreadPoolExecutor(max_workers=1) as executor, monkeypatch.context() as patch:
-                corrections = []
-
-                def teach_then_read_pairs(ids):
-                    corrections.append(executor.submit(asyncio.run, teach()).result(timeout=30))
-                    return read_pairs(ids)
-
-                patch.setattr(store, "list_supersedes_pairs", teach_then_read_pairs)
+            with teach_before_validity_read(store, monkeypatch, teach) as corrections:
                 during = await read()
             assert during == before
             correction, = corrections

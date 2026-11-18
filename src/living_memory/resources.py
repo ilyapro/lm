@@ -65,18 +65,19 @@ def concepts_for_scope(
     uri: str | None = None,
     limit: int = DEFAULT_CONCEPT_LIMIT,
 ) -> dict[str, Any]:
-    concepts = store.list_nodes(
-        level="concept",
-        scope=scope,
-        include_decayed=False,
-        limit=max(0, int(limit)),
-    )
-    return {
-        "uri": uri or f"memory://{scope}/concepts",
-        "scope": scope,
-        "count": len(concepts),
-        "concepts": nodes_to_dict(store, concepts, ScopePlan(scope, (scope,))),
-    }
+    with store.read_snapshot():
+        concepts = store.list_nodes(
+            level="concept",
+            scope=scope,
+            include_decayed=False,
+            limit=max(0, int(limit)),
+        )
+        return {
+            "uri": uri or f"memory://{scope}/concepts",
+            "scope": scope,
+            "count": len(concepts),
+            "concepts": nodes_to_dict(store, concepts, ScopePlan(scope, (scope,))),
+        }
 
 
 def memory_stats(store: MemoryStore) -> dict[str, Any]:
@@ -98,17 +99,18 @@ def recent_interactions(
 ) -> dict[str, Any]:
     """Return the latest active traces across scopes."""
 
-    traces = store.list_nodes(
-        level="trace",
-        include_decayed=False,
-        limit=max(0, int(limit)),
-    )
-    return {
-        "uri": "memory://recent",
-        "limit": max(0, int(limit)),
-        "count": len(traces),
-        "traces": nodes_to_dict(store, traces, resolve_scope()),
-    }
+    with store.read_snapshot():
+        traces = store.list_nodes(
+            level="trace",
+            include_decayed=False,
+            limit=max(0, int(limit)),
+        )
+        return {
+            "uri": "memory://recent",
+            "limit": max(0, int(limit)),
+            "count": len(traces),
+            "traces": nodes_to_dict(store, traces, resolve_scope()),
+        }
 
 
 def memory_status(store: MemoryStore, scope: str | None = None) -> dict[str, Any]:
