@@ -1881,7 +1881,12 @@ class MemoryStore:
         filters = ["level IN ('schema', 'concept')", "decayed = 0"]
         params = []
         if node_ids is not None:
-            source = "json_each(?) AS ranked CROSS JOIN nodes ON nodes.id = ranked.value"
+            if scope is None:
+                source = "json_each(?) AS ranked CROSS JOIN nodes ON nodes.id = ranked.value"
+            else:
+                # Scan the scope/level index once. Unary + keeps SQLite from
+                # seeking into it once per ranked ID for each eligible level.
+                filters.append("+id IN (SELECT value FROM json_each(?))")
             params.append(_json_dumps(node_ids))
         if scope is not None:
             filters.append("scope = ?")

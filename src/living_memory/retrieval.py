@@ -642,7 +642,8 @@ class MemoryRecallService:
         with self.store.read_snapshot() if repeatable_selection else nullcontext():
             plan, limited = self._select_recall(
                 prepared, scope=scope, ambient_context=ambient_context, depth=depth,
-                max_results=max_results, select_results=select_results, repeatable_selection=repeatable_selection,
+                max_results=max_results, select_results=select_results,
+                repeatable_selection=repeatable_selection,
             )
 
         if log_event is None:
@@ -1595,6 +1596,8 @@ class MemoryRecallService:
             for node_id, trigger in self.store.schema_triggers(scope, node_ids=ranked_ids)
             if frozenset(tokenize(trigger, evidence=True)) == query_tokens
         }
+        if not named_ids:
+            return ranked
         threshold = min_score_from_env()
         first: list[RecallResult] = []
         rest: list[RecallResult] = []
