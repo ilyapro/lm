@@ -1682,18 +1682,22 @@ class MemoryStore:
     ) -> dict[str, dict[str, Any]]:
         """Read exact content and stored validity without materializing Nodes.
 
-        JSON projection happens in SQLite; only selected values cross into
-        Python. Raw JSON preserves null, booleans and large integers. Relation
-        validity and correction-text shaping remain the readers' shared work.
+        Ordinary context fields are projected in SQLite. Raw JSON preserves
+        null, booleans and large integers. Relation validity and correction-text
+        shaping remain the readers' shared work.
         """
         context_column = ""
-        params: tuple[str, ...] = ()
+        params: tuple[str | None, ...] = ()
         if context_key is not None:
             # JSON path quotes delimit a literal key. Encode embedded quotes as
             # Unicode escapes so dots/brackets in the same key remain literal.
             key = _json_dumps(context_key)[1:-1].replace(r'\"', r'\u0022')
-            params = (f'$."{key}"',)
-            context_column = ", context -> ? AS context_value"
+            # SQLite JSON paths can alias a NUL-containing name with its prefix
+            # in either stored order. Decode the object only for possible aliases.
+            # A NUL request can only match in that fallback.
+            params = (None if "\x00" in context_key else f'$."{key}"',)
+            context_column = r""", context -> ? AS context_value,
+                CASE WHEN context GLOB '*\u0000*' THEN context END AS nul_context"""
         nodes: dict[str, dict[str, Any]] = {}
         for chunk in _node_read_batches(node_ids):
             placeholders = ",".join("?" for _ in chunk)
@@ -1713,7 +1717,10 @@ class MemoryStore:
                     "decayed": bool(row["decayed"]), "decay_reason": row["decay_reason"],
                     "provenance": provenance,
                 }
-                if context_key is not None:
+                if context_key is not None and row["nul_context"] is not None:
+                    context = _json_loads(row["nul_context"], {})
+                    node["context"] = {context_key: context[context_key]} if context_key in context else {}
+                elif context_key is not None:
                     node["context"] = (
                         {context_key: _json_loads(row["context_value"], None)}
                         if row["context_value"] is not None else {}
