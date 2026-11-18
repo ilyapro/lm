@@ -107,6 +107,7 @@ from living_memory.chunking import (  # noqa: E402  (path bootstrap above)
     get_tokenizer,
 )
 from living_memory.embeddings import (  # noqa: E402
+    EncodedVector,
     DEFAULT_EMBEDDING_MODEL,
     EMBEDDING_DIMENSIONS,
     LocalEmbeddingModel,
@@ -471,7 +472,7 @@ def build_chunk_embedder(
                 show_progress_bar=False,
                 convert_to_numpy=True,
             )
-            return vectors.tolist()
+            return [EncodedVector(row, f"st:{model_name}:{len(row)}") for row in vectors.tolist()]
 
         backend = "sentence-transformers"
 

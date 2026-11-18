@@ -460,7 +460,7 @@ class _PreparedDigest:
     content: str
     cluster_key: str
     scope: str
-    chunks: tuple[tuple[TextChunk, tuple[float, ...]], ...] | None = None
+    chunks: tuple[tuple[TextChunk, Sequence[float]], ...] | None = None
     output_identity: tuple[Any, ...] | None = None
 
     def matches(self, members: Sequence[Node], best: Node, scope: str) -> bool:
@@ -522,8 +522,7 @@ class _DerivedOutputRequired(Exception):
             )
         chunks = None
         if self.chunks and digest.content != self.current_content:
-            chunks = tuple((chunk, tuple(vector)) for chunk, vector in
-                           store._chunk_embeddings_for(digest.content, None, require_complete=True))
+            chunks = tuple(store._chunk_embeddings_for(digest.content, None, require_complete=True))
             if not chunks:
                 raise ValueError("derived output requires complete content chunks")
         preparation.digests[self.key] = replace(digest, chunks=chunks, output_identity=self.identity)

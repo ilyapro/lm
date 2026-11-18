@@ -28,6 +28,7 @@ from typing import Any, Callable
 from living_memory.consolidation import memory_connect
 from living_memory.edge_derivation import CONTENT_REFERENCE_KIND, DERIVED_FROM_KIND
 from living_memory.embeddings import (
+    EncodedVector,
     LocalEmbeddingModel,
     cosine_similarity,
     cyrillic_prefix_terms,
@@ -291,6 +292,7 @@ class _ChunkBlock:
     norms: Any = None
     norm_deviation: float = 0.0
     chunk_ids: tuple[str, ...] = ()
+    encoder_id: str | None = None
 
     @property
     def needs_normalization(self) -> bool:
@@ -391,6 +393,7 @@ class _PreparedQuery:
 
     text: str
     embedding: tuple[float, ...]
+    encoder_id: str | None = None
 
 
 class MemoryRecallService:
@@ -442,7 +445,8 @@ class MemoryRecallService:
         if max_results <= 0:
             return _PreparedQuery("", ())
         query = query.strip()
-        return _PreparedQuery(query, tuple(self.embedder.embed(query)) if query else ())
+        vector = self.embedder.embed(query) if query else ()
+        return _PreparedQuery(query, tuple(vector), vector.encoder_id if isinstance(vector, EncodedVector) else None)
 
     def memory_recall(
         self,
@@ -512,7 +516,7 @@ class MemoryRecallService:
         candidates: dict[str, _Candidate] = {}
 
         self._collect_bm25(query, plan, candidates, max_results=max_results)
-        self._collect_vector(query_embedding, plan, candidates, max_results=max_results)
+        self._collect_vector(query_embedding, plan, candidates, max_results=max_results, encoder_id=prepared.encoder_id)
         by_name = schema_trigger_by_name()
         if not by_name:
             self._collect_schema_triggers(query, plan, candidates)
@@ -987,12 +991,16 @@ class MemoryRecallService:
         candidates: dict[str, _Candidate],
         *,
         max_results: int,
+        encoder_id: str | None = None,
     ) -> None:
         """Score nodes by the best cosine among their chunk vectors.
 
         The caller supplies the prepared query vector, also used by anchors.
         Pending repair precedes selection; scoring reads the current index.
         """
+
+        if encoder_id is None:
+            return
 
         per_scope_limit = max(50, max_results * 12)
 
@@ -1002,7 +1010,7 @@ class MemoryRecallService:
         discovery: list[tuple[float, int, str, str | None]] = []
         lexical: list[tuple[float, int, str, str | None]] = []
         order = 0
-        for block in self._chunk_blocks(plan, len(query_embedding)):
+        for block in self._chunk_blocks(plan, len(query_embedding), encoder_id):
             for similarity, node_id, chunk_id in _pooled_chunk_similarities(
                 block, query_embedding, q_arr,
             ):
@@ -1047,7 +1055,7 @@ class MemoryRecallService:
     # Chunk corpus cache
     # ------------------------------------------------------------------
 
-    def _chunk_blocks(self, plan: ScopePlan, dimension: int) -> tuple[_ChunkBlock, ...]:
+    def _chunk_blocks(self, plan: ScopePlan, dimension: int, encoder_id: str) -> tuple[_ChunkBlock, ...]:
         """Share scope partitions, reading revisions and rows in one snapshot.
 
         The existing deferred transaction helper reserves no writer. Its read
@@ -1079,7 +1087,7 @@ class MemoryRecallService:
                     for scope in scopes
                 ]
         blocks = tuple(block for index in indexes for block in index.blocks
-                       if block.dimension == dimension)
+                       if block.dimension == dimension and block.encoder_id == encoder_id)
         if len(blocks) > 1 and not plan.restricted and revisions is not None:
             gather = self._chunk_gathers.get(dimension) if cacheable else None
             if gather is None or len(gather.blocks) != len(blocks) or any(
@@ -1114,22 +1122,22 @@ class MemoryRecallService:
         keeps each node's chunks together for max-pooling.
         """
 
-        accumulators: dict[int, _BlockAccumulator] = {}
-        width = -1
-        accumulator: _BlockAccumulator | None = None
-        for node_id, _ordinal, view, chunk_id in self.store.iter_chunk_embedding_rows(
-            scope=scope, include_identity=True,
+        accumulators: dict[tuple[int, str], _BlockAccumulator] = {}
+        for node_id, _ordinal, view, chunk_id, encoder_id in self.store.iter_chunk_embedding_rows(
+            scope=scope, include_identity=True, include_encoder=True,
         ):
-            row_width, remainder = divmod(len(view), CHUNK_EMBEDDING_ITEMSIZE)
-            if remainder or not row_width:
-                # Not a whole number of float32s, or none at all: not a vector.
+            width, remainder = divmod(len(view), CHUNK_EMBEDDING_ITEMSIZE)
+            if remainder or not width or not encoder_id:
                 continue
-            if row_width != width or accumulator is None:
-                width = row_width
-                accumulator = accumulators.setdefault(width, _BlockAccumulator())
-            accumulator.add(node_id, view, chunk_id)
+            key = (width, encoder_id)
+            if key not in accumulators:
+                accumulators[key] = _BlockAccumulator()
+            accumulators[key].add(node_id, view, chunk_id)
 
-        blocks = tuple(accumulators[width].freeze(width) for width in sorted(accumulators))
+        blocks = tuple(
+            replace(accumulator.freeze(width), encoder_id=encoder_id)
+            for (width, encoder_id), accumulator in sorted(accumulators.items())
+        )
         return _ScopeChunkIndex(
             revision=revision,
             blocks=blocks,

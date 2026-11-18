@@ -2235,7 +2235,7 @@ def _compact_consolidation_summary(result: ConsolidationResult) -> dict[str, Any
 
 @dataclass(frozen=True, slots=True)
 class _PreparedTraceIndex:
-    chunks: tuple[tuple[TextChunk, tuple[float, ...]], ...] = ()
+    chunks: tuple[tuple[TextChunk, Sequence[float]], ...] = ()
     error: str | None = None
 
 
@@ -2248,9 +2248,7 @@ def _prepare_trace_indices(
     for content in contents:
         try:
             chunks = store._chunk_embeddings_for(content, None, require_complete=True)
-            prepared[content] = _PreparedTraceIndex(tuple(
-                (chunk, tuple(vector)) for chunk, vector in chunks
-            ))
+            prepared[content] = _PreparedTraceIndex(tuple(chunks))
         except Exception as exc:
             prepared[content] = _PreparedTraceIndex(error=type(exc).__name__)
     return prepared

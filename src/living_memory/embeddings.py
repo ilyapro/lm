@@ -589,6 +589,20 @@ def _serialized_encoder(method):
     return guarded
 
 
+class EncodedVector(list[float]):
+    """An embedding and the encoder space that produced its coordinates."""
+
+    def __init__(self, values: Iterable[float], encoder_id: str):
+        super().__init__(values)
+        self.encoder_id = encoder_id
+
+
+def copy_vector(values: Iterable[float]) -> list[float]:
+    if isinstance(values, EncodedVector):
+        return EncodedVector(values, values.encoder_id)
+    return list(values)
+
+
 class LocalEmbeddingModel:
     """Lazy local sentence-transformers encoder with a deterministic fallback.
 
@@ -619,7 +633,7 @@ class LocalEmbeddingModel:
     def embed(self, text: str) -> list[float]:
         model = self._sentence_transformer()
         if model is None:
-            return _embed_hash(text, self.dimensions)
+            return EncodedVector(_embed_hash(text, self.dimensions), f"hash:{self.dimensions}")
 
         try:
             vector = _encode_sentence_transformer(model, text)
@@ -627,7 +641,7 @@ class LocalEmbeddingModel:
             self._warn_fallback("sentence-transformers encode failed", exc)
             self._model = None
             self._backend = "hash"
-            return _embed_hash(text, self.dimensions)
+            return EncodedVector(_embed_hash(text, self.dimensions), f"hash:{self.dimensions}")
 
         return self._normalize_embedding(vector)
 
@@ -656,8 +670,10 @@ class LocalEmbeddingModel:
     def _normalize_embedding(self, vector: list[float]) -> list[float]:
         if vector:
             self.dimensions = len(vector)
-            return _normalize(vector)
-        return [0.0] * self.dimensions
+            values = _normalize(vector)
+        else:
+            values = [0.0] * self.dimensions
+        return EncodedVector(values, f"st:{self.model_name}:{self.dimensions}")
 
     @_serialized_encoder
     def warmup(self) -> None:

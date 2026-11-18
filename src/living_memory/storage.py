@@ -22,7 +22,9 @@ from datetime import UTC, datetime, timedelta
 from living_memory.chunking import TextChunk, chunk_text
 from living_memory.config import MemoryConfig, RetrievalWeightConfig
 from living_memory.embeddings import (
+    EncodedVector,
     LocalEmbeddingModel,
+    copy_vector,
     fts_prefix_term_allowed,
 )
 from living_memory.models import (
@@ -121,8 +123,9 @@ _CHUNK_CORPUS_TRIGGERS = (
         {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id = OLD.node_id")}
     END""",
     f"""CREATE TRIGGER chunk_corpus_update
-    BEFORE UPDATE OF id, node_id, chunk_index, embedding ON node_chunk_embeddings
+    BEFORE UPDATE OF id, node_id, chunk_index, embedding, encoder_id ON node_chunk_embeddings
     WHEN OLD.id IS NOT NEW.id OR OLD.node_id IS NOT NEW.node_id
+        OR OLD.encoder_id IS NOT NEW.encoder_id
         OR OLD.chunk_index IS NOT NEW.chunk_index
         OR OLD.embedding IS NOT NEW.embedding
     BEGIN
@@ -238,7 +241,7 @@ def install_derived_only_authorizer(
         ).fetchone()
         return (
             actual == expected and shadow is None and revision is not None
-            and (corpus != "chunks" or revision[0] == "1")
+            and (corpus != "chunks" or revision[0] == "2")
         )
 
     def authorizer(
@@ -1407,7 +1410,7 @@ class MemoryStore:
             if identity is not None and identity == content_identity(peer):
                 duplicate_ids.append(str(row["id"]))
 
-        content_vector = None if embedding is None else list(embedding)
+        content_vector = None if embedding is None else copy_vector(embedding)
         vector = (
             list(representative_embedding)
             if representative_embedding is not None else content_vector
@@ -1924,7 +1927,7 @@ class MemoryStore:
         corrections = _as_list(provenance_data.pop("corrections", existing.corrections))
         new_content = existing.content if content is None else content
         content_changed = new_content != existing.content
-        content_vector = None if embedding is None else list(embedding)
+        content_vector = None if embedding is None else copy_vector(embedding)
         vector = (
             list(representative_embedding)
             if representative_embedding is not None else content_vector
@@ -4020,7 +4023,8 @@ class MemoryStore:
         level: NodeLevel | None = None,
         include_decayed: bool = False,
         include_identity: bool = False,
-    ) -> Iterator[tuple[str, int, memoryview] | tuple[str, int, memoryview, str]]:
+        include_encoder: bool = False,
+    ) -> Iterator[tuple]:
         """Yield ``(node_id, chunk_index, embedding)`` for live chunks.
 
         The v6 analogue of :meth:`iter_embedding_rows` and the read contract the
@@ -4073,9 +4077,13 @@ class MemoryStore:
         # measurable share of the scan, and nothing here needs lookup by name.
         cursor = self._conn.cursor()
         cursor.row_factory = None
+        encoder_column = ""
+        if include_encoder:
+            columns = self._conn.execute(f"PRAGMA table_info({CHUNK_EMBEDDING_TABLE})")
+            encoder_column = ", c.encoder_id" if any(r[1] == "encoder_id" for r in columns) else ", NULL"
         cursor.execute(
             f"""
-            SELECT c.node_id, c.chunk_index, c.embedding{', c.id' if include_identity else ''}
+            SELECT c.node_id, c.chunk_index, c.embedding{', c.id' if include_identity else ''}{encoder_column}
             FROM {CHUNK_EMBEDDING_TABLE} c
             JOIN nodes n ON n.id = c.node_id
             {where}
@@ -4089,7 +4097,7 @@ class MemoryStore:
                 return
             for row in batch:
                 item = (str(row[0]), int(row[1]), memoryview(row[2]))
-                yield (*item, str(row[3])) if include_identity else item
+                yield (*item, *row[3:])
 
     def get_chunk_passages(self, chunk_ids: Sequence[str]) -> dict[str, SourcePassage]:
         """Resolve selected row identities without reading vectors or node text.
@@ -4146,7 +4154,7 @@ class MemoryStore:
                 keys,
             ).fetchall()
         values = dict(rows)
-        if values.pop(_CHUNK_SCOPE_REVISION_FORMAT, None) != "1":
+        if values.pop(_CHUNK_SCOPE_REVISION_FORMAT, None) != "2":
             return None
         revisions = {key[len(_CHUNK_SCOPE_REVISION_PREFIX):]: int(value)
                      for key, value in values.items()}
@@ -4475,9 +4483,8 @@ class MemoryStore:
                 current.materializer in ("cluster", "cross-scope-promotion") and current.embedding
             )
 
-        embedding = None if representative else tuple(embed(content))
-        pairs = tuple((chunk, tuple(vector)) for chunk, vector in
-                      self._chunk_embeddings_for(content, embedding, require_complete=True))
+        embedding = None if representative else embed(content)
+        pairs = self._chunk_embeddings_for(content, embedding, require_complete=True)
         if not pairs:
             raise ValueError("pending index requires a complete nonempty chunk set")
         with guard(), self.transaction(immediate=True):
@@ -4582,6 +4589,7 @@ class MemoryStore:
                     expected_index,
                     len(values),
                     pack_chunk_embedding(values),
+                    vector.encoder_id if isinstance(vector, EncodedVector) else None,
                     int(chunk.token_start),
                     int(chunk.token_end),
                     fingerprint,
@@ -4594,11 +4602,11 @@ class MemoryStore:
         self._conn.executemany(
             f"""
             INSERT INTO {CHUNK_EMBEDDING_TABLE} (
-                id, node_id, chunk_index, dimensions, embedding,
+                id, node_id, chunk_index, dimensions, embedding, encoder_id,
                 token_start, token_end, content_fingerprint, created_at, updated_at,
                 char_start, char_end
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             payload,
         )
@@ -4628,13 +4636,13 @@ class MemoryStore:
         if not chunks or (max_chunks is not None and len(chunks) > max_chunks):
             return []
         if len(chunks) == 1 and node_embedding:
-            return [(chunks[0], list(node_embedding))]
+            return [(chunks[0], node_embedding)]
         # Preparation uses only immutable text and encoder-owned state. Keep
         # injected encoders and their replacement serialized too; never consult
         # SQLite, session state or the current knowledge projection here.
         with self._chunk_embedder_lock:
             vectors = [
-                list(vector) for vector in
+                copy_vector(vector) for vector in
                 self._resolve_chunk_embedder()([chunk.text for chunk in chunks])
             ]
         if len(vectors) != len(chunks):
@@ -5465,7 +5473,7 @@ class MemoryStore:
                 "SELECT value FROM metadata WHERE key = ?",
                 (_CHUNK_SCOPE_REVISION_FORMAT,),
             ).fetchone()
-            if row is not None and row[0] == "1":
+            if row is not None and row[0] == "2":
                 return
             for sql in (*_CHUNK_CORPUS_TRIGGERS, *_CHUNK_MEMBERSHIP_TRIGGERS):
                 name = sql.split()[2]
@@ -5479,7 +5487,7 @@ class MemoryStore:
             )
             self._conn.execute("DELETE FROM metadata WHERE key = 'chunk_corpus_revision'")
             self._conn.execute(
-                "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, '1')",
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, '2')",
                 (_CHUNK_SCOPE_REVISION_FORMAT,),
             )
 
@@ -5611,6 +5619,7 @@ class MemoryStore:
                     content_fingerprint TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
+                    encoder_id TEXT,
                     char_start INTEGER,
                     char_end INTEGER,
                     UNIQUE(node_id, chunk_index)
@@ -5803,6 +5812,7 @@ class MemoryStore:
                     ON recall_events(scope, task_pattern, created_at DESC);
                 """
             )
+            self._migrate_chunk_columns()
             self._initialize_chunk_revisions()
             # Query anchors (v7). Same script the pre-v7 migration runs, so a
             # fresh database and a migrated one end up with identical objects.
@@ -5841,7 +5851,6 @@ class MemoryStore:
             self._backfill_recall_delivery_history()
             self._create_legacy_embedding_index()
             self._backfill_missing_content_fingerprints()
-            self._migrate_chunk_passage_columns()
             self._invalidate_derived_proxy_chunks()
             self._backfill_recall_events_task_pattern()
             self._conn.execute(
@@ -5853,14 +5862,14 @@ class MemoryStore:
                 (str(SCHEMA_VERSION),),
             )
 
-    def _migrate_chunk_passage_columns(self) -> None:
-        """Add source coordinates without rewriting or re-encoding old chunks."""
+    def _migrate_chunk_columns(self) -> None:
+        """Add nullable passage coordinates and encoder identity to existing chunks."""
         columns = {row[1] for row in self._conn.execute(
             f"PRAGMA table_info({CHUNK_EMBEDDING_TABLE})"
         )}
-        for column in ("char_start", "char_end"):
+        for column, kind in (("char_start", "INTEGER"), ("char_end", "INTEGER"), ("encoder_id", "TEXT")):
             if column not in columns:
-                self._conn.execute(f"ALTER TABLE {CHUNK_EMBEDDING_TABLE} ADD COLUMN {column} INTEGER")
+                self._conn.execute(f"ALTER TABLE {CHUNK_EMBEDDING_TABLE} ADD COLUMN {column} {kind}")
 
     def _invalidate_derived_proxy_chunks(self) -> None:
         """Queue single-window materializer chunks for ordinary content encoding.
