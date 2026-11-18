@@ -130,7 +130,9 @@ def test_encode_failure_preserves_scalar_prefix_then_hash_transition() -> None:
     texts = ["works", "fails", "after failure"]
     scalar = model_with(Encoder())
     batched = model_with(Encoder())
-    assert batched.embed_batch(texts) == [scalar.embed(text) for text in texts]
+    rows = batched.embed_batch(texts)
+    assert rows == [scalar.embed(text) for text in texts]
+    assert [row.encoder_id for row in rows] == ["st:batch-contract-fixture:3", "hash:3", "hash:3"]
     assert batched.encoder_id() == scalar.encoder_id() == "hash:3"
     assert batched.embed_batch(["later"]) == [scalar.embed("later")]
 

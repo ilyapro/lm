@@ -4024,7 +4024,10 @@ class MemoryStore:
         include_decayed: bool = False,
         include_identity: bool = False,
         include_encoder: bool = False,
-    ) -> Iterator[tuple]:
+    ) -> Iterator[
+        tuple[str, int, memoryview] | tuple[str, int, memoryview, str | None]
+        | tuple[str, int, memoryview, str, str | None]
+    ]:
         """Yield ``(node_id, chunk_index, embedding)`` for live chunks.
 
         The v6 analogue of :meth:`iter_embedding_rows` and the read contract the
@@ -4055,6 +4058,9 @@ class MemoryStore:
         ``include_identity`` appends the immutable chunk row id. A max-pool
         winner can then resolve its source address even if the node's chunks
         are replaced concurrently; an ordinal alone cannot identify a generation.
+
+        ``include_encoder`` appends the producer's space. Historical rows and
+        unmigrated snapshots return None for that field.
 
         Yields nothing on a pre-v6 database rather than raising, so a snapshot
         opened without migrations degrades instead of crashing.
@@ -4379,8 +4385,13 @@ class MemoryStore:
         if scope is not None:
             clauses.append("n.scope = ?")
             params.append(scope)
-        space = "AND c.encoder_id = ?" if encoder_id is not None else ""
-        if space:
+        different_space = ""
+        if encoder_id is not None:
+            different_space = f"""OR EXISTS (
+                SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} c
+                WHERE c.node_id = n.id AND c.content_fingerprint = n.content_fingerprint
+                  AND c.encoder_id IS NOT ?
+            )"""
             params.append(encoder_id)
         order = "n.timestamp ASC, n.id ASC"
         if after is not None:
@@ -4392,11 +4403,11 @@ class MemoryStore:
             WITH pending AS MATERIALIZED (
                 SELECT n.id FROM nodes n
                 WHERE {' AND '.join(clauses)}
-                  AND NOT EXISTS (
+                  AND (NOT EXISTS (
                     SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} c
                     WHERE c.node_id = n.id
-                      AND c.content_fingerprint = n.content_fingerprint {space}
-                  )
+                      AND c.content_fingerprint = n.content_fingerprint
+                  ) {different_space})
             )
             SELECT {'n.timestamp, n.id' if positions_only else 'n.*'}
             FROM pending p JOIN nodes n ON n.id = p.id
@@ -5825,11 +5836,12 @@ class MemoryStore:
                     ON recall_events(scope, task_pattern, created_at DESC);
                 """
             )
-            self._migrate_chunk_columns()
-            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chunk_source_space ON "
-                               "node_chunk_embeddings(node_id, content_fingerprint, encoder_id)")
-            self._conn.execute("DROP INDEX IF EXISTS idx_chunk_source")
-            self._initialize_chunk_revisions()
+            with self.transaction(immediate=True):
+                self._migrate_chunk_columns()
+                self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chunk_source_space ON "
+                                   "node_chunk_embeddings(node_id, content_fingerprint, encoder_id)")
+                self._conn.execute("DROP INDEX IF EXISTS idx_chunk_source")
+                self._initialize_chunk_revisions()
             # Query anchors (v7). Same script the pre-v7 migration runs, so a
             # fresh database and a migrated one end up with identical objects.
             self._conn.executescript(_QUERY_ANCHOR_SCHEMA_SQL)
@@ -6759,6 +6771,7 @@ def _chunk_embedding_from_row(row: sqlite3.Row) -> NodeChunkEmbedding:
         chunk_index=int(row["chunk_index"]),
         dimensions=dimensions,
         embedding=unpack_chunk_embedding(row["embedding"], dimensions),
+        encoder_id=_row_value(row, "encoder_id"),
         token_start=int(row["token_start"]),
         token_end=int(row["token_end"]),
         content_fingerprint=str(row["content_fingerprint"]),

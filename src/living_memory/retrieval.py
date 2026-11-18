@@ -269,12 +269,8 @@ class _ChunkBlock:
     so scoped and broad queries can share them while applying normalization
     to the query's complete width block.
 
-    One block per vector width, because a corpus is allowed to hold more than
-    one: a fixture storing 3-d vectors, a database caught mid-re-embed,
-    whatever ``MemoryStore.chunk_embedding_dimensions`` would report as several
-    values. Vectors of different widths are points in different spaces — they
-    cannot share a matrix and must not be compared at all, so each width gets
-    its own and only the one matching the query is ever multiplied.
+    Each block contains a single encoder space and vector width. Only the
+    matching partition participates in scoring a prepared query.
     """
 
     dimension: int
@@ -446,7 +442,8 @@ class MemoryRecallService:
             return _PreparedQuery("", ())
         query = query.strip()
         vector = self.embedder.embed(query) if query else ()
-        return _PreparedQuery(query, tuple(vector), vector.encoder_id if isinstance(vector, EncodedVector) else None)
+        encoder_id = vector.encoder_id if isinstance(vector, EncodedVector) else None
+        return _PreparedQuery(query, tuple(vector), encoder_id)
 
     def memory_recall(
         self,
@@ -516,7 +513,8 @@ class MemoryRecallService:
         candidates: dict[str, _Candidate] = {}
 
         self._collect_bm25(query, plan, candidates, max_results=max_results)
-        self._collect_vector(query_embedding, plan, candidates, max_results=max_results, encoder_id=prepared.encoder_id)
+        self._collect_vector(query_embedding, plan, candidates, max_results=max_results,
+                             encoder_id=prepared.encoder_id)
         by_name = schema_trigger_by_name()
         if not by_name:
             self._collect_schema_triggers(query, plan, candidates)
@@ -1116,11 +1114,10 @@ class MemoryRecallService:
         return index
 
     def _build_chunk_index(self, scope: str | None, revision: int | None) -> _ScopeChunkIndex:
-        """Read a scope's chunk BLOBs into reusable blocks by vector width.
+        """Group known chunk vectors by encoder space and byte width.
 
-        Byte width determines the block. Malformed or empty BLOBs are skipped;
-        only the width matching the query is scored. The ordered storage scan
-        keeps each node's chunks together for max-pooling.
+        The ordered storage scan keeps each node's compatible chunks together
+        for max-pooling. Rows without producer identity remain unscored.
         """
 
         accumulators: dict[tuple[int, str], _BlockAccumulator] = {}
@@ -2323,7 +2320,7 @@ def _prepare_chunk_gather(blocks: tuple[_ChunkBlock, ...]) -> _ChunkGatherPlan:
             dimension, node_ids, starts, None, row_count,
             _np.asarray([block.log2_chunk_counts[index] for _, block, index in runs]),
             norms, float(_np.max([block.norm_deviation for block in blocks])),
-            chunk_ids=chunk_ids,
+            chunk_ids=chunk_ids, encoder_id=blocks[0].encoder_id,
         )
         return _ChunkGatherPlan(blocks, tuple(placements), template)
     starts_list = []
@@ -2335,7 +2332,7 @@ def _prepare_chunk_gather(blocks: tuple[_ChunkBlock, ...]) -> _ChunkGatherPlan:
     template = _ChunkBlock(
         dimension, node_ids, tuple(starts_list), tuple(scalar_rows), row_count,
         tuple(block.log2_chunk_counts[index] for _, block, index in runs),
-        chunk_ids=chunk_ids,
+        chunk_ids=chunk_ids, encoder_id=blocks[0].encoder_id,
     )
     return _ChunkGatherPlan(blocks, (), template)
 

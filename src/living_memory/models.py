@@ -201,6 +201,7 @@ class NodeChunkEmbedding:
     updated_at: str = ""
     char_start: int | None = None
     char_end: int | None = None
+    encoder_id: str | None = None
 
     @property
     def token_count(self) -> int:
