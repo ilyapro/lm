@@ -145,7 +145,7 @@ def test_verification_admits_only_rows_from_the_prepared_space(tmp_path):
         for text in ("valid", "fallback", "missing", "short"):
             anchor = store.insert_query_anchor(query=text, embedding=[1.0, 0.0],
                                                fingerprint=text, scope="global")
-            node = store.create_node(node_id=text, level="trace", content="opaque artifact")
+            node = store.create_node(node_id=text, level="trace", content="opaque artifact " + text)
             store.upsert_query_anchor_edge(anchor.id, node.id, weight=1)
         assert match_anchors(store, [1.0, 0.0]) == []
         service = MemoryRecallService(store, embedder=Encoder())
