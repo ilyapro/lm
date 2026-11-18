@@ -314,3 +314,39 @@ def test_limits_preserve_existing_behavior(sample, limit):
         event(store)
     options = {"since": SINCE, "medoid_ids": [], "limit": limit}
     assert store.recall_work_followups(work, **options) == full_followups(store, work, **options)
+
+
+@pytest.mark.parametrize("with_card", [False, True])
+def test_query_tokens_only_for_possible_echo(sample, monkeypatch, with_card):
+    from living_memory import recall_map
+
+    store, clock, work = sample
+    card = {"label": "zebra", "medoid": {"node_id": "medoid"}}
+    event(store, query="own offer", recall_map={"clusters": [card] if with_card else []})
+    clock[0] = "2026-01-01T00:03:00Z"
+    event(store, query="same stripes", results=[{"node_id": "medoid"}])
+    event(store, query="unrelated comparison")
+    calls = []
+    tokenize = recall_map.token_set
+
+    def counted(text):
+        calls.append(text)
+        return tokenize(text)
+
+    monkeypatch.setattr(recall_map, "token_set", counted)
+    verdict = RecallMapBuilder(store)._read_curtailment(work)
+    assert verdict.streak == (0 if with_card else 1)
+    assert calls.count("unrelated comparison") == int(with_card)
+    assert "own offer" not in calls
+    assert "same stripes" not in calls
+
+
+@pytest.mark.parametrize("pattern", [None, "", "repair", "different"])
+def test_effective_label_across_pattern_encodings(sample, pattern):
+    store, _, work = sample
+    matched = event(store, context={"task": "repair"})
+    overridden = event(store, context={"task": "other"})
+    store.connection.execute("UPDATE recall_events SET task_pattern=?", (pattern,))
+    rows = store.recall_work_followups(work, since=SINCE, medoid_ids=[])
+    expected = {"repair": [overridden.id, matched.id], "different": []}
+    assert [row["event_id"] for row in rows] == expected.get(pattern, [matched.id])
