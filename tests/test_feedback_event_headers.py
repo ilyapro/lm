@@ -1,6 +1,7 @@
 """Optional native feedback needs current headers, not full provenance bodies."""
 
 import asyncio
+import sqlite3
 
 from fastmcp import Client
 import pytest
@@ -103,8 +104,22 @@ def test_native_optional_feedback_reads_no_unneeded_body(runtime, monkeypatch, r
             numeric = policy == "credit" or (route == "lookup" and policy != "off")
             scores = []
             for attempt in range(2):
-                response = await consume(client, route, [r.node.id], [negative],
-                                         trace_id=r.correction_target)
+                # The explicit claim uses uniqueness in its own table and
+                # checks the opposite ledger. Only lookup needs a credit read
+                # during delivery selection.
+                def authorize(action, table, column, *_):
+                    if (action == sqlite3.SQLITE_READ and table == "recall_explicit_credit"
+                            and column == "recall_event_id"):
+                        return sqlite3.SQLITE_DENY
+                    return sqlite3.SQLITE_OK
+
+                if route != "lookup":
+                    r.store.connection.set_authorizer(authorize)
+                try:
+                    response = await consume(client, route, [r.node.id], [negative],
+                                             trace_id=r.correction_target)
+                finally:
+                    r.store.connection.set_authorizer(None)
                 if route == "lookup":
                     assert response["results"][0]["content"] == CONTENT
                 else:
@@ -130,7 +145,7 @@ def test_native_optional_feedback_reads_no_unneeded_body(runtime, monkeypatch, r
                     )
             assert scores[0] == scores[1]
             assert (scores[0] > 0) == numeric
-            resolves = policy != "off" or route == "recall"
+            resolves = policy != "off"
             assert header_reads == ([event.id] * (1 if route == "lookup" else 2)
                                     if resolves else [])
             expected = {r.node.id} if route == "lookup" else {r.node.id, negative}

@@ -822,10 +822,12 @@ def resolve_explicit_marks(
     join as lookup credit.
     """
 
+    if _explicit_feedback_policy() == "off":
+        return []
     marks = _explicit_mark_requests(used, irrelevant, transport_session_id)
     hits = _current_deliveries(
         store, [mark.node_id for mark in marks if mark.reject_reason is None],
-        transport_session_id, occurred_at, context=context,
+        transport_session_id, occurred_at, context=context, include_credit=False,
     )
     events: dict[str, RecallEventHeader] = {}
     for mark in marks:
@@ -885,7 +887,7 @@ def _current_deliveries(
     store: MemoryStore, node_ids: Iterable[str], transport_session_id: str | None,
     occurred_at: str | datetime | None,
     *, context: Mapping[str, Any] | None = None,
-    query_inputs_only: bool = False,
+    query_inputs_only: bool = False, include_credit: bool = True,
 ) -> dict[str, dict[str, Any]]:
     requested = tuple(node_ids)
     if not transport_session_id or not requested:
@@ -898,7 +900,7 @@ def _current_deliveries(
     return store.recall_deliveries(
         transport_session_id, requested, earliest=instant - _lookup_credit_window(),
         latest=instant, limit=_LOOKUP_CREDIT_EVENT_LIMIT, context=context,
-        query_inputs_only=query_inputs_only,
+        query_inputs_only=query_inputs_only, include_credit=include_credit,
     )
 
 
@@ -971,14 +973,15 @@ def apply_explicit_marks(
             ]
         )
 
+        if policy != "credit":
+            return outcome
+
         irrelevant_by_event: dict[str, tuple[RecallEventHeader, list[str]]] = {}
         for mark in marks:
             if mark.accepted and mark.mark == "irrelevant" and mark.event is not None:
                 entry = irrelevant_by_event.setdefault(mark.event.id, (mark.event, []))
                 if mark.node_id not in entry[1]:
                     entry[1].append(mark.node_id)
-        if policy != "credit":
-            return outcome
 
         weight = _explicit_credit_weight()
         anchor_work: dict[str, tuple[RecallEventHeader, list[str], list[str]]] = {}
@@ -1075,7 +1078,7 @@ def _feedback_queries(
             store, [mark.node_id for mark in marks if mark.reject_reason is None],
             transport_session_id, occurred_at,
             context=context if lookup_ids is None else None,
-            query_inputs_only=True,
+            query_inputs_only=True, include_credit=lookup_ids is not None,
         )
         for mark in marks:
             if mark.reject_reason is not None:

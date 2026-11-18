@@ -141,8 +141,13 @@ def test_preflight_storage_errors_match_full(monkeypatch, table, column):
             sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_READ and (tab, col) == (table, column)
             else sqlite3.SQLITE_OK)
         try:
-            error, message = compare_queries(store, monkeypatch)
-            assert error is sqlite3.DatabaseError and "prohibited" in message
+            for lookup_ids in (None, ["a"]):
+                result = compare_queries(store, monkeypatch, lookup_ids=lookup_ids)
+                if lookup_ids is None and table != "recall_events":
+                    assert list(result.values()) == ["query"]
+                else:
+                    error, message = result
+                    assert error is sqlite3.DatabaseError and "prohibited" in message
         finally:
             store.connection.set_authorizer(None)
 
@@ -185,7 +190,7 @@ def test_narrow_rows_exclude_bodies_and_close_cursor_on_decode_failure(monkeypat
 
             def execute(self, sql, *args):
                 cursor = original_conn.execute(sql, *args)
-                if "AS result," in sql:
+                if "result.key AS rank" in sql:
                     cursor = Rows(cursor)
                     cursors.append(cursor)
                 return cursor

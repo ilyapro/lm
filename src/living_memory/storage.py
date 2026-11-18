@@ -2872,6 +2872,7 @@ class MemoryStore:
         limit: int = 200,
         context: Mapping[str, Any] | None = None,
         query_inputs_only: bool = False,
+        include_credit: bool = True,
     ) -> dict[str, dict[str, Any]]:
         """Newest delivery facts for requested ids in a bounded session window.
 
@@ -2895,6 +2896,7 @@ class MemoryStore:
         Preparation may request query_inputs_only to avoid decoding unused
         matching result bodies. The default retains complete result objects
         for authoritative feedback, including scores and ExplicitMark.result.
+        With include_credit=False the hit omits credited and reads neither ledger.
         """
         requested = set(node_ids)
         if not transport_session_id or not requested or limit <= 0:
@@ -2907,6 +2909,16 @@ class MemoryStore:
             SELECT count(*) FROM json_each(result.value) WHERE key = 'node_id'
         ) <= 1 THEN json_object('node_id', result.value -> '$.node_id')
         ELSE result.value END""" if query_inputs_only else "result.value"
+        credit_projection = ""
+        if include_credit:
+            credit_projection = f""",
+                EXISTS(SELECT 1 FROM {RECALL_CREDIT_LEDGER_TABLE} AS credit
+                       WHERE credit.recall_event_id = event.id
+                         AND credit.node_id = json_extract(result.value, '$.node_id'))
+                OR EXISTS(SELECT 1 FROM {RECALL_EXPLICIT_CREDIT_TABLE} AS credit
+                          WHERE credit.recall_event_id = event.id
+                            AND credit.node_id = json_extract(result.value, '$.node_id'))
+                AS credited"""
         params = {
             **_recall_identity(context),
             "transport_session_id": str(transport_session_id),
@@ -2962,14 +2974,7 @@ class MemoryStore:
                     f"""
                     SELECT event.id AS event_id, event.query, event.scope, event.created_at,
                            json_extract(result.value, '$.node_id') AS node_id,
-                           result.key AS rank, {result_projection} AS result,
-                           EXISTS(SELECT 1 FROM {RECALL_CREDIT_LEDGER_TABLE} AS credit
-                                  WHERE credit.recall_event_id = event.id
-                                    AND credit.node_id = json_extract(result.value, '$.node_id'))
-                           OR EXISTS(SELECT 1 FROM {RECALL_EXPLICIT_CREDIT_TABLE} AS credit
-                                     WHERE credit.recall_event_id = event.id
-                                       AND credit.node_id = json_extract(result.value, '$.node_id'))
-                           AS credited
+                           result.key AS rank, {result_projection} AS result{credit_projection}
                     FROM recall_events AS event
                     JOIN json_each(CASE json_type(event.results)
                         WHEN 'array' THEN event.results ELSE '[]' END) AS result
