@@ -3491,7 +3491,8 @@ class MemoryStore:
                     SELECT rowid AS event_rowid, id, created_at, query FROM recall_events
                     WHERE {predicate} AND created_at >= ?
                     ORDER BY created_at DESC, rowid DESC LIMIT ?
-                ) AS recent""",
+                ) AS recent
+                ORDER BY recent.created_at DESC, recent.event_rowid DESC""",
             (*values, since, limit + 1),
         ).fetchall()
         if len(recalls) > limit:
