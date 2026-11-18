@@ -12,12 +12,45 @@ Tool: `scripts/backfill_chunk_embeddings.py` (`backfill`, `verify`,
 `drop-embedding-column`). It never defaults to a database — `--db` is always
 explicit.
 
+## Refresh an existing chunk index in the serving encoder space
+
+For a service already reading chunks, use the maintenance command while it serves
+traffic. Select the actual database, serving model, tokenizer environment and
+producer ID. A different encoder of the same width uses different coordinates.
+For example, with the default offline MiniLM and a backup on a writable volume:
+
+```sh
+tool=scripts/backfill_chunk_embeddings.py
+space=st:paraphrase-multilingual-MiniLM-L12-v2:384
+python3 "$tool" verify --db "$DB" --encoder-id "$space"
+python3 "$tool" backfill --db "$DB" --encoder-id "$space" --dry-run
+python3 "$tool" backfill --db "$DB" --encoder-id "$space" --backup "$BACKUP" --limit 64
+python3 "$tool" backfill --db "$DB" --encoder-id "$space" --existing-backup "$BACKUP"
+python3 "$tool" verify --db "$DB" --encoder-id "$space"
+```
+
+Verify exits 1 while active chunkable sources are pending. A read-only command
+can inspect an explicit space without loading its encoder. With no explicit ID,
+it resolves the encoder locally and reports its ID. On writes the producer must
+load and match the selected space. Use the same `--model` on each invocation for
+a non-default model. A legacy table lacking producer IDs needs fresh encoding
+of every active chunkable source. With a scope or level filter, coverage is for
+that population only.
+
+The source-attempt limit bounds each pass, including lost races. A single source
+may contain many windows. Budget for a validated SQLite backup, database and
+WAL growth, CPU and memory for the model and for one page of windows. The
+dry-run counts replacement vector bytes. Disk growth depends on page reuse,
+index writes and WAL checkpointing under concurrent readers. Estimate duration
+from window count divided by measured throughput on a limited pass, plus backup,
+validation, model load and lock waits. Repeat verify after the last pass.
+
 ## Why the order is what it is
 
 | Step | Server can be | Because |
 | --- | --- | --- |
 | backup | up | the sqlite3 backup API is consistent under a concurrent writer |
-| backfill | up | it only INSERTs into `node_chunk_embeddings`; a SQLite authorizer denies every other write, so `nodes.embedding` cannot change |
+| backfill | up | after normal store migrations the authorizer permits chunk replacement and its schema-owned revision effects |
 | deploy + restart | restarting | the running process holds the old modules until it restarts |
 | second backfill pass | up | nodes written during the window above were written by code that did not chunk |
 | verify | up | read-only |
@@ -127,37 +160,17 @@ validated (`PRAGMA quick_check` plus the node-count comparison) before any write
 The command in step 1 is the backfill. It is safe to leave running while the
 server serves reads and writes:
 
-* it only ever INSERTs and DELETEs rows of `node_chunk_embeddings`; immediately
-  after the migration a SQLite **authorizer** is installed that denies every
-  write outside that table, so `nodes.embedding` physically cannot be rewritten
-  or dropped by this process;
-* it commits **one node per transaction** (`replace_node_chunks`), so the write
-  lock is held for milliseconds at a time instead of for the whole run, and the
-  WAL stays checkpointable;
-* `PRAGMA busy_timeout` is raised to 30 s and each chunk write retries with
-  backoff on `SQLITE_BUSY`;
-* the first thing it does is the additive v5 → v6 migration: `CREATE TABLE
-  node_chunk_embeddings` plus its indexes. Nothing about `nodes` changes, and
-  nothing in the running server reads `metadata.schema_version` at request time
-  (every migration is self-guarding on the actual DDL), so the running old
-  process is unaffected by the version bump.
-
-Expect **~12 minutes** and a progress line every `--progress-interval` seconds
-with processed/total, rate and ETA, then a summary of nodes, chunks, bytes and
-elapsed time (also written to `--json`).
-
-**If it is interrupted** (Ctrl-C, SIGKILL, machine reboot, disk full), re-run the
-same command with `--existing-backup` pointing at the backup you already took. It
-resumes: progress lives in the database, not in a state file. A chunk row records
-the `content_fingerprint` of the content it was cut from, so
-`list_unchunked_nodes` reports exactly the nodes that are missing or stale, and
-because each node commits atomically no node can be left holding a partial or
-mixed-generation chunk set. Re-running after a *complete* run writes nothing.
-
-If a node's content is edited by the server while the backfill is encoding it, the
-chunks written are stamped with the fingerprint they were cut from, so that node
-comes back as pending and is re-chunked from the new content. The summary reports
-this as `nodes_rechunked_after_content_change`.
+* Opening the writable store runs normal schema migrations. During the subsequent
+  backfill a SQLite authorizer permits only chunk writes and schema-owned cache
+  revision effects.
+* Each source commits in one transaction. SQLite waits up to the configured busy
+  timeout and retries chunk writes with backoff on lock contention.
+* The encoder runs outside that transaction. Before applying the result the writer
+  checks source content, fingerprint, scope, level, active status, pending status
+  and the observed chunk generation. A concurrent edit or replacement can win.
+* Progress lives in the database. After interruption, resume with a validated
+  `--existing-backup` and the same encoder. A ready source is skipped. A source
+  that keeps changing can remain pending for the next pass.
 
 This was exercised against a real snapshot, not only against fixtures: a run
 `SIGKILL`ed 66 seconds in left 1,408 nodes covered by 5,396 chunks with
@@ -218,14 +231,10 @@ python3 scripts/backfill_chunk_embeddings.py backfill --db "$DB" \
 python3 scripts/backfill_chunk_embeddings.py verify --db "$DB" --json /tmp/chunk-verify.json
 ```
 
-Exit code 0 requires all three of:
-
-* `pending_nodes: 0` — every active node with non-whitespace content has current
-  chunks;
-* `inconsistent_nodes: 0` — no node holds two chunk generations, a gap in its
-  ordinals, or two vector widths;
-* one value in `dimensions` — a single vector width across the corpus, so the
-  reader can reshape the scan into one matrix.
+Exit code 0 requires a chunk table and a complete, consistent set for every
+selected active chunkable source. Each set must have dense ordinals, the current
+source fingerprint, the target producer ID, and correctly sized float32 BLOBs.
+The report also lists table-wide sizes and widths, including inactive sources.
 
 Also worth reading: `chunk_bytes` against `legacy_embedding_bytes` (the storage
 win), and `zero_vector_chunks` (should be 0; a non-zero count means some content
@@ -311,7 +320,7 @@ representations coexist: the extra cost is 89 MiB of disk.
 | `the embedding model … did not load` | model not in the local cache, or `LIVING_MEMORY_EMBEDDING_BACKEND=hash` in the environment | fix the model cache; never pass `--allow-fallback-embeddings` against a real database |
 | `database busy writing chunks …, retrying` | the server holds the write lock | expected under load; it retries with backoff. Persistent failure means something holds a long write transaction |
 | run ends with `N nodes are still pending` | nodes written by the live server during the run | re-run (step 5) |
-| `verify` reports `inconsistent_nodes > 0` | a chunk set was written by something other than `replace_node_chunks` | re-chunk those nodes: `DELETE FROM node_chunk_embeddings WHERE node_id IN (…)` then re-run the backfill |
+| `verify` reports `inconsistent_nodes > 0` | a chunk set was written by something other than `replace_node_chunks` | run the backfill for the selected space to replace inconsistent sets |
 | vector channel returns nothing after step 7 | the column was dropped before the chunk-reading code was deployed | deploy the chunk-reading vector channel; the chunks are all still there |
 
 ## Tests
