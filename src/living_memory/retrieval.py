@@ -644,7 +644,7 @@ class MemoryRecallService:
         def data_version() -> int:
             return self.store.connection.execute("PRAGMA data_version").fetchone()[0]
 
-        version = data_version() if select_results is None or repeatable_selection else None
+        version = data_version() if repeatable_selection else None
         plan, limited = select()
         if version is not None and data_version() != version:
             with self.store.transaction():
