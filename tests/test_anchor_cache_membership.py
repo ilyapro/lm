@@ -254,6 +254,43 @@ def test_warm_recall_finds_the_revived_anchors_target(stores):
     assert result[0].graph_score > 0 and result[0].vector_score == result[0].bm25_score == 0
 
 
+def test_live_anchor_probe_reduces_cold_recall_work(tmp_path, monkeypatch):
+    path = tmp_path / "anchors.sqlite3"
+    with MemoryStore(path) as store:
+        with store.transaction():
+            for i in range(512):
+                anchor(store, str(i), [0.0, 1.0], "project:other")
+            anchor(store, "match", [1.0, 0.0])
+            target = store.create_node(level="concept", content="cobalt prism",
+                                       embedding=fixture_vector([0.0, 0.0]))
+            store.upsert_query_anchor_edge("match", target.id, weight=1.0)
+
+    def cold_recall(*, count):
+        with ReadOnlyAuditStore.open_path(path) as reader:
+            if count:
+                monkeypatch.setattr(reader, "has_live_query_anchors",
+                                    lambda: bool(reader.count_query_anchors(include_decayed=False)))
+            retriever = service(reader)
+            callbacks = 0
+
+            def progress():
+                nonlocal callbacks
+                callbacks += 1
+                return 0
+
+            reader.connection.set_progress_handler(progress, 100)
+            results = retriever.memory_recall("past situation", scope="global", depth=1,
+                                              log_access=False, log_event=False, repair_pending=False)
+            reader.connection.set_progress_handler(None, 0)
+            return results, callbacks
+
+    expected, count_work = cold_recall(count=True)
+    actual, probe_work = cold_recall(count=False)
+    assert [r.node.id for r in actual] == [target.id]
+    assert actual == expected
+    assert probe_work < count_work
+
+
 def test_existing_database_and_read_only_reader(tmp_path):
     path = tmp_path / "memory.sqlite3"
     with MemoryStore(path) as store:

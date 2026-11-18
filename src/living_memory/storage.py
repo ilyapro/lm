@@ -5706,6 +5706,13 @@ class MemoryStore:
             )
         return links
 
+    def has_live_query_anchors(self) -> bool:
+        if not self._anchor_tables_present():
+            return False
+        return self._conn.execute(
+            f"SELECT 1 FROM {QUERY_ANCHOR_TABLE} WHERE decayed = 0 LIMIT 1"
+        ).fetchone() is not None
+
     def count_query_anchors(self, *, include_decayed: bool = True) -> int:
         if not self._anchor_tables_present():
             return 0

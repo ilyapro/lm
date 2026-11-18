@@ -973,8 +973,7 @@ def annotate_anchors(
     """
 
     store = service.store
-    # 0 on a pre-v7 file as well as on an empty corpus: both are "no anchors".
-    if not store.count_query_anchors(include_decayed=False):
+    if not store.has_live_query_anchors():
         return {}
 
     annotations: dict[str, AnchorAnnotation] = {}

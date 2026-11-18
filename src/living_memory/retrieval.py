@@ -1483,7 +1483,7 @@ class MemoryRecallService:
         if cached is None or cached.revision != revision or (encoder_id and cached.encoder_id != encoder_id):
             cached = _AnchorVectorCache(
                 revision, self.store, {},
-                bool(self.store.count_query_anchors(include_decayed=False)), encoder_id,
+                self.store.has_live_query_anchors(), encoder_id,
             )
             self._anchor_vectors = cached
         return cached if cached.has_anchors else None
