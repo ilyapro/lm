@@ -1117,7 +1117,7 @@ def test_stale_fingerprint_repair_restores_mcp_vector(stale_source):
 
     path, target, current = stale_source
     with MemoryStore(path) as store:
-        other = store.append_trace("a separate pending source")
+        other = store.append_trace("a separate pending source", context={"scope": "project:other"})
         store.delete_node_chunks(other.id)
     report = path.parent / "report.json"
     args = ["--db", str(path), "--node-id", target, "--encoder-id", "hash:384", "--json", str(report)]
