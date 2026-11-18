@@ -1354,7 +1354,11 @@ def _register_tools(
                     with store.stream_recall_delivery_history(
                         transport_session_id if session_dedup else None,
                     ) as history_results:
-                        delivery_history = DeliveryHistory(history_results)
+                        pool = _delivery_pool(limited, residual, limit) if session_dedup else ()
+                        delivery_history = DeliveryHistory(
+                            history_results,
+                            candidates={r.node_id: r.node for r in pool if not r.withheld},
+                        )
                 except Exception:
                     logging.getLogger(__name__).warning(
                         "could not read recall delivery history", exc_info=True,
@@ -1890,6 +1894,13 @@ def _recall_map_enabled() -> bool:
     return os.environ.get("LM_RECALL_MAP", "").strip() != "0"
 
 
+def _delivery_pool(limited: list[Any], residual: list[Any], limit: int) -> list[Any]:
+    """Candidates for the initial cut and its bounded replacements."""
+    if len(limited) < limit or not residual:
+        return limited
+    return limited + residual[:limit]
+
+
 def _select_distinct_results(
     limited: list[Any],
     residual: list[Any],
@@ -1909,9 +1920,9 @@ def _select_distinct_results(
     before qualification, and is evaluated only while a replacement is needed.
     """
 
-    if len(limited) < max_results or not residual:
+    pool = _delivery_pool(limited, residual, max_results)
+    if pool is limited:
         return limited, residual
-    pool = limited + residual[:max_results]
     selected: list[Any] = []
     bearers = duplicate_bearers([result.node for result in pool if not result.withheld])
     selected_groups: set[str] = set()

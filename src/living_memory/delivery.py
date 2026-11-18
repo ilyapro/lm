@@ -257,8 +257,11 @@ class DeliveryHistory:
     Metadata timestamps, legacy selections and duplicate previews prove neither.
     """
 
-    def __init__(self, results: Iterable[Mapping[str, Any]] = ()) -> None:
+    def __init__(
+        self, results: Iterable[Mapping[str, Any]] = (), *, candidates: Mapping[str, Node] | None = None,
+    ) -> None:
         self._versions: dict[tuple[str, str], set[str]] = {}
+        candidate_digests: dict[str, str] = {}
         for result in results:
             delivery = result.get("delivery")
             if not isinstance(delivery, Mapping) or delivery.get("kind") not in (
@@ -268,8 +271,21 @@ class DeliveryHistory:
             node_id = result.get("node_id")
             source = delivery.get("content_sha256")
             body = delivery.get("delivered_sha256")
-            if node_id and isinstance(source, str) and isinstance(body, str):
-                self._versions.setdefault((str(node_id), source), set()).add(body)
+            if not node_id or not isinstance(source, str) or not isinstance(body, str):
+                continue
+            node_id = str(node_id)
+            if candidates is not None:
+                if node_id not in candidates:
+                    continue
+                if node_id not in candidate_digests:
+                    candidate_digests[node_id] = _content_digest(candidates[node_id].content)
+                if source != candidate_digests[node_id]:
+                    continue
+            bodies = self._versions.setdefault((node_id, source), set())
+            if source not in bodies:
+                if body == source:
+                    bodies.clear()
+                bodies.add(body)
 
     def has_content(self, node: Node) -> bool:
         if not self._versions:

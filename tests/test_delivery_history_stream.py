@@ -183,6 +183,21 @@ def test_proof_keeps_all_versions_and_exact_excerpts_in_the_window(event_store):
     assert not history.has_content(replace(node, content="Updated fact."))
 
 
+def test_candidate_proofs_keep_current_versions_and_complete_body_dominates(event_store):
+    a = Node(id="a", level="trace", content="Current fact.")
+    b = replace(a, id="b")
+    rows = [evidence(replace(a, id=f"other-{i}")) for i in range(20)]
+    rows.extend([evidence(replace(a, content="Old")), evidence(b, excerpt="First"),
+                 evidence(a, excerpt="First"), evidence(a), evidence(a, excerpt="Later"),
+                 evidence(b, excerpt="Later")])
+    insert(event_store, json.dumps(rows))
+    with event_store.stream_recall_delivery_history("reader") as results:
+        history = DeliveryHistory(results, candidates={a.id: a, b.id: b})
+    source = digest(a.content)
+    assert history._versions == {(a.id, source): {source}, (b.id, source): {digest("First"), digest("Later")}}
+    assert event_store.recall_delivery_history("reader") == rows
+
+
 def test_repeated_evidence_retention_is_per_event(event_store):
     nodes = [Node(id=f"synthetic-{i}", level="trace", content=f"Known fact {i}") for i in range(20)]
     summaries = []
@@ -277,7 +292,7 @@ def test_native_recall_finishes_history_before_response_and_discards_partial_pro
 
             monkeypatch.setattr(store, "recall_delivery_history", forbid_list)
             class CheckedHistory(DeliveryHistory):
-                def __init__(self, results=()):
+                def __init__(self, results=(), **kwargs):
                     if results:
                         assert isinstance(results, Iterator)
 
@@ -287,7 +302,7 @@ def test_native_recall_finishes_history_before_response_and_discards_partial_pro
                             if watch.failure == "reduce":
                                 raise ValueError("synthetic late history reducer")
 
-                    super().__init__(checked())
+                    super().__init__(checked(), **kwargs)
 
             monkeypatch.setattr(server, "DeliveryHistory", CheckedHistory)
 
