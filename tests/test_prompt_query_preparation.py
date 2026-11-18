@@ -188,6 +188,51 @@ def test_native_empty_task_and_zero_concepts_keep_schema_behavior(runtime, task,
     assert r.encoded == ([TASK] if task.strip() else [])
 
 
+def test_native_schema_limit_is_discoverable_and_controls_only_skills(runtime):
+    r = runtime
+    for index, scope in enumerate([SCOPE, SCOPE, SCOPE, "project:foreign"]):
+        node = r.store.create_node(
+            level="schema", content=f"Cobalt release rollback procedure {index}.",
+            context={"scope": scope, "trigger": TASK}, stats={"confidence": 0.9},
+        )
+    foreign_schema = node
+
+    async def scenario():
+        async with Client(r.mcp) as client:
+            prompt = next(p for p in await client.list_prompts() if p.name == PROMPT)
+            argument = next(arg for arg in prompt.arguments if arg.name == "max_schemas")
+            assert not argument.required
+            for limit in (None, 0, 1, 4):
+                args = {} if limit is None else {"max_schemas": str(limit)}
+                expected_count = 3 if limit is None else limit
+                actual = await get_prompt(client, **args)
+                assert actual.count(f'trigger="{TASK}"') == expected_count
+                assert ("skills:" in actual) == bool(expected_count)
+                assert r.concept.id in actual and r.primary.id in actual
+                assert foreign_schema.id not in actual
+                assert actual == standalone_context(r.store, max_schemas=expected_count)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("limit", ["0", "-1"])
+def test_native_disabled_sections_skip_preparation_and_recall(runtime, monkeypatch, limit):
+    r = runtime
+    expected = standalone_context(r.store, max_concepts=0, max_schemas=0)
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("disabled prompt sections started retrieval work")
+
+    for name in ("prepare_query", "refresh_pending_chunks", "prepare_anchor_history", "memory_recall"):
+        monkeypatch.setattr(MemoryRecallService, name, unexpected)
+
+    async def scenario():
+        async with Client(r.mcp) as client:
+            assert await get_prompt(client, max_concepts=limit, max_schemas=limit) == expected
+
+    asyncio.run(scenario())
+
+
 def test_native_lookup_finishes_with_encoder_held_and_store_reads_guarded(runtime, monkeypatch):
     r = runtime
     expected = standalone_context(r.store)
