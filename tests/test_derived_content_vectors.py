@@ -207,9 +207,10 @@ def test_existing_single_chunk_derivatives_are_repaired_by_bounded_ordinary_reca
             level="concept", content=" ".join([CORE] * 8), embedding=source.embedding,
             provenance={"strategy": "embedding-cosine", "source_traces": [source.id]},
         )
-        unrelated = store.create_node(level="concept", content="Independent source.", embedding=[1., 0.])
+        unrelated = store.create_node(level="concept", content="Independent source.",
+                                      embedding=encoder.embed("Independent source."))
         procedural = store.create_node(
-            level="schema", content="1. Verify deployment.", embedding=[1., 0.],
+            level="schema", content="1. Verify deployment.", embedding=encoder.embed("1. Verify deployment."),
             provenance={"strategy": "procedural", "source_traces": [source.id]},
         )
         untouched = {n.id: store.list_node_chunks(n.id) for n in (source, multi, unrelated, procedural)}
