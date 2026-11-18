@@ -1166,7 +1166,7 @@ class MemoryRecallService:
 
         accumulators: dict[tuple[int, str], _BlockAccumulator] = {}
         for node_id, _ordinal, view, chunk_id, encoder_id in self.store.iter_chunk_embedding_rows(
-            scope=scope, include_identity=True, include_encoder=True,
+            scope=scope, include_identity=True, include_encoder=True, known_only=True,
         ):
             width, remainder = divmod(len(view), CHUNK_EMBEDDING_ITEMSIZE)
             if remainder or not width or not encoder_id:

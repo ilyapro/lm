@@ -4034,6 +4034,7 @@ class MemoryStore:
         include_decayed: bool = False,
         include_identity: bool = False,
         include_encoder: bool = False,
+        known_only: bool = False,
     ) -> Iterator[
         tuple[str, int, memoryview] | tuple[str, int, memoryview, str | None]
         | tuple[str, int, memoryview, str, str | None]
@@ -4070,7 +4071,8 @@ class MemoryStore:
         are replaced concurrently; an ordinal alone cannot identify a generation.
 
         ``include_encoder`` appends the producer's space. Historical rows and
-        unmigrated snapshots return None for that field.
+        unmigrated snapshots return None for that field. With ``known_only``,
+        SQLite excludes those payloads before they reach the caller.
 
         Yields nothing on a pre-v6 database rather than raising, so a snapshot
         opened without migrations degrades instead of crashing.
@@ -4088,15 +4090,21 @@ class MemoryStore:
         if scope is not None:
             clauses.append("n.scope = ?")
             params.append(scope)
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         # A bare tuple cursor: at 45k rows the per-row sqlite3.Row wrapper is a
         # measurable share of the scan, and nothing here needs lookup by name.
         cursor = self._conn.cursor()
         cursor.row_factory = None
         encoder_column = ""
-        if include_encoder:
+        if include_encoder or known_only:
             columns = self._conn.execute(f"PRAGMA table_info({CHUNK_EMBEDDING_TABLE})")
-            encoder_column = ", c.encoder_id" if any(r[1] == "encoder_id" for r in columns) else ", NULL"
+            has_encoder = any(r[1] == "encoder_id" for r in columns)
+            if known_only:
+                if not has_encoder:
+                    return
+                clauses.append("c.encoder_id IS NOT NULL")
+            if include_encoder:
+                encoder_column = ", c.encoder_id" if has_encoder else ", NULL"
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         cursor.execute(
             f"""
             SELECT c.node_id, c.chunk_index, c.embedding{', c.id' if include_identity else ''}{encoder_column}
