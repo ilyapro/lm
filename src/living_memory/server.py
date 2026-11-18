@@ -72,7 +72,7 @@ from living_memory.resources import (
     project_concepts,
     recent_interactions,
 )
-from living_memory.retrieval import MemoryRecallService
+from living_memory.retrieval import MemoryRecallService, RecallResult
 from living_memory.scope import ScopePlan, normalize_scope, resolve_scope
 from living_memory.score_gate import QueryRelevance
 from living_memory.embeddings import LocalEmbeddingModel
@@ -1340,18 +1340,32 @@ def _register_tools(
                 if has_explicit_marks(used, irrelevant)
                 else None
             )
-            # Read only prior formed responses. Selection and shaping share
-            # this bounded observation; recording the current event adds no proof.
-            try:
-                with store.stream_recall_delivery_history(
-                    transport_session_id if session_dedup else None,
-                ) as history_results:
-                    delivery_history = DeliveryHistory(history_results)
-            except Exception:
-                logging.getLogger(__name__).warning(
-                    "could not read recall delivery history", exc_info=True,
+            delivery_history = DeliveryHistory()
+            correction_refs: dict[str, list[str]] = {}
+
+            def select_delivery(limited: list[RecallResult], residual: list[RecallResult],
+                                limit: int, relevance: QueryRelevance):
+                nonlocal delivery_history, correction_refs
+                # Read only prior formed responses. Selection and shaping share
+                # this bounded observation; recording the current event adds no proof.
+                try:
+                    with store.stream_recall_delivery_history(
+                        transport_session_id if session_dedup else None,
+                    ) as history_results:
+                        delivery_history = DeliveryHistory(history_results)
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        "could not read recall delivery history", exc_info=True,
+                    )
+                    delivery_history = DeliveryHistory()
+                selected, residual = _select_distinct_results(
+                    limited, residual, limit, delivery_history, relevance=relevance,
                 )
-                delivery_history = DeliveryHistory()
+                correction_refs = correction_references(
+                    store, {result.node_id: result.correction_ids for result in selected}, relevance.plan,
+                )
+                return selected, residual
+
             with recall_service.recall_response(
                 prepared_query,
                 repair_pending=False,
@@ -1359,17 +1373,12 @@ def _register_tools(
                 ambient_context=ambient_context,
                 depth=depth,
                 max_results=max_results,
-                select_results=lambda limited, residual, limit, relevance: _select_distinct_results(
-                    limited, residual, limit, delivery_history, relevance=relevance
-                ),
+                repeatable_selection=True,
+                select_results=select_delivery,
             ) as results:
                 shaped = shape_recall_results(
                     results,
-                    correction_refs=correction_references(
-                        store,
-                        {result.node.id: result.correction_ids for result in results},
-                        resolve_scope(scope=scope, ambient_context=ambient_context, store=store),
-                    ),
+                    correction_refs=correction_refs,
                     view=view,
                     query=query,
                     delivery_history=delivery_history,

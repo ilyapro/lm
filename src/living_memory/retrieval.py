@@ -602,6 +602,7 @@ class MemoryRecallService:
         log_access: bool = True,
         log_event: bool | None = None,
         repair_pending: bool = True,
+        repeatable_selection: bool = False,
         select_results: Callable[[list[RecallResult], list[RecallResult], int, QueryRelevance], tuple[list[RecallResult], list[RecallResult]]] | None = None,
     ) -> Iterator[list[RecallResult]]:
         """Form a response within the short consumption rollback boundary.
@@ -609,8 +610,9 @@ class MemoryRecallService:
         Search, encoding and selection precede the transaction. The caller may
         read required metadata and shape the selected results before leaving
         this context; failure rolls back access and event/history together.
-        Optional work and transport belong after it. No transaction is opened
-        when both logging flags are disabled.
+        Optional work and transport belong after it. A repeatable read-only
+        selector opts into re-selection if an external commit overlaps the
+        reads. Logging flags independently control the consumption transaction.
         """
         self.last_recall_event_id = None
         self.last_residual = []
@@ -625,11 +627,65 @@ class MemoryRecallService:
         if not query:
             yield []
             return
-        query_embedding = prepared.embedding
 
         if repair_pending:
             self.refresh_pending_chunks(scope=scope, ambient_context=ambient_context, query=prepared)
 
+        def select():
+            return self._select_recall(
+                prepared, scope=scope, ambient_context=ambient_context, depth=depth,
+                max_results=max_results, select_results=select_results,
+            )
+
+        # In the common case keep the revision-keyed vector/anchor caches and
+        # short reads. A commit on another connection invalidates the entire
+        # observation, including delivery selection. Rebuild once under a WAL
+        # read snapshot, then release it before recording any consumption.
+        connection = self.store.connection
+        def data_version() -> int:
+            return connection.execute("PRAGMA data_version").fetchone()[0]
+
+        version = data_version() if repeatable_selection else None
+        plan, limited = select()
+        if version is not None and data_version() != version:
+            with self.store.transaction():
+                plan, limited = select()
+        if log_event is None:
+            log_event = log_access
+        try:
+            with self.store.transaction() if log_access or log_event else nullcontext():
+                if log_access or log_event:
+                    nodes, event_id = self.store.record_recall(
+                        nodes=[result.node for result in limited],
+                        log_access=log_access,
+                        log_event=log_event,
+                        query=query,
+                        scope=plan.requested_scope,
+                        requested_scope=plan.requested_scope,
+                        resolved_scopes=plan.scopes,
+                        ambient_context=ambient_context,
+                        depth=depth,
+                        max_results=max_results,
+                        results=[_recall_result_summary(index, result) for index, result in enumerate(limited)],
+                        event_id_only=True,
+                    )
+                    assert event_id is None or isinstance(event_id, str)
+                    self.last_recall_event_id = event_id
+                    limited = [
+                        replace(result, node=node, recall_event_id=self.last_recall_event_id)
+                        for result, node in zip(limited, nodes, strict=True)
+                    ]
+                yield limited
+        except BaseException:
+            self.last_recall_event_id = None
+            raise
+
+    def _select_recall(
+        self, prepared: _PreparedQuery, *, scope: str | None,
+        ambient_context: dict[str, Any] | None, depth: int | str | None, max_results: int,
+        select_results: Callable[[list[RecallResult], list[RecallResult], int, QueryRelevance], tuple[list[RecallResult], list[RecallResult]]] | None,
+    ) -> tuple[ScopePlan, list[RecallResult]]:
+        query, query_embedding = prepared.text, prepared.embedding
         plan = self.scope_resolver.resolve(
             scope=scope,
             ambient_context=ambient_context,
@@ -739,35 +795,7 @@ class MemoryRecallService:
                     scored_chunk_id=chunk_ids.get(result.node_id))
             for result in limited
         ]
-        if log_event is None:
-            log_event = log_access
-        try:
-            with self.store.transaction() if log_access or log_event else nullcontext():
-                if log_access or log_event:
-                    nodes, event_id = self.store.record_recall(
-                        nodes=[result.node for result in limited],
-                        log_access=log_access,
-                        log_event=log_event,
-                        query=query,
-                        scope=plan.requested_scope,
-                        requested_scope=plan.requested_scope,
-                        resolved_scopes=plan.scopes,
-                        ambient_context=ambient_context,
-                        depth=depth,
-                        max_results=max_results,
-                        results=[_recall_result_summary(index, result) for index, result in enumerate(limited)],
-                        event_id_only=True,
-                    )
-                    assert event_id is None or isinstance(event_id, str)
-                    self.last_recall_event_id = event_id
-                    limited = [
-                        replace(result, node=node, recall_event_id=self.last_recall_event_id)
-                        for result, node in zip(limited, nodes, strict=True)
-                    ]
-                yield limited
-        except BaseException:
-            self.last_recall_event_id = None
-            raise
+        return plan, limited
 
     def refresh_pending_chunks(
         self, *, scope: str | None = None,
