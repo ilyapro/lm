@@ -181,3 +181,110 @@ def test_known_foreign_collisions_cannot_displace_unlabelled_semantic_nominee(tm
         hit, = service.memory_recall("needle", repair_pending=False, log_access=False)
         assert hit.node_id == node.id and hit.graph_score == pytest.approx(0.75)
         assert hit.vector_score == hit.bm25_score == 0
+
+
+def test_historical_index_reads_and_nominees_match_full_scan(tmp_path, monkeypatch):
+    from living_memory import retrieval
+
+    class Model:
+        encoder = "active"
+
+        def embed(self, text):
+            return EncodedVector([1.0, 0.0], self.encoder)
+
+    path = tmp_path / "anchors.db"
+    with MemoryStore(path) as reader, MemoryStore(path) as writer:
+        model = Model()
+        warm = MemoryRecallService(reader, embedder=model)
+        reference = MemoryRecallService(reader, embedder=model)
+        # Stream vectors and rebuild postings from every admitted SQL row.
+        monkeypatch.setattr(reference, "_anchor_vector_source", lambda *args: reader)
+        observed = []
+        for service in (warm, reference):
+            history = service._historical_anchor_queries
+
+            def capture(*args, history=history):
+                selected = history(*args)
+                observed.append(list(selected.items()))
+                return selected
+
+            monkeypatch.setattr(service, "_historical_anchor_queries", capture)
+
+        def insert(i, encoder, scope):
+            vector = [1., 0.] if encoder is None else EncodedVector([1., 0.], encoder)
+            anchor = writer.insert_query_anchor(
+                anchor_id=str(i), query=f"archived pattern {i}", embedding=vector,
+                fingerprint=str(i), scope=scope,
+            )
+            node = writer.create_node(node_id=f"n{i}", level="trace", content=f"opaque object {i}",
+                                      context={"scope": scope})
+            writer.upsert_query_anchor_edge(anchor.id, node.id, weight=0.8)
+
+        for i in range(12):
+            insert(i, None if i % 3 else "previous", "global" if i % 2 else "project:other")
+
+        scans, tokens = [], []
+        read, tokenize = reader.iter_foreign_anchor_queries, retrieval.tokenize
+
+        def scan(*args):
+            for row in read(*args):
+                scans.append(row[0])
+                yield row
+
+        def count_tokens(text, **kwargs):
+            if text.startswith("archived "):
+                tokens.append(text)
+            return tokenize(text, **kwargs)
+
+        monkeypatch.setattr(reader, "iter_foreign_anchor_queries", scan)
+        monkeypatch.setattr(retrieval, "tokenize", count_tokens)
+
+        def check(scope, processed, admitted):
+            observed.clear()
+            for service, expected in ((warm, processed), (reference, admitted)):
+                scans.clear()
+                tokens.clear()
+                result = service.memory_recall("pattern", scope=scope, log_access=False, log_event=False)
+                assert len(scans) == len(tokens) == expected
+                if service is warm:
+                    actual = result
+                else:
+                    assert result and result == actual
+            assert observed[0] and observed[0] == observed[1]
+
+        check(None, 12, 12)
+        insert(12, "active", "global")
+        check(None, 0, 12)
+        check("global", 6, 6)
+        check(None, 12, 12)
+        check(None, 0, 12)
+        model.encoder = "previous"
+        check(None, 9, 9)
+        check(None, 0, 9)
+
+        # A pinned reader keeps its own membership across a concurrent commit.
+        with reader.read_snapshot():
+            check(None, 0, 9)
+            writer.decay_query_anchor("1", "retired")
+            check(None, 0, 9)
+        check(None, 8, 8)
+        reader.connection.execute("UPDATE query_anchors SET query='archived replacement' WHERE id='2'")
+        check(None, 8, 8)
+        reader.connection.rollback()
+        check(None, 0, 8)
+        with writer.transaction():
+            writer.connection.execute("UPDATE query_anchors SET query='archived pattern changed' WHERE id='2'")
+        check(None, 8, 8)
+
+        # The incoming encoder can displace another space through either unique key.
+        with writer.transaction():
+            writer.connection.execute("PRAGMA recursive_triggers=OFF")
+            writer.connection.execute(
+                "UPDATE OR REPLACE query_anchors SET fingerprint='2' WHERE id='0'"
+            )
+        check(None, 7, 7)
+        with writer.transaction():
+            writer.connection.execute(
+                "UPDATE query_anchors SET encoder_id='previous' WHERE id='4'"
+            )
+        check(None, 6, 6)
