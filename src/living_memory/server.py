@@ -1666,8 +1666,10 @@ def _register_tools(
                     try:
                         refs = map_feedback_refs(store, map_event_id, lookup_event_id, results,
                                                  transport_session_id, occurred_at)
-                    except Exception:
-                        logging.getLogger(__name__).warning("could not record map read", exc_info=True)
+                    except Exception as error:
+                        logging.getLogger(__name__).warning(
+                            "could not record map read (%s)", type(error).__name__[:80],
+                        )
                     else:
                         for entry in results:
                             if entry["id"] in refs:

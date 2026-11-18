@@ -50,7 +50,8 @@ Mark resolution checks the receipt's query event within the usual caller
 window and checks the returned content fingerprint and scope against the
 current node. A plain lookup or mark cannot select among maps. The receipt
 identifies the version read at lookup time. Old requests have no receipts.
-Map reads carry no retrieval rank or component scores. Under credit policy
+If the optional receipt-mark batch cannot confirm its write, the response
+reports `unconfirmed` for otherwise eligible marks. Map reads carry no retrieval rank or component scores. Under credit policy
 their explicit marks maintain query-relative negatives and the once-only
 positive anchor edge, without rank-weighted reinforcement.
 

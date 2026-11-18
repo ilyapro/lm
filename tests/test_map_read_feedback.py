@@ -211,3 +211,21 @@ def test_recall_rechecks_version_after_resolving_earlier_event(runtime, monkeypa
             assert marked["feedback_marks"]["by_reason"] == {"not_delivered": 1}
             assert not store.connection.execute("SELECT * FROM recall_explicit_credit").fetchall()
     asyncio.run(scenario())
+
+
+def test_unconfirmed_audit_write_does_not_report_or_apply_map_credit(runtime):
+    mcp, store, _ = runtime
+
+    async def scenario():
+        async with Client(mcp) as client:
+            shown = await recall(client)
+            read = await call(client, "memory_lookup", node_id=member(shown),
+                              map_event_id=shown["recall_event_id"])
+            store.connection.execute("""CREATE TEMP TRIGGER refuse_mark BEFORE INSERT ON recall_feedback_marks
+                                        BEGIN SELECT RAISE(ABORT, 'unavailable'); END""")
+            marked = await recall(client, "amber", used=[read["results"][0]["feedback_ref"]])
+            assert marked["feedback_marks"] == {
+                "accepted": 0, "dropped": 1, "by_reason": {"unconfirmed": 1},
+            }
+            assert not store.connection.execute("SELECT * FROM recall_explicit_credit").fetchall()
+    asyncio.run(scenario())

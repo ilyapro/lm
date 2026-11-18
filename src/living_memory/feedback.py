@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, ExitStack, contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 import logging
 import math
@@ -853,11 +853,9 @@ def _explicit_mark_requests(
     """Classify mark requests before resolving their delivery facts."""
     raw: list[tuple[str, Any]] = [("used", item) for item in (used or [])]
     raw.extend(("irrelevant", item) for item in (irrelevant or []))
-    texts: list[tuple[str, str]] = [
-        (kind, item.strip() if isinstance(item, str) else "") for kind, item in raw
-    ]
     requests = []
-    for kind, text in texts:
+    for kind, item in raw:
+        text = item.strip() if isinstance(item, str) else ""
         parts = text.split(":", 2)
         if len(parts) == 3 and parts[0] == "map-read" and parts[1] and parts[2]:
             requests.append((kind, parts[2], parts[1]))
@@ -980,6 +978,7 @@ def apply_explicit_marks(
     outcome = ExplicitMarks(policy=policy)
     if policy == "off":
         return outcome
+    reads = {}
     try:
         marks = (
             resolved
@@ -1006,6 +1005,14 @@ def apply_explicit_marks(
         _LOG.warning(
             "explicit feedback marks failed for %s %s", via_tool, source_id, exc_info=True
         )
+        if reads:
+            # No confirmed commit of this batch. Do not report a successful
+            # mark or credit after an optional validation or write failure.
+            return ExplicitMarks(policy=policy, marks=[
+                replace(mark, accepted=False, event=None, rank=None,
+                        reject_reason=mark.reject_reason or "unconfirmed")
+                for mark in outcome.marks
+            ])
     return outcome
 
 
@@ -1057,25 +1064,24 @@ def _record_explicit_marks(
                     event.id, mark.node_id, basis="explicit", source_id=f"mark:{mark_id}"
                 ):
                     continue
-                if mark.rank is None:
-                    # Map reads have no retrieval rank or component scores.
-                    if weight > 0:
-                        entry[1].append(mark.node_id)
-                    continue
-                signal = max(0.2, 1.0 / (mark.rank + 1)) * weight
-                if signal > 0.0:
-                    apply_retrieval_feedback(
-                        store,
-                        SimpleNamespace(
-                            node_id=mark.node_id,
-                            bm25_score=float(mark.result.get("bm25_score", 0.0) or 0.0),
-                            vector_score=float(mark.result.get("vector_score", 0.0) or 0.0),
-                            graph_score=float(mark.result.get("graph_score", 0.0) or 0.0),
-                        ),
-                        useful=True,
-                        signal=signal,
-                        scope=event.scope,
-                    )
+                # Only ranked results have a position and component scores for
+                # retrieval feedback. Both kinds can reinforce the query anchor.
+                signal = weight
+                if mark.rank is not None:
+                    signal *= max(0.2, 1.0 / (mark.rank + 1))
+                    if signal > 0.0:
+                        apply_retrieval_feedback(
+                            store,
+                            SimpleNamespace(
+                                node_id=mark.node_id,
+                                bm25_score=float(mark.result.get("bm25_score", 0.0) or 0.0),
+                                vector_score=float(mark.result.get("vector_score", 0.0) or 0.0),
+                                graph_score=float(mark.result.get("graph_score", 0.0) or 0.0),
+                            ),
+                            useful=True,
+                            signal=signal,
+                            scope=event.scope,
+                        )
         except Exception:
             _LOG.warning(
                 "explicit credit failed for %s %s, pair (%s, %s)",
@@ -1083,7 +1089,8 @@ def _record_explicit_marks(
             )
             continue
         if signal > 0.0:
-            outcome.credited.append((event.id, mark.node_id))
+            if mark.rank is not None:
+                outcome.credited.append((event.id, mark.node_id))
             entry[1].append(mark.node_id)
     outcome.anchor_ids.extend(
         _apply_query_feedback(
