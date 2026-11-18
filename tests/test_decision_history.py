@@ -9,6 +9,7 @@ import pytest
 from living_memory.models import REJECTED_ALTERNATIVE_KIND
 from living_memory.prompts import retrieval_context_prompt
 from living_memory.retrieval import _parse_depth, memory_connect, memory_recall
+from living_memory.scope import resolve_scope
 from living_memory.server import create_mcp_server
 from living_memory.storage import MemoryStore
 
@@ -301,3 +302,46 @@ def test_rejected_alternative_error_names_the_expected_keys(tmp_path: Path) -> N
                 alternatives_considered=[{"idea": "restart", "rejected_because": "no"}],
             )
         assert store.trace_count() == 0
+
+
+def test_batched_reasons_keep_edge_order_and_source_marker_semantics(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        primary, sources = store.append_trace_with_rejected_alternatives(
+            "First decision", {}, alternatives_considered=[
+                {"approach": str(index), "rejected_because": f"Reason {index}"} for index in range(4)
+            ],
+        )
+        other = store.append_trace("Second decision", {})
+        store.connect_nodes(sources[1].id, other.id, "contradicts", metadata={
+            "kind": REJECTED_ALTERNATIVE_KIND, "reason": ["shared"],
+        })
+        db = store.connection
+        db.execute("UPDATE connections SET created_at = '2000-01-01' WHERE target_id = ?", (primary.id,))
+        db.execute("UPDATE connections SET weight = 0.5 WHERE source_id = ?", (sources[0].id,))
+        db.executemany("UPDATE nodes SET context = ? WHERE id = ?", [
+            ('{"is_rejected_alternative":false,"is_rejected_alternative":true}', sources[1].id),
+            ('{"is_rejected_alternative":[]}', sources[2].id),
+            ('{"is_rejected_alternative":"false"}', sources[3].id),
+        ])
+        assert store.rejected_alternative_reasons([other.id, primary.id, other.id], resolve_scope()) == {
+            primary.id: ["Reason 1", "Reason 3", "Reason 0"],
+            other.id: ["['shared']"],
+        }
+
+
+def test_decision_reasons_decode_required_metadata_and_context(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        primary, (source,) = store.append_trace_with_rejected_alternatives(
+            "Decision", {}, alternatives_considered=[{"approach": "option", "reason": "reason"}],
+        )
+        db = store.connection
+        db.execute("UPDATE nodes SET context = '[]' WHERE id = ?", (source.id,))
+        with pytest.raises(AttributeError):
+            store.rejected_alternative_reasons([primary.id], resolve_scope())
+        db.execute("UPDATE connections SET metadata = ? WHERE source_id = ?", (
+            json.dumps({"kind": REJECTED_ALTERNATIVE_KIND, "reason": "  "}), source.id,
+        ))
+        assert store.rejected_alternative_reasons([primary.id], resolve_scope()) == {}
+        db.execute("UPDATE connections SET metadata = '{' WHERE source_id = ?", (source.id,))
+        with pytest.raises(json.JSONDecodeError):
+            store.rejected_alternative_reasons([primary.id], resolve_scope())

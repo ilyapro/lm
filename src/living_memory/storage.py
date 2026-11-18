@@ -2341,11 +2341,9 @@ class MemoryStore:
             visible = set()
             for row in rows:
                 marker = row["marker"]
-                if isinstance(marker, int) or marker is None:
-                    rejected = marker
-                else:
-                    rejected = _json_loads(marker, {}).get("is_rejected_alternative")
-                if rejected:
+                if not isinstance(marker, int):
+                    marker = _json_loads(marker, {}).get("is_rejected_alternative")
+                if marker:
                     visible.add(row["id"])
 
         reasons: dict[str, list[str]] = {}
