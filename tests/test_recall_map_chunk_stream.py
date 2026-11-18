@@ -9,6 +9,7 @@ import pytest
 
 from living_memory import storage
 from living_memory.chunking import TextChunk
+from living_memory.embeddings import EncodedVector
 from living_memory.recall_map import RecallMapBuilder, STAGE_EMBEDDING, _Member
 from living_memory.retrieval import RecallResult
 from living_memory.storage import MemoryStore
@@ -37,7 +38,7 @@ def pool(store, count=24, width=8, chunks=1):
             context={"scope": SCOPE}, embedding=vector,
         )
         store.replace_node_chunks(node.id, [
-            (replace(CHUNK, chunk_index=ordinal), [2.0 * v for v in vector])
+            (replace(CHUNK, chunk_index=ordinal), EncodedVector([2.0 * v for v in vector], "fixture"))
             for ordinal in range(chunks)
         ])
         results.append(RecallResult(node=node, score=1.0 - index / (count + 1), vector_score=1.0))
@@ -59,12 +60,11 @@ def test_reduction_retains_only_one_decoded_node_and_build_recounts(store, monke
         for index, result in enumerate(results)
     }
     live = peak = decoded = 0
-    unpack = storage.unpack_chunk_embedding
 
-    class TrackedVector(list):
-        def __init__(self, values):
+    class TrackedVector(EncodedVector):
+        def __init__(self, values, encoder_id):
             nonlocal live, peak, decoded
-            super().__init__(values)
+            super().__init__(values, encoder_id)
             live += 1
             decoded += 1
             peak = max(peak, live)
@@ -73,7 +73,7 @@ def test_reduction_retains_only_one_decoded_node_and_build_recounts(store, monke
             nonlocal live
             live -= 1
 
-    monkeypatch.setattr(storage, "unpack_chunk_embedding", lambda *a: TrackedVector(unpack(*a)))
+    monkeypatch.setattr(storage, "EncodedVector", TrackedVector)
     builder = RecallMapBuilder(store)
     groups, vectors, rest = builder._embedding_membership(members)
     assert membership_ids(groups) == expected_groups
@@ -121,21 +121,15 @@ def test_grouped_reader_batches_duplicates_and_missing_ids_without_fanout(store,
     assert store.get_node_chunk_vectors(requested) == dict(actual)
 
 
-def test_member_duplicates_keep_individual_fallbacks_and_original_order(store):
-    results = pool(store, count=4)
-    for result in results:
-        store.delete_node_chunks(result.node.id)
-    first = results[0].node
-    members = [
-        _Member(0, first, topic=(STAGE_EMBEDDING,)),
-        _Member(1, replace(first, embedding=[]), topic=(STAGE_EMBEDDING,)),
-        _Member(2, results[1].node, topic=(STAGE_EMBEDDING,)),
-        _Member(3, replace(first, embedding=[0.0, 2.0]), topic=(STAGE_EMBEDDING,)),
-    ]
+def test_duplicate_members_use_only_their_current_chunks(store):
+    results = pool(store, count=2)
+    first, second = (r.node for r in results)
+    store.delete_node_chunks(second.id)
+    members = [_Member(i, node, topic=(STAGE_EMBEDDING,)) for i, node in
+               enumerate((first, second, replace(first, embedding=[])))]
     groups, vectors, rest = RecallMapBuilder(store)._embedding_membership(members)
-    assert vectors == {first.id: [0.0, 1.0], results[1].node.id: [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}
-    assert groups == [[members[0], members[3]], [members[2]]]
-    assert rest == [members[1]]
+    assert set(vectors) == {first.id}
+    assert groups == [[members[0], members[2]]] and rest == [members[1]]
 
 
 @pytest.mark.parametrize("threshold, joined", [(nextafter(0.6, -inf), True), (0.6, True),
@@ -143,10 +137,10 @@ def test_member_duplicates_keep_individual_fallbacks_and_original_order(store):
 def test_sum_cancellation_and_boundary_cosine_keep_exact_vectors(store, threshold, joined):
     results = pool(store, count=2)
     store.replace_node_chunks(results[0].node.id, [
-        (replace(CHUNK, chunk_index=i), [value, 0.0])
+        (replace(CHUNK, chunk_index=i), EncodedVector([value, 0.0], "fixture"))
         for i, value in enumerate([2.0 ** 54, 1.0, -(2.0 ** 54)])
     ])
-    store.replace_node_chunks(results[1].node.id, [(CHUNK, [3.0, 4.0])])
+    store.replace_node_chunks(results[1].node.id, [(CHUNK, EncodedVector([3.0, 4.0], "fixture"))])
     members = [_Member(i, result.node, topic=(STAGE_EMBEDDING,)) for i, result in enumerate(results)]
     groups, vectors, rest = RecallMapBuilder(store, cluster_cosine=threshold)._embedding_membership(members)
     assert vectors == {members[0].node.id: [1.0, 0.0], members[1].node.id: [0.6, 0.8]}
@@ -157,7 +151,7 @@ def test_sum_cancellation_and_boundary_cosine_keep_exact_vectors(store, threshol
 def test_equal_similarity_chooses_first_ranked_leader(store):
     results = pool(store, count=3)
     for result, vector in zip(results, ([1.0, 0.0], [0.0, 1.0], [1.0, 1.0])):
-        store.replace_node_chunks(result.node.id, [(CHUNK, vector)])
+        store.replace_node_chunks(result.node.id, [(CHUNK, EncodedVector(vector, "fixture"))])
     members = [_Member(i, r.node, topic=(STAGE_EMBEDDING,)) for i, r in enumerate(results)]
     groups, vectors, rest = RecallMapBuilder(store, cluster_cosine=0.7)._embedding_membership(members)
     assert groups == [[members[0], members[2]], [members[1]]]
@@ -168,7 +162,7 @@ def test_equal_similarity_chooses_first_ranked_leader(store):
 def test_first_nonempty_ordinal_sets_width(store):
     result = pool(store, count=1)[0]
     store.replace_node_chunks(result.node.id, [
-        (replace(CHUNK, chunk_index=i), vector)
+        (replace(CHUNK, chunk_index=i), EncodedVector(vector, "fixture"))
         for i, vector in enumerate(([1.0], [3.0, 4.0], [1.0, 0.0, 0.0]))
     ])
     store.connection.execute("PRAGMA ignore_check_constraints = ON")
@@ -188,7 +182,7 @@ def test_unused_widths_are_validated_after_an_earlier_node_is_reduced(store, col
     results = pool(store, count=2)
     bad = results[0].node.id  # Descending rank IDs put this node last in SQL.
     store.replace_node_chunks(bad, [(CHUNK, [1.0, 0.0]),
-                                   (replace(CHUNK, chunk_index=1), [1.0, 0.0, 0.0])])
+                                   (replace(CHUNK, chunk_index=1), EncodedVector([1.0, 0.0, 0.0], "fixture"))])
     with store.connection:
         store.connection.execute(
             f"UPDATE node_chunk_embeddings SET {column} = ? WHERE node_id = ? AND chunk_index = 1",
@@ -198,7 +192,7 @@ def test_unused_widths_are_validated_after_an_earlier_node_is_reduced(store, col
     with patch.object(builder, "_node_vector", wraps=builder._node_vector) as reduce:
         with pytest.raises(ValueError):
             builder.build(results, scope=SCOPE, task="survey")
-    assert [call.args[0].id for call in reduce.call_args_list] == [results[1].node.id]
+    assert reduce.call_count == 1
     assert builder.cache_size == 0
 
 
@@ -243,11 +237,11 @@ def test_stream_closes_actual_cursors_before_result_or_failure(store, monkeypatc
     builder = RecallMapBuilder(store)
     reduce = builder._node_vector
 
-    def node_vector(node, chunks):
-        reductions.append(node.id)
+    def node_vector(chunks):
+        reductions.append(len(chunks))
         if failure == "reduce":
             raise ValueError("chunk reducer")
-        return reduce(node, chunks)
+        return reduce(chunks)
 
     monkeypatch.setattr(builder, "_node_vector", node_vector)
     if failure == "early":

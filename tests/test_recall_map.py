@@ -38,6 +38,7 @@ import pytest
 
 from living_memory import recall_map, storage
 from living_memory.chunking import TextChunk
+from living_memory.embeddings import EncodedVector
 from living_memory.grounding import token_set
 from living_memory.health_audit import ReadOnlyAuditStore
 from living_memory.models import Node
@@ -379,7 +380,7 @@ def test_heaviest_edge_wins_and_decayed_anchors_do_not_label(store: MemoryStore)
 
 
 def embed(store: MemoryStore, node: Node, vector: list[float]) -> None:
-    store.replace_node_chunks(node.id, [(chunk_of(node.content), vector)])
+    store.replace_node_chunks(node.id, [(chunk_of(node.content), EncodedVector(vector, "fixture"))])
 
 
 def test_embedding_fallback_clusters_and_labels_by_ctfidf(bare_store: MemoryStore) -> None:
@@ -767,9 +768,8 @@ def test_anchor_queries_sharing_a_long_prefix_stay_distinguishable(
 
 
 @pytest.mark.parametrize("row_type", [list, tuple])
-@pytest.mark.parametrize("source", ["chunks", "fallback"])
 def test_a_cached_build_agrees_with_a_cold_one_on_embedding_clusters(
-    store: MemoryStore, monkeypatch: pytest.MonkeyPatch, row_type, source,
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch, row_type,
 ) -> None:
     """Warm stage 4 revalidates vectors and recomputes the same medoid."""
 
@@ -788,10 +788,7 @@ def test_a_cached_build_agrees_with_a_cold_one_on_embedding_clusters(
     for node, vector in zip(
         (outlier, centre, partner), ([1.0, 0.9, 0.0], [1.0, 0.0, 0.0], [1.0, 0.05, 0.0]),
     ):
-        if source == "chunks":
-            embed(store, node, vector)
-        else:
-            node.embedding = retain(vector)
+        embed(store, node, vector)
     candidates = pool([outlier, centre, partner])
 
     builder = RecallMapBuilder(store)
@@ -830,9 +827,9 @@ def test_warm_embedding_map_skips_new_labels_but_refreshes_vectors_and_gate(
     vector_reads = []
     node_vector = builder._node_vector
 
-    def read_vector(node, chunks):
-        vector_reads.append(node.id)
-        return node_vector(node, chunks)
+    def read_vector(chunks):
+        vector_reads.append(len(chunks))
+        return node_vector(chunks)
 
     df_requests = []
     frequencies = store.term_document_frequencies
@@ -849,7 +846,7 @@ def test_warm_embedding_map_skips_new_labels_but_refreshes_vectors_and_gate(
 
     assert builder.last_cache_hit and warm is not None
     assert payload_bytes(warm) == payload_bytes(cold)
-    assert sorted(vector_reads) == sorted(node.id for node in nodes)
+    assert vector_reads == [1] * len(nodes)
     gate_terms = {term for label in labels for term in recall_map._terms(label)}
     assert set(df_requests) == gate_terms
     assert len(df_requests) == len(gate_terms)
@@ -866,11 +863,11 @@ def test_warm_embedding_map_skips_new_labels_but_refreshes_vectors_and_gate(
 
     assert builder.last_cache_hit and gated is not None
     assert gated.clusters == () and gated.withheld == 2
-    assert sorted(vector_reads) == sorted(node.id for node in nodes)
+    assert vector_reads == [1] * len(nodes)
     assert set(df_requests) == gate_terms
 
 
-def test_warm_embedding_medoid_uses_current_fallback_vectors(
+def test_warm_embedding_medoid_uses_current_windows(
     store: MemoryStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     nodes = [
@@ -879,7 +876,14 @@ def test_warm_embedding_medoid_uses_current_fallback_vectors(
         make_node(store, "nearby orbital telemetry calibration"),
     ]
     for node, vector in zip(nodes, ([1.0, 0.9], [1.0, 0.0], [1.0, 0.05])):
-        node.embedding = vector
+        embed(store, node, vector)
+    for node, near in zip(nodes[1:], (0.03, 0.02)):
+        chunks = store.list_node_chunks(node.id)
+        extra = TextChunk(node.content, 1, 0, 1, 0, len(node.content))
+        store.replace_node_chunks(node.id, [
+            (chunk_of(node.content), EncodedVector(chunks[0].embedding, "fixture")),
+            (extra, EncodedVector([1.0, near], "fixture")),
+        ])
     candidates = pool(nodes)
     builder = RecallMapBuilder(store)
     cold = builder.build(candidates, scope=SCOPE, task="fresh-medoid")
@@ -889,7 +893,12 @@ def test_warm_embedding_medoid_uses_current_fallback_vectors(
         pytest.fail("Unchanged membership must retain its label and hint")
 
     monkeypatch.setattr(builder, "_ctfidf_label", unexpected_label_work)
-    nodes[1].embedding, nodes[2].embedding = nodes[2].embedding, nodes[1].embedding
+    # Change which windows are current without changing the chunk revision.
+    with store.connection:
+        store.connection.execute(
+            "UPDATE node_chunk_embeddings SET content_fingerprint='stale' WHERE chunk_index=0 AND node_id IN (?, ?)",
+            (nodes[1].id, nodes[2].id),
+        )
     warm = builder.build(candidates, scope=SCOPE, task="fresh-medoid")
 
     assert builder.last_cache_hit and warm is not None
@@ -907,7 +916,7 @@ def test_warm_embedding_vector_refusal_rebuilds_with_real_labels(
         make_node(store, "orbital telemetry alignment"),
     ]
     for node in nodes:
-        node.embedding = [1.0, 0.0]
+        embed(store, node, [1.0, 0.0])
     candidates = pool(nodes)
     builder = RecallMapBuilder(store)
     first = builder.build(candidates, scope=SCOPE, task="vector-refusal")
@@ -922,7 +931,10 @@ def test_warm_embedding_vector_refusal_rebuilds_with_real_labels(
         return built
 
     monkeypatch.setattr(builder, "_ctfidf_label", make_label)
-    nodes[1].embedding = fresh_vector
+    if fresh_vector is None:
+        store.delete_node_chunks(nodes[1].id)
+    else:
+        embed(store, nodes[1], fresh_vector)
     rebuilt = builder.build(candidates, scope=SCOPE, task="vector-refusal")
     cold = RecallMapBuilder(store).build(candidates, scope=SCOPE, task="vector-refusal")
 
