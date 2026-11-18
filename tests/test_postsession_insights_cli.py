@@ -382,7 +382,7 @@ def test_correction_suppresses_insight_without_confirming_remember(cli, live_ser
     context = enforce_attribution(op, record, task="fixture").payload["context"]
     original = client.remember("The pytest configuration is empty.", {"scope": SCOPE})
     corrected = client.teach(original["node"]["id"], FACT, context=context)
-    correction_id = corrected["node"]["id"]
+    correction_id = corrected["corrective_trace"]["id"]
 
     with cli.build_deduper(live_server["db"]) as readonly:
         for reader in (runner(), runner(readonly)):

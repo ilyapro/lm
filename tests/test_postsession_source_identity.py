@@ -296,3 +296,25 @@ def test_native_legacy_effect_is_preserved_through_retry_and_confirmation(live_s
     contexts = [json.loads(row[0]) for row in rows]
     assert len(contexts) == len(Ledger(tmp_path)) == 2
     assert old.payload["context"].items() <= next(c for c in contexts if c["source_span"] == old.provenance.source_span).items()
+
+
+@pytest.mark.parametrize("fingerprint", ["legacy", "current", "absent"])
+def test_other_fingerprint_suppresses_knowledge_but_receipt_takes_precedence(fingerprint):
+    from living_memory.postsession.dedup import Deduper, NodeSnapshot, StaticMemoryIndex
+
+    record = make_record()
+    op = proposal(record)
+    source = (record.transcript_sha256, op.provenance.source_span)
+    scope = op.payload["context"]["scope"]
+    other = NodeSnapshot(
+        "a", FACT, scope, source_identity=source, context={"extraction_fingerprint": "other"},
+    )
+    context = {"task": "another task"}
+    if fingerprint != "absent":
+        context["extraction_fingerprint"] = (
+            legacy_fingerprint(op) if fingerprint == "legacy" else op_fingerprint(op)
+        )
+    receipt = replace(other, node_id="b", context=context)
+    for nodes, channel, node_id in [([other], "existing_knowledge", "a"), ([other, receipt], "exact", "b")]:
+        verdict = Deduper(StaticMemoryIndex(nodes)).check(FACT, scope=scope, source_identity=source)
+        assert (verdict.duplicate, verdict.channel, verdict.node_id) == (True, channel, node_id)
