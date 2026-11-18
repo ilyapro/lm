@@ -1614,34 +1614,10 @@ def _register_tools(
                         for entry in results
                         if entry["scope"] != normalized_scope
                     ]
-                # The id-fetch path, and only it: naming an exact ULID is an
-                # act somebody had to be handed the id for, which is what
-                # makes it the one honest "I followed the card" signal the
-                # server can see. The context-filter path below is a query,
-                # not a follow, and records nothing.
-                #
-                # This stays a read of the *nodes*: the event lands in its own
-                # table and no access counter, recall event, or pending
-                # feedback moves. Ids are recorded as requested, missing ones
-                # included, because the request is the signal.
-                #
-                # Then the signal is spent: a requested id that a recall on
-                # this same transport delivered within the window earns the
-                # usage credit a grounded closure would have given it
-                # (feedback.apply_lookup_credit — usefulness, the event
-                # scope's weights, one anchor edge), once per (event, node)
-                # across both signals via the recall credit ledger.
-                # LM_LOOKUP_CREDIT_POLICY=off keeps the record and skips the
-                # credit. The instant is read once, from the storage clock
-                # that stamps every other ledger row (recall events, delivery
-                # history), so the event row, the delivery-window correlation
-                # and the credit join all see the same lookup time — a wall
-                # clock read here would drift from a frozen or offset storage
-                # clock and put the lookup outside its own delivery window.
-                # Usage observation is optional: a recording failure leaves
-                # the assembled read response intact and skips credit. Its
-                # mutation outcome may be unknown, so it is never retried here.
-                # A failed credit is logged inside apply_lookup_credit.
+                # Audit the request, including misses. Credit uses only this
+                # read's results and the same storage timestamp as the audit.
+                # Recording can fail after a write, so return the read without
+                # retrying or spending credit on an uncertain lookup event.
                 try:
                     lookup_event_id = store.record_lookup_event(
                         requested_ids,
@@ -1671,7 +1647,7 @@ def _register_tools(
                     apply_lookup_credit(
                         store,
                         lookup_event_id,
-                        requested_ids,
+                        [entry["id"] for entry in results],
                         transport_session_id,
                         occurred_at,
                         preparation=feedback_preparation,

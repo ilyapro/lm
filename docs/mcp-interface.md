@@ -861,8 +861,8 @@ mismatching nodes stay in `results` and are reported under
 
 An id fetch is also a usage signal. The request is recorded in
 `recall_lookup_events` (every id asked for, resolved or not; no access counter
-moves), and when a `memory_recall` on the same transport session delivered
-one of those ids within `LM_LOOKUP_CREDIT_WINDOW_SECONDS` (24 h), that node is
+moves). When a `memory_recall` on the same transport session delivered
+one of the nodes returned by this fetch within `LM_LOOKUP_CREDIT_WINDOW_SECONDS` (24 h), that node is
 credited as if the closing trace had grounded it — usefulness, the event
 scope's retrieval weights, one query-anchor edge — with the delivered rank's
 signal. `recall_credit_ledger` holds one row per (recall event, node), so a

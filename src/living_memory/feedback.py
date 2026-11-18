@@ -649,7 +649,7 @@ def apply_lookup_credit(
 ) -> LookupCredit:
     """Credit a same-session id-fetch of delivered nodes as usage. Never raises.
 
-    For each requested node id, the delivering event is the *newest*
+    For each returned node id, the delivering event is the *newest*
     ``recall_events`` row stamped with the same ``transport_session_id`` whose
     ``created_at`` is not later than the lookup and not older than the window
     (``_lookup_credit_window``) and whose recorded results name that node.
@@ -678,12 +678,8 @@ def apply_lookup_credit(
     outcome = LookupCredit(lookup_event_id=str(lookup_event_id))
     if _lookup_credit_policy() == "off" or not transport_session_id:
         return outcome
-    requested: list[str] = []
-    for candidate in node_ids:
-        text = str(candidate or "").strip()
-        if text and text not in requested:
-            requested.append(text)
-    if not requested:
+    returned_ids = [node_id for node_id in node_ids if node_id and not node_id.isspace()]
+    if not returned_ids:
         return outcome
 
     try:
@@ -695,7 +691,7 @@ def apply_lookup_credit(
                 occurred_at,
             )
             return outcome
-        hits = _current_deliveries(store, requested, transport_session_id, lookup_at)
+        hits = _current_deliveries(store, returned_ids, transport_session_id, lookup_at)
         events: dict[str, RecallEventHeader] = {}
         anchor_work: dict[str, tuple[RecallEventHeader, list[str]]] = {}
         for node_id, hit in hits.items():
@@ -741,9 +737,9 @@ def apply_lookup_credit(
             )
     except Exception:
         _LOG.warning(
-            "lookup credit failed for lookup event %s (%d requested id(s))",
+            "lookup credit failed for lookup event %s (%d returned id(s))",
             lookup_event_id,
-            len(requested),
+            len(returned_ids),
             exc_info=True,
         )
     return outcome
@@ -1140,8 +1136,7 @@ def _feedback_queries(
     if ((_lookup_credit_policy() != "off" and lookup_ids is not None)
             or (_explicit_feedback_policy() == "credit" and has_explicit_marks(used, irrelevant))):
         if lookup_ids is not None:
-            requested = [node_id.strip() for node_id in lookup_ids if node_id.strip()]
-            hits = _current_deliveries(store, requested, transport_session_id, occurred_at,
+            hits = _current_deliveries(store, lookup_ids, transport_session_id, occurred_at,
                                        query_inputs_only=True)
             for hit in hits.values():
                 if not hit["credited"]:
