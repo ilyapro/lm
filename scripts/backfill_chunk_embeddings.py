@@ -641,7 +641,7 @@ def dry_run(
     summary.projected_seconds = (
         round(summary.chunks_written / assumed_rate, 1) if assumed_rate > 0 else None
     )
-    summary.complete = True
+    summary.complete = summary.pending_after == 0
     return summary
 
 

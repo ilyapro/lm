@@ -1118,6 +1118,7 @@ def test_stale_fingerprint_repair_restores_mcp_vector(stale_source):
     path, target, current = stale_source
     with MemoryStore(path) as store:
         other = store.append_trace("a separate pending source")
+        store.delete_node_chunks(other.id)
     report = path.parent / "report.json"
     args = ["--db", str(path), "--node-id", target, "--encoder-id", "hash:384", "--json", str(report)]
     run = ["backfill", *args, "--allow-fallback-embeddings"]
@@ -1132,7 +1133,7 @@ def test_stale_fingerprint_repair_restores_mcp_vector(stale_source):
             assert json.loads(report.read_text())["pending_nodes"] == 1
             assert cli("backfill", *args, "--dry-run") == 0
             dry = json.loads(report.read_text())
-            assert (dry["pending_after"], dry["chunks_written"]) == (1, 4)
+            assert (dry["pending_after"], dry["chunks_written"], dry["complete"]) == (1, 4, False)
 
             def source_row():
                 row = server.memory_store.connection.execute("SELECT * FROM nodes WHERE id=?", (target,)).fetchone()
