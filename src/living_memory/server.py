@@ -1237,9 +1237,9 @@ def _register_tools(
     @_track_latency("memory_recall")
     def memory_recall(
         query: Annotated[str, Field(description=(
-            "Include relevant identifiers. For an action, keep the user's wording "
-            "and describe the procedure sought for your current role or stage. "
-            "For a factual question, name the fact sought."
+            "For a procedure, describe the recurring action in the user's words "
+            "and your current role or stage. For a factual question, name the "
+            "fact sought and include identifiers that distinguish the subject."
         ))],
         scope: str | None = None,
         depth: int | str | None = 1,
