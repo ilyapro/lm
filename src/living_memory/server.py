@@ -1343,8 +1343,9 @@ def _register_tools(
             delivery_history = DeliveryHistory()
             correction_refs: dict[str, list[str]] = {}
 
-            def select_delivery(limited: list[RecallResult], residual: list[RecallResult],
-                                limit: int, relevance: QueryRelevance):
+            def select_delivery(
+                limited: list[RecallResult], residual: list[RecallResult], limit: int, relevance: QueryRelevance,
+            ) -> tuple[list[RecallResult], list[RecallResult]]:
                 nonlocal delivery_history, correction_refs
                 # Read only prior formed responses. Selection and shaping share
                 # this bounded observation; recording the current event adds no proof.

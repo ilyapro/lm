@@ -2,7 +2,6 @@
 
 import asyncio
 from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import replace
 import gc
 import hashlib
@@ -16,7 +15,7 @@ from fastmcp import Client
 from living_memory import server
 from living_memory.delivery import DeliveryHistory
 from living_memory.models import Node
-from living_memory.retrieval import MemoryRecallService, RecallResult, _recall_result_summary
+from living_memory.retrieval import RecallResult, _recall_result_summary
 from living_memory.storage import MemoryStore
 
 
@@ -265,15 +264,13 @@ def test_native_recall_finishes_history_before_response_and_discards_partial_pro
             watch = HistoryConnection(store.connection)
             watch.failure = failure
             monkeypatch.setattr(store, "_conn", watch)
-            original_response = MemoryRecallService.recall_response
+            select = server._select_distinct_results
 
-            @contextmanager
-            def checked_response(self, *args, **kwargs):
+            def checked_selection(*args, **kwargs):
                 assert watch.cursors and watch.cursors[-1].closed
-                with original_response(self, *args, **kwargs) as results:
-                    yield results
+                return select(*args, **kwargs)
 
-            monkeypatch.setattr(MemoryRecallService, "recall_response", checked_response)
+            monkeypatch.setattr(server, "_select_distinct_results", checked_selection)
 
             def forbid_list(*args, **kwargs):
                 pytest.fail("native recall must consume the stream")

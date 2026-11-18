@@ -631,7 +631,7 @@ class MemoryRecallService:
         if repair_pending:
             self.refresh_pending_chunks(scope=scope, ambient_context=ambient_context, query=prepared)
 
-        def select():
+        def select() -> tuple[ScopePlan, list[RecallResult]]:
             return self._select_recall(
                 prepared, scope=scope, ambient_context=ambient_context, depth=depth,
                 max_results=max_results, select_results=select_results,
@@ -641,11 +641,10 @@ class MemoryRecallService:
         # short reads. A commit on another connection invalidates the entire
         # observation, including delivery selection. Rebuild once under a WAL
         # read snapshot, then release it before recording any consumption.
-        connection = self.store.connection
         def data_version() -> int:
-            return connection.execute("PRAGMA data_version").fetchone()[0]
+            return self.store.connection.execute("PRAGMA data_version").fetchone()[0]
 
-        version = data_version() if repeatable_selection else None
+        version = data_version() if select_results is None or repeatable_selection else None
         plan, limited = select()
         if version is not None and data_version() != version:
             with self.store.transaction():
