@@ -5235,7 +5235,7 @@ class MemoryStore:
 
     def _anchor_space_filter(self, space: tuple[str, bool] | None) -> tuple[str, tuple[str, ...]]:
         if space is None:
-            return (" AND encoder_id IS NULL" if self._anchor_has_encoder() else ""), ()
+            return "", ()
         encoder, compatible = space
         if not self._anchor_has_encoder():
             return (" AND 0" if compatible else ""), ()

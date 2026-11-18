@@ -5,6 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from fixture_vectors import fixture_vector
+
 from living_memory import query_anchors as qa
 from living_memory import retrieval
 from living_memory.scope import ScopePlan
@@ -41,7 +43,7 @@ def test_anchor_and_seed_membership(monkeypatch, numpy, prepared, scopes, strong
     with MemoryStore(":memory:") as store:
         for name, scope, vector, _score in population:
             store.insert_query_anchor(
-                anchor_id=name, scope=scope, query=name, fingerprint=name, embedding=vector,
+                anchor_id=name, scope=scope, query=name, fingerprint=name, embedding=fixture_vector(vector),
             )
             store.create_node(node_id=f"target-{name}", level="trace", content=f"Target {name}")
             store.upsert_query_anchor_edge(name, f"target-{name}", weight=1.0)
@@ -50,7 +52,7 @@ def test_anchor_and_seed_membership(monkeypatch, numpy, prepared, scopes, strong
             monkeypatch.setattr(service, "_anchor_vector_source", lambda: store)
         plan = ScopePlan(scopes[0], scopes)
         for _ in range(2):  # Exercise both cold and warm prepared selection.
-            matches = service._match_query_anchors(plan, query)
+            matches = service._match_query_anchors(plan, fixture_vector(query))
             seeds = service._collect_anchor_seeds(plan, query, matches=matches)
             assert {
                 "anchors": [(item.anchor.id, item.similarity) for item in matches],
@@ -69,7 +71,7 @@ def test_distinct_scores_materialize_only_limited_ids():
             name = f"a{index:03d}"
             store.insert_query_anchor(
                 anchor_id=name, scope="global", query=name, fingerprint=name,
-                embedding=[float(index), 1.0],
+                embedding=fixture_vector([float(index), 1.0]),
             )
         source = retrieval.MemoryRecallService(store)._anchor_vector_source()
         corpus = source.query_anchor_corpus(2, ["global"])

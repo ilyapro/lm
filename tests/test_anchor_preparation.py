@@ -7,6 +7,8 @@ import weakref
 
 import pytest
 
+from fixture_vectors import FIXTURE_SPACE, fixture_vector
+
 from living_memory import query_anchors as qa
 from living_memory import retrieval
 from living_memory.embeddings import cosine_similarity
@@ -15,13 +17,13 @@ from living_memory.storage import MemoryStore, pack_chunk_embedding
 
 def anchor(store, name, vector, scope="global"):
     return store.insert_query_anchor(
-        anchor_id=name, scope=scope, query=name, fingerprint=name, embedding=vector,
+        anchor_id=name, scope=scope, query=name, fingerprint=name, embedding=fixture_vector(vector),
     )
 
 
 def match(service, vector, scopes="global", **kwargs):
     source = service._anchor_vector_source()
-    return [] if source is None else qa.match_anchors(source, vector, scopes, **kwargs)
+    return [] if source is None else qa.match_anchors(source, fixture_vector(vector), scopes, **kwargs)
 
 
 @pytest.mark.parametrize("numpy", [True, False], ids=["numpy", "python"])
@@ -43,10 +45,10 @@ def test_queries_reuse_preparation_until_vector_revision_changes(tmp_path, monke
         monkeypatch.setattr(retrieval, "_prepare_anchor_vectors", counted)
         assert [m.anchor.id for m in match(service, [1.0, 0.0])] == ["a"]
         for query in ([0.0, 1.0], [1.0, 1.0], [1.0, 0.0]):
-            assert match(service, query) == qa.match_anchors(store, query, "global")
+            assert match(service, query) == qa.match_anchors(store, fixture_vector(query), "global")
         assert preparations == [("a", "b")]
         if not numpy:
-            rows = service._anchor_vectors.by_width[2].matrix
+            rows = service._anchor_vectors.by_width[2, (FIXTURE_SPACE, True)].matrix
             assert sum(len(row) * row.itemsize for row in rows) == 4 * 4
         store.reinforce_query_anchor("a")
         node = store.create_node(level="concept", content="target")
@@ -99,15 +101,15 @@ def test_scope_and_width_changes_reuse_prepared_rows_without_sql(tmp_path, monke
         service = retrieval.MemoryRecallService(store)
         match(service, [1.0, 0.0])
         cache = service._anchor_vectors
-        matrix = weakref.ref(cache.by_width[2].matrix)
+        matrix = weakref.ref(cache.by_width[2, (FIXTURE_SPACE, True)].matrix)
         assert sum(c.matrix.nbytes for c in cache.by_width.values()) == 2 * 4
-        assert cache.pending == {2: {"project:demo"}}
+        assert cache.pending == {(2, (FIXTURE_SPACE, True)): {"project:demo"}}
         match(service, [1.0, 0.0], ["project:demo"])
         assert matrix() is None
         match(service, [1.0, 0.0, 0.0], ["project:demo"])
-        assert cache.pending == {2: set(), 3: set()}
+        assert cache.pending == {(2, (FIXTURE_SPACE, True)): set(), (3, (FIXTURE_SPACE, True)): set()}
         assert sum(c.matrix.nbytes for c in cache.by_width.values()) == 7 * 4
-        matrix = weakref.ref(cache.by_width[2].matrix)
+        matrix = weakref.ref(cache.by_width[2, (FIXTURE_SPACE, True)].matrix)
 
         def no_preparation(*args, **kwargs):
             pytest.fail("scope or width selection must reuse the prepared corpus")
@@ -126,7 +128,7 @@ def test_scope_and_width_changes_reuse_prepared_rows_without_sql(tmp_path, monke
             ):
                 assert {m.anchor.id for m in match(service, query, scopes)} == expected
                 assert service._anchor_vectors is cache
-        assert cache.by_width[2].matrix.dtype == np.dtype("<f4")
+        assert cache.by_width[2, (FIXTURE_SPACE, True)].matrix.dtype == np.dtype("<f4")
         del cache
         store.decay_query_anchor("global", "inactive")
         match(service, [1.0, 0.0])
@@ -140,7 +142,7 @@ def test_native_recall_decodes_only_consumed_scopes_and_width(tmp_path, monkeypa
 
     class Encoder:
         def embed(self, text):
-            return [1.0, 0.0, 0.0]
+            return fixture_vector([1.0, 0.0, 0.0])
 
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         store.create_node(node_id="alpha", level="concept", content="orbital telemetry drift",
@@ -177,7 +179,7 @@ def test_native_recall_decodes_only_consumed_scopes_and_width(tmp_path, monkeypa
                 assert [r.node.id for r in result] == ["alpha"]
                 assert reads == [("healthy", "project:alpha", 3)]
                 assert match(retriever, [1.0, 0.0, 0.0], "project:alpha") == qa.match_anchors(
-                    store, [1.0, 0.0, 0.0], "project:alpha",
+                    store, fixture_vector([1.0, 0.0, 0.0]), "project:alpha",
                 )
                 with pytest.raises(ValueError):
                     match(retriever, [1.0] + [0.0] * (width - 1), None)
@@ -189,7 +191,7 @@ def test_native_recall_decodes_only_consumed_scopes_and_width(tmp_path, monkeypa
             with pytest.raises(ValueError):
                 recall(retriever)
         with pytest.raises(ValueError):
-            qa.match_anchors(store, [1.0, 0.0, 0.0], "project:alpha")
+            qa.match_anchors(store, fixture_vector([1.0, 0.0, 0.0]), "project:alpha")
         assert store.connection.execute("SELECT COUNT(*) FROM recall_events").fetchone()[0] == events
 
 
@@ -220,8 +222,8 @@ def test_missing_scope_fill_uses_one_revision_snapshot(tmp_path, monkeypatch):
         service = retrieval.MemoryRecallService(reader)
         original = reader.query_anchor_vector_layout
 
-        def layout(width):
-            rows = original(width)
+        def layout(width, **kwargs):
+            rows = original(width, **kwargs)
             with writer.transaction():
                 writer.connection.execute("UPDATE query_anchors SET scope='project:beta' WHERE id='a'")
             return rows
@@ -233,8 +235,8 @@ def test_missing_scope_fill_uses_one_revision_snapshot(tmp_path, monkeypatch):
         source = service._anchor_vector_source()
         with writer.transaction():
             writer.connection.execute("UPDATE query_anchors SET scope='global' WHERE id='a'")
-        assert [m.anchor.id for m in qa.match_anchors(source, [1.0, 0.0], "global")] == ["a", "c"]
-        assert "global" in source.pending[2]
+        assert [m.anchor.id for m in qa.match_anchors(source, fixture_vector([1.0, 0.0]), "global")] == ["a", "c"]
+        assert "global" in source.pending[2, (FIXTURE_SPACE, True)]
 
 
 def test_scope_selection_preserves_scan_order_and_uses_contiguous_views(tmp_path):
@@ -286,8 +288,8 @@ def test_scope_growth_keeps_one_compact_corpus_and_reuses_warm_broad(tmp_path, m
             matches = match(service, [1.0] + [0.0] * 16, scopes)
             assert bool(matches) == bool(count)
             cache = service._anchor_vectors
-            assert set(cache.by_width) == {17}
-            corpus = cache.by_width[17]
+            assert set(cache.by_width) == {(17, (FIXTURE_SPACE, True))}
+            corpus = cache.by_width[17, (FIXTURE_SPACE, True)]
             assert len(corpus.ids) == count
             if not count:
                 assert corpus.matrix == corpus.safe_norms == corpus.nonzero == ()
@@ -383,7 +385,7 @@ def test_exact_thresholds_ties_and_zero_vectors(tmp_path, monkeypatch, numpy):
             anchor(store, f"tie{index}", [1.0, 0.0])
         service = retrieval.MemoryRecallService(store)
         vector = [1.0, 0.0]
-        expected = qa.match_anchors(store, vector, "global", limit=100, min_similarity=-1.0)
+        expected = qa.match_anchors(store, fixture_vector(vector), "global", limit=100, min_similarity=-1.0)
         for item in expected:
             thresholds = (
                 float(np.nextafter(np.float32(item.similarity), np.float32(-np.inf))),
@@ -393,7 +395,7 @@ def test_exact_thresholds_ties_and_zero_vectors(tmp_path, monkeypatch, numpy):
             for threshold in thresholds:
                 for limit in (1, 5, 100):
                     assert match(service, vector, min_similarity=threshold, limit=limit) == (
-                        qa.match_anchors(store, vector, "global", min_similarity=threshold, limit=limit)
+                        qa.match_anchors(store, fixture_vector(vector), "global", min_similarity=threshold, limit=limit)
                     )
         assert match(service, [0.0, 0.0], min_similarity=-1.0) == []
         if not numpy:

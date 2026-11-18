@@ -6,6 +6,8 @@ import sqlite3
 
 import pytest
 
+from fixture_vectors import fixture_vector
+
 from living_memory import query_anchors as qa
 from living_memory import storage
 from living_memory.irrelevance import QUERY_IRRELEVANCE_SCHEMA_SQL
@@ -36,7 +38,7 @@ def population(store, count, *, scope="project:foreign"):
         name = f"strong-{index:03d}"
         node(store, name, scope=scope)
         targets.append((name, 1.0))
-    written = qa.upsert_anchor(store, "needle", "global", [1.0, 0.0], targets)
+    written = qa.upsert_anchor(store, "needle", "global", fixture_vector([1.0, 0.0]), targets)
     assert len(written.edges) == count + 1
     return written.anchor
 
@@ -63,7 +65,7 @@ def test_foreign_targets_do_not_take_restricted_seed_slots(count, scope_args, de
         }
         if not restricted and count == 49:
             expected["wanted"] = 0.9
-        seeds = service._collect_anchor_seeds(plan, [1.0, 0.0])
+        seeds = service._collect_anchor_seeds(plan, fixture_vector([1.0, 0.0]))
         delivered = {row.node.id for row in recall(service, **scope_args)}
         assert {"seeds": seeds, "recall": delivered} == {
             "seeds": expected, "recall": set(expected),
@@ -78,7 +80,7 @@ def test_same_scope_targets_keep_the_fifty_root_cap(count):
         expected = {f"strong-{i:03d}": 1.0 for i in range(min(count, 50))}
         if count == 49:
             expected["wanted"] = 0.9
-        seeds = service._collect_anchor_seeds(resolve_scope(scope="global"), [1.0, 0.0])
+        seeds = service._collect_anchor_seeds(resolve_scope(scope="global"), fixture_vector([1.0, 0.0]))
         assert GRAPH_SEED_LIMIT == 50
         assert seeds == expected
         assert {row.node.id for row in recall(service, scope="global")} == set(expected)
@@ -96,9 +98,9 @@ def test_target_selection_obeys_all_scope_plan_members(scope_args, expected, del
         for name, scope in (("g", "global"), ("p", "project:alpha"),
                             ("s", "session:review"), ("f", "project:foreign")):
             node(store, name, scope=scope)
-        qa.upsert_anchor(store, "needle", "global", [1.0, 0.0], ["g", "p", "s", "f"])
+        qa.upsert_anchor(store, "needle", "global", fixture_vector([1.0, 0.0]), ["g", "p", "s", "f"])
         service = MemoryRecallService(store, embedder=Encoder())
-        seeds = service._collect_anchor_seeds(resolve_scope(**scope_args), [1.0, 0.0])
+        seeds = service._collect_anchor_seeds(resolve_scope(**scope_args), fixture_vector([1.0, 0.0]))
         assert set(seeds) == expected
         # The ranker's cross-scope gate still drops the weak global candidate
         # when a narrower candidate is present; scope admission is earlier.
@@ -111,11 +113,11 @@ def test_shared_targets_keep_max_activation_and_id_ties_at_the_boundary():
         first = strong + [("shared", 0.95), ("a-boundary", 0.8), ("z-boundary", 0.8), ("sum", 0.45)]
         for name, _ in first:
             node(store, name, scope="global")
-        qa.upsert_anchor(store, "needle", "global", [1.0, 0.0], first)
-        qa.upsert_anchor(store, "nearby", "global", [4.0, 3.0], [("shared", 1.0), ("sum", 0.5)])
+        qa.upsert_anchor(store, "needle", "global", fixture_vector([1.0, 0.0]), first)
+        qa.upsert_anchor(store, "nearby", "global", fixture_vector([4.0, 3.0]), [("shared", 1.0), ("sum", 0.5)])
         service = MemoryRecallService(store, embedder=Encoder())
         expected = {"shared": 0.95, **dict(strong), "a-boundary": 0.8}
-        seeds = service._collect_anchor_seeds(resolve_scope(scope="global"), [1.0, 0.0])
+        seeds = service._collect_anchor_seeds(resolve_scope(scope="global"), fixture_vector([1.0, 0.0]))
         assert list(seeds) == list(expected)
         assert seeds == expected
         assert {row.node.id for row in recall(service, scope="global")} == set(expected)
@@ -139,7 +141,7 @@ def test_current_target_validity_survives_scope_selection(state):
         expected = {"wanted": 0.9}
         if state == "corrected":
             expected["replacement"] = 1.0
-        seeds = service._collect_anchor_seeds(resolve_scope(scope="global"), [1.0, 0.0])
+        seeds = service._collect_anchor_seeds(resolve_scope(scope="global"), fixture_vector([1.0, 0.0]))
         assert seeds == expected
         results = recall(service, scope="global")
         if state == "corrected":
@@ -191,7 +193,7 @@ def test_target_scopes_are_current_after_matching_and_rollback(tmp_path):
         population(store, 50)
         service = MemoryRecallService(store, embedder=Encoder())
         plan = resolve_scope(scope="global")
-        matches = service._match_query_anchors(plan, [1.0, 0.0])
+        matches = service._match_query_anchors(plan, fixture_vector([1.0, 0.0]))
         assert service._collect_anchor_seeds(plan, [1.0, 0.0], matches=matches) == {"wanted": 0.9}
         writer.update_node("strong-000", context={"scope": "global"})
         assert service._collect_anchor_seeds(plan, [1.0, 0.0], matches=matches) == {
@@ -220,15 +222,15 @@ def test_scope_selection_leaves_matches_and_independent_demotions_intact(monkeyp
             )
         service = MemoryRecallService(store, embedder=Encoder())
         plan = resolve_scope(scope="global")
-        matches = service._match_query_anchors(plan, [1.0, 0.0])
+        matches = service._match_query_anchors(plan, fixture_vector([1.0, 0.0]))
         targets = matches[0].targets
         assert len(targets) == 51
         assert service._collect_anchor_seeds(plan, [1.0, 0.0], matches=matches) == {"wanted": 0.9}
         assert matches[0].targets == targets
-        assert service._collect_query_demotions(plan, [1.0, 0.0], matches=matches) == {
+        assert service._collect_query_demotions(plan, fixture_vector([1.0, 0.0]), matches=matches) == {
             "strong-000": 0.5,
         }
-        assert service._collect_query_demotions(plan, [1.0, 0.0]) == {"strong-000": 0.5}
+        assert service._collect_query_demotions(plan, fixture_vector([1.0, 0.0])) == {"strong-000": 0.5}
 
 
 @pytest.mark.parametrize("failure", ["scope-read", "body-read", "selected-body"])
@@ -259,7 +261,7 @@ def test_bounded_anchor_bodies_preserve_independent_ordinary_and_source_slots(mo
         accepted = [(f"accepted-{i:03d}", 0.95) for i in range(75)]
         for name, _ in accepted:
             node(store, name, scope="global")
-        qa.upsert_anchor(store, "needle", "global", [1.0, 0.0], accepted)
+        qa.upsert_anchor(store, "needle", "global", fixture_vector([1.0, 0.0]), accepted)
         roots = [node(store, f"root-{i:03d}", scope="global") for i in range(51)]
         node(store, "leaf", scope="global")
         for root in roots:
@@ -299,7 +301,7 @@ def test_bounded_anchor_bodies_preserve_independent_ordinary_and_source_slots(mo
         statements = []
         store.connection.set_trace_callback(statements.append)
         try:
-            seeds = service._collect_anchor_seeds(plan, [1.0, 0.0])
+            seeds = service._collect_anchor_seeds(plan, fixture_vector([1.0, 0.0]))
             assert seeds == {name: 0.95 for name in selected}
             assert not decoded
             candidates = run(seeds)

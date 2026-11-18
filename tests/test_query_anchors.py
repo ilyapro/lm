@@ -29,6 +29,8 @@ from pathlib import Path
 
 import pytest
 
+from fixture_vectors import fixture_vector
+
 from living_memory import query_anchors as qa
 from living_memory.consolidation import memory_teach
 from living_memory.edge_derivation import derive_edges_for_new_trace
@@ -307,7 +309,7 @@ def test_anchor_reads_degrade_to_empty_without_the_v7_tables(tmp_path: Path) -> 
         assert store.find_query_anchor(SCOPE, "fp") is None
         assert not store.has_query_anchor(SCOPE, "fp")
         assert store.repoint_query_anchor_edges("a", "b") == 0
-        assert qa.match_anchors(store, [1.0, 0.0], SCOPE) == []
+        assert qa.match_anchors(store, fixture_vector([1.0, 0.0]), SCOPE) == []
 
         # A supersedes write still succeeds on a database with no anchor tables.
         old = _trace(store, "pre-v7 content")
@@ -449,7 +451,7 @@ def test_similar_queries_keep_independent_anchors_and_semantic_matches(
     with _store(tmp_path) as store:
         nodes = [_trace(store, "First source policy"), _trace(store, "Second source policy")]
         first, second = [
-            qa.upsert_anchor(store, query, SCOPE, [1.0, 0.0], [node.id])
+            qa.upsert_anchor(store, query, SCOPE, fixture_vector([1.0, 0.0]), [node.id])
             for query, node in zip(queries, nodes)
         ]
         assert second.created
@@ -458,7 +460,7 @@ def test_similar_queries_keep_independent_anchors_and_semantic_matches(
         for result, node in zip((first, second), nodes):
             assert {edge.target_id for edge in result.edges} == {node.id}
 
-        matches = qa.match_anchors(store, [1.0, 0.0], SCOPE)
+        matches = qa.match_anchors(store, fixture_vector([1.0, 0.0]), SCOPE)
         assert {match.anchor.id for match in matches} == {first.anchor.id, second.anchor.id}
         assert all(match.similarity == pytest.approx(1.0) for match in matches)
 
@@ -484,9 +486,9 @@ def test_anchor_never_crosses_scope(tmp_path: Path) -> None:
         here = _trace(store, "scoped node", scope=SCOPE)
         there = _trace(store, "other node", scope="project:other")
 
-        mine = qa.upsert_anchor(store, "один и тот же запрос", SCOPE, [1.0, 0.0], [here.id])
+        mine = qa.upsert_anchor(store, "один и тот же запрос", SCOPE, fixture_vector([1.0, 0.0]), [here.id])
         theirs = qa.upsert_anchor(
-            store, "один и тот же запрос", "project:other", [1.0, 0.0], [there.id]
+            store, "один и тот же запрос", "project:other", fixture_vector([1.0, 0.0]), [there.id]
         )
 
         # Identical text and identical vector, yet two anchors: the fingerprint
@@ -495,7 +497,7 @@ def test_anchor_never_crosses_scope(tmp_path: Path) -> None:
         assert theirs.anchor.id != mine.anchor.id
         assert store.count_query_anchors() == 2
 
-        matched = qa.match_anchors(store, [1.0, 0.0], SCOPE)
+        matched = qa.match_anchors(store, fixture_vector([1.0, 0.0]), SCOPE)
         assert [m.anchor.id for m in matched] == [mine.anchor.id]
 
 
@@ -604,12 +606,12 @@ def test_match_anchors_ranks_by_similarity_and_honours_the_floor(
     with _store(tmp_path) as store:
         near_node = _trace(store, "near node")
         far_node = _trace(store, "far node")
-        near = qa.upsert_anchor(store, "близкий", SCOPE, [1.0, 0.0], [near_node.id])
+        near = qa.upsert_anchor(store, "близкий", SCOPE, fixture_vector([1.0, 0.0]), [near_node.id])
         far = qa.upsert_anchor(
-            store, "далёкий", SCOPE, _unit_at_cosine(0.5), [far_node.id]
+            store, "далёкий", SCOPE, fixture_vector(_unit_at_cosine(0.5)), [far_node.id]
         )
 
-        matches = qa.match_anchors(store, [1.0, 0.0], SCOPE, min_similarity=0.0)
+        matches = qa.match_anchors(store, fixture_vector([1.0, 0.0]), SCOPE, min_similarity=0.0)
         assert [m.anchor.id for m in matches] == [near.anchor.id, far.anchor.id]
         assert matches[0].similarity == pytest.approx(1.0, abs=1e-6)
         assert matches[1].similarity == pytest.approx(0.5, abs=1e-6)
@@ -621,17 +623,17 @@ def test_match_anchors_ranks_by_similarity_and_honours_the_floor(
         assert similarity > 0.9
         assert targets == ((near_node.id, ANCHOR_EDGE_WEIGHT),)
 
-        assert [m.anchor.id for m in qa.match_anchors(store, [1.0, 0.0], SCOPE)] == [
+        assert [m.anchor.id for m in qa.match_anchors(store, fixture_vector([1.0, 0.0]), SCOPE)] == [
             near.anchor.id
         ]
-        assert qa.match_anchors(store, [1.0, 0.0], SCOPE, min_similarity=1.5) == []
+        assert qa.match_anchors(store, fixture_vector([1.0, 0.0]), SCOPE, min_similarity=1.5) == []
         assert (
-            len(qa.match_anchors(store, [1.0, 0.0], SCOPE, limit=1, min_similarity=0.0))
+            len(qa.match_anchors(store, fixture_vector([1.0, 0.0]), SCOPE, limit=1, min_similarity=0.0))
             == 1
         )
-        assert qa.match_anchors(store, [1.0, 0.0], SCOPE, limit=0) == []
-        assert qa.match_anchors(store, [], SCOPE) == []
-        assert qa.match_anchors(store, [0.0, 0.0], SCOPE, min_similarity=0.0) == []
+        assert qa.match_anchors(store, fixture_vector([1.0, 0.0]), SCOPE, limit=0) == []
+        assert qa.match_anchors(store, fixture_vector([]), SCOPE) == []
+        assert qa.match_anchors(store, fixture_vector([0.0, 0.0]), SCOPE, min_similarity=0.0) == []
 
 
 def test_match_anchors_accepts_a_scope_plan(tmp_path: Path) -> None:
@@ -640,20 +642,20 @@ def test_match_anchors_accepts_a_scope_plan(tmp_path: Path) -> None:
     with _store(tmp_path) as store:
         local = _trace(store, "local node", scope=SCOPE)
         shared = _trace(store, "global node", scope="global")
-        qa.upsert_anchor(store, "локальный", SCOPE, [1.0, 0.0], [local.id])
-        qa.upsert_anchor(store, "общий", "global", [1.0, 0.0], [shared.id])
+        qa.upsert_anchor(store, "локальный", SCOPE, fixture_vector([1.0, 0.0]), [local.id])
+        qa.upsert_anchor(store, "общий", "global", fixture_vector([1.0, 0.0]), [shared.id])
 
         plan = ScopePlan(requested_scope=SCOPE, scopes=(SCOPE, "global"))
-        matched = qa.match_anchors(store, [1.0, 0.0], plan, min_similarity=0.0)
+        matched = qa.match_anchors(store, fixture_vector([1.0, 0.0]), plan, min_similarity=0.0)
         assert {m.anchor.scope for m in matched} == {SCOPE, "global"}
 
-        narrow = qa.match_anchors(store, [1.0, 0.0], [SCOPE], min_similarity=0.0)
+        narrow = qa.match_anchors(store, fixture_vector([1.0, 0.0]), [SCOPE], min_similarity=0.0)
         assert {m.anchor.scope for m in narrow} == {SCOPE}
 
-        everywhere = qa.match_anchors(store, [1.0, 0.0], None, min_similarity=0.0)
+        everywhere = qa.match_anchors(store, fixture_vector([1.0, 0.0]), None, min_similarity=0.0)
         assert len(everywhere) == 2
 
-        assert qa.match_anchors(store, [1.0, 0.0], [], min_similarity=0.0) == []
+        assert qa.match_anchors(store, fixture_vector([1.0, 0.0]), [], min_similarity=0.0) == []
 
 
 def test_match_anchors_ignores_anchors_of_a_different_width(tmp_path: Path) -> None:
@@ -661,13 +663,13 @@ def test_match_anchors_ignores_anchors_of_a_different_width(tmp_path: Path) -> N
 
     with _store(tmp_path) as store:
         node = _trace(store, "node")
-        qa.upsert_anchor(store, "двумерный", SCOPE, [1.0, 0.0], [node.id])
-        qa.upsert_anchor(store, "трёхмерный", SCOPE, [1.0, 0.0, 0.0], [node.id])
+        qa.upsert_anchor(store, "двумерный", SCOPE, fixture_vector([1.0, 0.0]), [node.id])
+        qa.upsert_anchor(store, "трёхмерный", SCOPE, fixture_vector([1.0, 0.0, 0.0]), [node.id])
 
-        matches = qa.match_anchors(store, [1.0, 0.0], SCOPE, min_similarity=0.0)
+        matches = qa.match_anchors(store, fixture_vector([1.0, 0.0]), SCOPE, min_similarity=0.0)
         assert [m.anchor.query for m in matches] == ["двумерный"]
 
-        matches = qa.match_anchors(store, [1.0, 0.0, 0.0], SCOPE, min_similarity=0.0)
+        matches = qa.match_anchors(store, fixture_vector([1.0, 0.0, 0.0]), SCOPE, min_similarity=0.0)
         assert [m.anchor.query for m in matches] == ["трёхмерный"]
 
 
@@ -676,11 +678,11 @@ def test_match_anchors_returns_only_live_targets(tmp_path: Path) -> None:
         alive = _trace(store, "still useful")
         doomed = _trace(store, "about to decay")
         anchor = qa.upsert_anchor(
-            store, "запрос", SCOPE, [1.0, 0.0], [alive.id, doomed.id]
+            store, "запрос", SCOPE, fixture_vector([1.0, 0.0]), [alive.id, doomed.id]
         ).anchor
         store.soft_delete_node(doomed.id, "ttl expired")
 
-        matches = qa.match_anchors(store, [1.0, 0.0], SCOPE, min_similarity=0.0)
+        matches = qa.match_anchors(store, fixture_vector([1.0, 0.0]), SCOPE, min_similarity=0.0)
         assert [target for target, _ in matches[0].targets] == [alive.id]
         # The edge row survives the soft delete; only the read filters it.
         assert len(store.list_query_anchor_edges(anchor_id=anchor.id)) == 2
@@ -689,10 +691,10 @@ def test_match_anchors_returns_only_live_targets(tmp_path: Path) -> None:
 def test_decayed_anchors_do_not_match(tmp_path: Path) -> None:
     with _store(tmp_path) as store:
         node = _trace(store, "node")
-        anchor = qa.upsert_anchor(store, "запрос", SCOPE, [1.0, 0.0], [node.id]).anchor
+        anchor = qa.upsert_anchor(store, "запрос", SCOPE, fixture_vector([1.0, 0.0]), [node.id]).anchor
         store.decay_query_anchor(anchor.id, "manual")
 
-        assert qa.match_anchors(store, [1.0, 0.0], SCOPE, min_similarity=0.0) == []
+        assert qa.match_anchors(store, fixture_vector([1.0, 0.0]), SCOPE, min_similarity=0.0) == []
         assert store.count_query_anchors(include_decayed=False) == 0
         assert store.count_query_anchors() == 1
 
@@ -759,7 +761,7 @@ def test_teach_supersede_moves_the_anchor_edge_to_the_replacement(
     with _store(tmp_path) as store:
         stale = _trace(store, "the deploy needs one server restart")
         anchor = qa.upsert_anchor(
-            store, "как деплоить", SCOPE, [1.0, 0.0], [stale.id]
+            store, "как деплоить", SCOPE, fixture_vector([1.0, 0.0]), [stale.id]
         ).anchor
         assert [e.target_id for e in store.list_query_anchor_edges(anchor_id=anchor.id)] == [
             stale.id
@@ -772,7 +774,7 @@ def test_teach_supersede_moves_the_anchor_edge_to_the_replacement(
         assert edges[0].weight == pytest.approx(ANCHOR_EDGE_WEIGHT)
         assert edges[0].hits == 1
         # And the anchor now answers with the correction, not the stale node.
-        match = qa.match_anchors(store, [1.0, 0.0], SCOPE, min_similarity=0.0)[0]
+        match = qa.match_anchors(store, fixture_vector([1.0, 0.0]), SCOPE, min_similarity=0.0)[0]
         assert [target for target, _ in match.targets] == [result.corrective_trace.id]
 
 
@@ -1048,13 +1050,13 @@ def test_anchor_scope_is_normalized_on_write_and_on_read(tmp_path: Path) -> None
 
     with _store(tmp_path) as store:
         anchor = store.insert_query_anchor(
-            scope="demo", query="q", fingerprint="fp", embedding=[1.0, 0.0]
+            scope="demo", query="q", fingerprint="fp", embedding=fixture_vector([1.0, 0.0])
         )
         assert anchor.scope == "project:demo"
         assert store.find_query_anchor("demo", "fp") is not None
         assert store.find_query_anchor("project:demo", "fp") is not None
         assert [a.id for a in store.list_query_anchors(scope="demo")] == [anchor.id]
-        matched = qa.match_anchors(store, [1.0, 0.0], "demo", min_similarity=0.0)
+        matched = qa.match_anchors(store, fixture_vector([1.0, 0.0]), "demo", min_similarity=0.0)
         assert [m.anchor.id for m in matched] == [anchor.id]
 
 

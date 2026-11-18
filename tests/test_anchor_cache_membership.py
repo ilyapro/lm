@@ -7,6 +7,8 @@ import sqlite3
 
 import pytest
 
+from fixture_vectors import fixture_vector
+
 from living_memory import query_anchors as qa
 from living_memory.health_audit import ReadOnlyAuditStore
 from living_memory.irrelevance import QUERY_IRRELEVANCE_SCHEMA_SQL
@@ -18,7 +20,7 @@ from living_memory.storage import MemoryStore, pack_chunk_embedding
 
 class FixedEmbedder:
     def embed(self, text):
-        return [0.0, 1.0] if text == "restored situation" else [1.0, 0.0]
+        return fixture_vector([0.0, 1.0] if text == "restored situation" else [1.0, 0.0])
 
 
 @pytest.fixture(params=["memory", "same-connection", "second-connection"])
@@ -36,13 +38,13 @@ def service(store):
 
 def anchor(store, name, vector, scope="global"):
     return store.insert_query_anchor(
-        scope=scope, query=name, fingerprint=name, embedding=vector, anchor_id=name
+        scope=scope, query=name, fingerprint=name, embedding=fixture_vector(vector), anchor_id=name
     )
 
 
 def matches(retriever, vector, scope="global"):
     source = retriever._anchor_vector_source()
-    return [] if source is None else qa.match_anchors(source, vector, scope)
+    return [] if source is None else qa.match_anchors(source, fixture_vector(vector), scope)
 
 
 def assert_parity(warm, vector, expected, scope="global"):
@@ -85,10 +87,10 @@ def test_balanced_decay_revival_updates_matches_seeds_and_demotions(stores, nump
     assert reader.query_anchor_revision() != before
     plan = ScopePlan("global", ("global",))
     for retriever in (warm, service(reader)):
-        assert retriever._collect_anchor_seeds(plan, [1.0, 0.0]) == {}
-        assert retriever._collect_query_demotions(plan, [1.0, 0.0]) == {}
-        assert retriever._collect_anchor_seeds(plan, [0.0, 1.0]) == {targets[1]: 1.0}
-        assert retriever._collect_query_demotions(plan, [0.0, 1.0]) == {targets[1]: 0.5}
+        assert retriever._collect_anchor_seeds(plan, fixture_vector([1.0, 0.0])) == {}
+        assert retriever._collect_query_demotions(plan, fixture_vector([1.0, 0.0])) == {}
+        assert retriever._collect_anchor_seeds(plan, fixture_vector([0.0, 1.0])) == {targets[1]: 1.0}
+        assert retriever._collect_query_demotions(plan, fixture_vector([0.0, 1.0])) == {targets[1]: 0.5}
 
 
 @pytest.mark.parametrize("mutation", ["embedding", "dimensions", "scope", "id", "replace", "delete-insert"])
@@ -229,7 +231,7 @@ def test_warm_recall_finds_the_revived_anchors_target(stores):
     for item, content in ((a, "cobalt prism"), (b, "amber cylinder")):
         node = writer.create_node(
             level="concept", content=content, context={"scope": "global"},
-            embedding=[0.0, 0.0],
+            embedding=fixture_vector([0.0, 0.0]),
         )
         writer.upsert_query_anchor_edge(item.id, node.id, weight=1.0)
         targets.append(node.id)
@@ -320,4 +322,4 @@ def test_match_readback_excludes_anchor_removed_after_scan(stores, mutation):
     else:
         with writer.connection:
             writer.connection.execute("UPDATE query_anchors SET scope='project:elsewhere'")
-    assert qa.match_anchors(source, [1.0, 0.0], "global") == []
+    assert qa.match_anchors(source, fixture_vector([1.0, 0.0]), "global") == []

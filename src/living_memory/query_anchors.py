@@ -276,7 +276,7 @@ def match_anchors(
 
     Stored cosines use the prepared query's encoder and width. Historical
     candidates may contribute a fresh score for their observed source text.
-    Untagged vector callers share the legacy untagged partition only.
+    A query without producer identity supplies no semantic evidence.
 
     Read-path callers cache the prepared matrix and re-validate it with
     :meth:`MemoryStore.query_anchor_revision`, a transactional SQLite counter
@@ -301,7 +301,9 @@ def match_anchors(
 
     if isinstance(query_embedding, EncodedVector):
         encoder_id = query_embedding.encoder_id
-    space = (encoder_id, True) if encoder_id is not None else None
+    if encoder_id is None:
+        return []
+    space = (encoder_id, True)
     ranked = _rank_anchors(
         store, vector, scopes, min_similarity=min_similarity, limit=limit, space=space,
     )
