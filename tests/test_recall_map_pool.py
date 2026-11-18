@@ -627,3 +627,23 @@ def test_empty_selection_does_not_offer_or_hide_later_query_evidence(tmp_path):
         assert offered.clusters and not builder.last_cache_hit
         empty = builder.build([result(node, 0)], scope=POOL_SCOPE, task="work")
         assert not empty.clusters and not builder.last_cache_hit
+
+
+def test_filtered_pool_reads_revisions_only_for_keyed_fifo_pressure(tmp_path):
+    with MemoryStore(tmp_path / "filtered.sqlite3") as store:
+        node = _node(store, "candidate", "query protocol evidence")
+        residual = [result(node, 0)]
+        builder = RecallMapBuilder(store)
+        statements = []
+        store.connection.set_trace_callback(statements.append)
+        try:
+            assert builder.build([], scope=POOL_SCOPE) is None
+            filtered = builder.build(residual, scope=POOL_SCOPE)
+            assert filtered.selection.inspected == 1 and filtered.pool_size == 0
+            assert not statements and builder.cache_size == 0
+            for key in ("A", "A", "B"):
+                assert builder.build(residual, scope=POOL_SCOPE, task=key).to_dict() == filtered.to_dict()
+            assert sum("chunk_scope_revision;" in sql for sql in statements) == 1
+            assert sum("pending_chunk_revision" in sql for sql in statements) == 3
+        finally:
+            store.connection.set_trace_callback(None)
