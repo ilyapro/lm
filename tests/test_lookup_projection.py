@@ -113,6 +113,39 @@ def test_context_key_preserves_literal_names_and_json_values(runtime, key):
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("nul_first", [False, True])
+def test_context_key_distinguishes_nul_from_prefix(runtime, nul_first):
+    mcp, _ = runtime
+    store = mcp.memory_store
+    node = store.append_trace("Exact field selection.", {"scope": "project:probe"})
+    prefix, extended = "alpha", "alpha\x00beta"
+
+    async def scenario():
+        async with Client(mcp) as client:
+            for value in [None, False, 0, 10**40, 1.125, "text", [True, None], {"n": 10**40}]:
+                fields = [(prefix, "short"), (extended, value)]
+                if nul_first:
+                    fields.reverse()
+                # The normal writer sorts keys. Exercise both stored orders.
+                context = dict(fields, scope=node.scope)
+                with store.transaction():
+                    store.connection.execute(
+                        "UPDATE nodes SET context = ? WHERE id = ?", (json.dumps(context), node.id),
+                    )
+                full = store.get_node(node.id).context
+                assert list(full.items()) == list(context.items())
+                for key in [prefix, extended, "alpha\x00absent"]:
+                    response = (await client.call_tool("memory_lookup", {
+                        "node_id": node.id, "context_key": key,
+                    })).data
+                    selected = response["results"][0]["context"]
+                    assert selected == ({key: full[key]} if key in full else {})
+                    if key in full:
+                        assert type(selected[key]) is type(full[key])
+
+    asyncio.run(scenario())
+
+
 def test_projection_uses_stored_corrections_and_shared_shaping(runtime):
     mcp, _ = runtime
     store = mcp.memory_store
