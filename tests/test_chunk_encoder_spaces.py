@@ -122,3 +122,46 @@ def test_prompt_tool_and_subsequent_remember_share_fallback(tmp_path, monkeypatc
     finally:
         server.auto_consolidation.close()
         store.close()
+
+
+@pytest.mark.parametrize("numpy", [True, False])
+def test_first_semantic_recall_confirms_off_page_unknown_sources(tmp_path, monkeypatch, numpy):
+    if not numpy:
+        monkeypatch.setattr(retrieval, "_np", None)
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    path = tmp_path / "history.db"
+    model = LocalEmbeddingModel(backend="hash")
+    # No exact FTS hit or synonym expansion. Plural and singular have the same hash features.
+    query, content = "orchestrator", "orchestrators"
+    with MemoryStore(path) as store:
+        for i in range(4 * LAZY_CHUNK_NODE_LIMIT):
+            store.create_node(level="trace", content=f"blue pottery {i}",
+                              embedding=list(model.embed(f"blue pottery {i}")))
+        decoy = store.create_node(level="trace", content="violin", embedding=list(model.embed(query)))
+        target = store.create_node(level="trace", content=content, embedding=list(model.embed(content)))
+        assert len(store.list_unchunked_node_positions(encoder_id=model.encoder_id())) == 4 * LAZY_CHUNK_NODE_LIMIT + 2
+        assert not store.search_content_ids(query)
+    for first_call in (True, False):
+        server = create_mcp_server(path, mcp_factory=FakeMCP)
+        store = server.memory_store
+        try:
+            before = {chunk.id for chunk in store.list_node_chunks(target.id)}
+            result = server.tools["memory_recall"](query)
+            hit = result["results"][0]
+            assert hit["id"] == target.id and hit["content"] == content
+            event = store.get_recall_event(result["recall_event_id"])
+            assert event.results[0]["bm25_score"] == 0 and event.results[0]["methods"] == ["vector"]
+            assert not any(r["id"] == decoy.id and r["content"] for r in result["results"])
+            chunk, = store.list_node_chunks(target.id)
+            assert chunk.encoder_id == model.encoder_id()
+            if first_call:
+                assert chunk.id not in before
+                assert store.node_chunks_are_current(decoy.id, encoder_id=model.encoder_id())
+                assert store.connection.execute(
+                    "SELECT COUNT(*) FROM node_chunk_embeddings WHERE encoder_id IS NOT NULL"
+                ).fetchone()[0] == LAZY_CHUNK_NODE_LIMIT
+            else:
+                assert chunk.id in before
+        finally:
+            server.auto_consolidation.close()
+            store.close()
