@@ -4364,7 +4364,8 @@ class MemoryStore:
         row = self._conn.execute(
             f"""
             SELECT COUNT(*) AS total,
-                   SUM(CASE WHEN c.content_fingerprint = n.content_fingerprint {space}
+                   SUM(CASE WHEN n.content_fingerprint != ''
+                            AND c.content_fingerprint = n.content_fingerprint {space}
                             THEN 1 ELSE 0 END) AS fresh
             FROM {CHUNK_EMBEDDING_TABLE} c
             JOIN nodes n ON n.id = c.node_id
@@ -4487,7 +4488,7 @@ class MemoryStore:
             WITH pending AS MATERIALIZED (
                 SELECT n.id FROM nodes n
                 WHERE {' AND '.join(clauses)}
-                  AND (NOT EXISTS (
+                  AND (n.content_fingerprint = '' OR NOT EXISTS (
                     SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} c
                     WHERE c.node_id = n.id
                       AND c.content_fingerprint = n.content_fingerprint

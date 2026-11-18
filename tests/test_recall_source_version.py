@@ -106,3 +106,50 @@ def test_fingerprint_only_transitions_on_live_reader(tmp_path, side, old_format)
                     assert recall(QUERY)[0].vector_score == pytest.approx(1)
             if old_format:
                 assert reader.chunk_corpus_revisions() is None and not service._chunk_index
+
+
+@pytest.mark.parametrize("stored_version", ["", hashlib.sha256(QUERY.encode()).hexdigest()])
+def test_historical_body_and_stored_source_fingerprint_disagree(stored_version):
+    model = LocalEmbeddingModel(backend="hash")
+    with MemoryStore(":memory:") as store:
+        node = store.create_node(level="concept", content=QUERY, embedding=model.embed(QUERY))
+        service = MemoryRecallService(store, embedder=model)
+
+        def read(query, *, repair=False):
+            return service.memory_recall(query, depth=0, repair_pending=repair)
+
+        assert read(QUERY)[0].vector_score == pytest.approx(1)
+        # Mutable pre-chunk sources could retain the digest of their initial text.
+        with store.transaction():
+            store.connection.execute("UPDATE nodes SET content=?, content_fingerprint=?", (NEW, stored_version))
+            store.connection.execute("UPDATE node_chunk_embeddings SET content_fingerprint=?", (stored_version,))
+        assert not read(QUERY)
+        lexical, = read(NEW)
+        assert lexical.vector_score == 0 and lexical.bm25_score > 0
+
+        # Pre-encoder windows need bounded repair even when their two stored
+        # digests agree. Empty source versions also require repair on their own.
+        if stored_version:
+            with store.transaction():
+                store.connection.execute("UPDATE node_chunk_embeddings SET encoder_id=NULL")
+        assert not read(QUERY, repair=True)
+        current, = read(NEW)
+        assert current.vector_score == pytest.approx(1)
+        assert store.node_chunks_are_current(node.id, encoder_id=model.encoder_id())
+
+
+def test_edit_after_chunk_selection_cannot_lend_a_score_to_the_new_body(tmp_path, monkeypatch):
+    model = LocalEmbeddingModel(backend="hash")
+    path = tmp_path / "edit.sqlite3"
+    with MemoryStore(path) as store, MemoryStore(path) as writer:
+        node = store.create_node(level="concept", content="telemetries", embedding=model.embed("telemetry"))
+        service = MemoryRecallService(store, embedder=model)
+        blocks = service._chunk_blocks
+
+        def edit_after_selection(*args):
+            selected = blocks(*args)
+            writer.update_node(node.id, content=NEW, embedding=model.embed(NEW))
+            return selected
+
+        monkeypatch.setattr(service, "_chunk_blocks", edit_after_selection)
+        assert not service.memory_recall("telemetry", depth=0)
