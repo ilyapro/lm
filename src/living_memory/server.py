@@ -69,7 +69,6 @@ from living_memory.resources import (
     memory_stats,
     memory_status as status_view,
     node_to_dict,
-    nodes_to_dict,
     project_concepts,
     recent_interactions,
 )
@@ -1573,24 +1572,26 @@ def _register_tools(
                         "results": [],
                     }
                 plan = resolve_scope(scope=normalized_scope, store=store)
-                if view == "full":
-                    found = store.get_nodes(requested_ids)
-                    results = nodes_to_dict(
-                        store, [found[requested] for requested in requested_ids if requested in found],
-                        plan,
+                # A separate client can commit a teach while this runtime holds its lock.
+                # Pin the rows, incident edges and correction scopes to one SQLite snapshot.
+                with store.transaction():
+                    found = (
+                        store.get_nodes(requested_ids) if view == "full"
+                        else store.get_node_knowledge(requested_ids, context_key=context_key)
                     )
-                else:
-                    found = store.get_node_knowledge(requested_ids, context_key=context_key)
                     validity = read_validity(store, found, plan)
-                    results = []
-                    for requested in requested_ids:
-                        if requested not in found:
-                            continue
-                        node = found[requested]
-                        knowledge = knowledge_node(node) | validity[requested]
+                results = []
+                for requested in requested_ids:
+                    if requested not in found:
+                        continue
+                    node = found[requested]
+                    if isinstance(node, Node):
+                        entry = node_to_dict(node)
+                    else:
+                        entry = knowledge_node(node)
                         if context_key is not None:
-                            knowledge["context"] = node["context"]
-                        results.append(knowledge)
+                            entry["context"] = node["context"]
+                    results.append(entry | validity[requested])
                 response: dict[str, Any] = {
                     "scope": normalized_scope,
                     "filters": {},
@@ -1682,16 +1683,19 @@ def _register_tools(
                     "count": 0,
                     "results": [],
                 }
-            nodes = store.list_nodes_by_context(
-                scope=normalized_scope,
-                context_filters=filters,
-                level=level,  # type: ignore[arg-type]
-            )
+            plan = ScopePlan(normalized_scope, (normalized_scope,))
+            with store.transaction():
+                nodes = store.list_nodes_by_context(
+                    scope=normalized_scope,
+                    context_filters=filters,
+                    level=level,  # type: ignore[arg-type]
+                )
+                validity = read_validity(store, (node.id for node in nodes), plan)
             return {
                 "scope": normalized_scope,
                 "filters": dict(filters),
                 "count": len(nodes),
-                "results": nodes_to_dict(store, nodes, ScopePlan(normalized_scope, (normalized_scope,))),
+                "results": [node_to_dict(node) | validity[node.id] for node in nodes],
             }
 
     @mcp.tool(description=_CONSOLIDATE_DESCRIPTION)
