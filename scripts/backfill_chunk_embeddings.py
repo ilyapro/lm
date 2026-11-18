@@ -36,8 +36,7 @@ Backup is mandatory
 ``--backup`` takes it through ``sqlite3.Connection.backup()``. That API is
 WAL-correct: it copies the committed database as one consistent snapshot while a
 server keeps writing. ``cp global.sqlite3 backup.sqlite3`` is **not** a valid
-backup here — the live database carries a ~159 MB WAL holding the newest
-transactions, and a copy without ``-wal`` silently loses them.
+backup here: the WAL can hold committed transactions absent from the main file.
 
 ``--dry-run`` needs no backup: it opens the database read-only
 (``mode=ro`` + ``PRAGMA query_only``), never constructs a ``MemoryStore`` (whose
@@ -176,7 +175,8 @@ class ChunkSelection:
         ready = f"""SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} c
             WHERE c.node_id = n.id GROUP BY c.node_id
             HAVING MIN(c.chunk_index) = 0 AND MAX(c.chunk_index) = COUNT(*) - 1
-               AND MIN(c.content_fingerprint IS n.content_fingerprint
+               AND n.content_fingerprint != ''
+               AND MIN(c.content_fingerprint = n.content_fingerprint
                        AND c.encoder_id IS ? AND c.dimensions = ?
                        AND typeof(c.embedding) = 'blob' AND length(c.embedding) = ?) = 1"""
         return cls(active, tuple(filters), f"{active} AND NOT EXISTS ({ready})",
@@ -187,11 +187,15 @@ class ChunkSelection:
 
 
 def encoder_width(encoder_id: str) -> int:
-    prefix, separator, suffix = encoder_id.rpartition(":")
-    if prefix and separator and suffix.isascii() and suffix.isdigit() and 0 < len(suffix) <= 9:
-        width = int(suffix)
-        if width > 0:
-            return width
+    prefix, _, suffix = encoder_id.rpartition(":")
+    if prefix and suffix.isascii() and suffix.isdigit():
+        try:
+            width = int(suffix)
+        except ValueError:
+            pass
+        else:
+            if 0 < width <= (2**63 - 1) // CHUNK_EMBEDDING_ITEMSIZE:
+                return width
     raise BackfillError(f"expected an encoder ID ending in a positive width: {encoder_id!r}")
 
 
@@ -230,8 +234,8 @@ def has_chunk_table(conn: sqlite3.Connection) -> bool:
     return row is not None
 
 
-def has_node_embedding_column(conn: sqlite3.Connection) -> bool:
-    return "embedding" in {
+def has_node_column(conn: sqlite3.Connection, column: str) -> bool:
+    return column in {
         str(row[1]) for row in conn.execute("PRAGMA table_info(nodes)").fetchall()
     }
 
@@ -577,7 +581,7 @@ def dry_run(
     try:
         conn.execute("BEGIN")
         selection = ChunkSelection.for_connection(conn, summary.encoder_id, scope, level)
-        summary.node_embedding_column_present = has_node_embedding_column(conn)
+        summary.node_embedding_column_present = has_node_column(conn, "embedding")
         summary.tokenizer = get_tokenizer().name
         if has_chunk_table(conn):
             summary.chunk_rows_total = int(
@@ -600,12 +604,18 @@ def dry_run(
         reporter = ProgressReporter(
             summary.pending_before, interval=progress_interval, enabled=not quiet
         )
-        for (content,) in conn.execute(
-            f"SELECT n.content FROM nodes n WHERE {selection.pending} ORDER BY n.id LIMIT ?",
+        # Store migration supplies a missing column or NULL fingerprint. An
+        # explicitly empty fingerprint survives migration and prevents a write.
+        missing = "n.content_fingerprint = ''" if has_node_column(conn, "content_fingerprint") else "0"
+        for content, missing_fingerprint in conn.execute(
+            f"SELECT n.content, {missing} FROM nodes n WHERE {selection.pending} ORDER BY n.id LIMIT ?",
             (*selection.params, limit or -1),
         ):
-            chunks = chunk_text(content)
             summary.nodes_processed += 1
+            if missing_fingerprint:
+                summary.nodes_skipped_no_fingerprint += 1
+                continue
+            chunks = chunk_text(content)
             if not chunks:
                 summary.nodes_skipped_no_chunks += 1
                 continue
@@ -727,7 +737,7 @@ def run_backfill(
     summary.embedding_dimensions = embedder_info.dimensions
     summary.tokenizer = get_tokenizer().name
     summary.pending_before = selection.count(conn)
-    summary.node_embedding_column_present = has_node_embedding_column(conn)
+    summary.node_embedding_column_present = has_node_column(conn, "embedding")
 
     if not quiet:
         print(
@@ -741,7 +751,7 @@ def run_backfill(
         summary.pending_before, interval=progress_interval, enabled=not quiet
     )
     attempts: dict[str, int] = {}
-    after_id = ""
+    after_id: str | None = None
     retry_pass = False
     skipped: set[str] = set()
 
@@ -750,16 +760,18 @@ def run_backfill(
             if limit and summary.nodes_processed >= limit:
                 break
             size = min(batch_nodes, limit - summary.nodes_processed) if limit else batch_nodes
+            cursor_clause = "n.id > ? AND " if after_id is not None else ""
+            params = (after_id, *selection.params) if after_id is not None else selection.params
             with store.transaction():
                 page = conn.execute(
                     f"SELECT n.id, n.content, n.content_fingerprint, n.scope, n.level "
-                    f"FROM nodes n WHERE n.id > ? AND {selection.pending} ORDER BY n.id LIMIT ?",
-                    (after_id, *selection.params, size),
+                    f"FROM nodes n WHERE {cursor_clause}{selection.pending} ORDER BY n.id LIMIT ?",
+                    (*params, size),
                 ).fetchall()
                 generations = {row["id"]: _chunk_ids(conn, row["id"]) for row in page}
             if not page:
                 if retry_pass:
-                    after_id, retry_pass = "", False
+                    after_id, retry_pass = None, False
                     continue
                 break
             after_id = page[-1]["id"]
@@ -861,7 +873,7 @@ def run_backfill(
                 f"SELECT COALESCE(SUM(LENGTH(embedding)), 0) FROM {CHUNK_EMBEDDING_TABLE}"
             ).fetchone()[0]
         )
-        summary.node_embedding_column_present = has_node_embedding_column(conn)
+        summary.node_embedding_column_present = has_node_column(conn, "embedding")
         if not quiet:
             reporter.update(
                 summary.nodes_processed, summary.chunks_written, force=True
@@ -887,7 +899,7 @@ def verify_report(
     try:
         conn.execute("BEGIN")
         chunk_table = has_chunk_table(conn)
-        embedding_column = has_node_embedding_column(conn)
+        embedding_column = has_node_column(conn, "embedding")
         selection = ChunkSelection.for_connection(conn, encoder_id, scope, level)
         active = conn.execute(
             f"SELECT COUNT(*) FROM nodes n WHERE {selection.active}", selection.filters
@@ -1135,8 +1147,10 @@ def cmd_verify(args: argparse.Namespace) -> int:
     db = args.db.expanduser()
     if not db.is_file():
         raise BackfillError(f"--db does not exist: {db}")
-    report = verify_report(db, scope=args.scope, level=args.level,
-                           encoder_id=args.encoder_id or LocalEmbeddingModel(model_name=args.model).encoder_id())
+    report = verify_report(
+        db, scope=args.scope, level=args.level,
+        encoder_id=args.encoder_id or LocalEmbeddingModel(model_name=args.model).encoder_id(),
+    )
     width = max(len(key) for key in report)
     for key, value in report.items():
         if key == "inconsistent_node_ids" and not value:
@@ -1167,7 +1181,10 @@ def cmd_drop_column(args: argparse.Namespace) -> int:
     )
     print(f"backup ok: {backup.path} ({backup.bytes} bytes)", flush=True)
 
-    report = verify_report(db, scope=None, level=None, before_drop=True)
+    report = verify_report(
+        db, scope=None, level=None, before_drop=True,
+        encoder_id=args.encoder_id or LocalEmbeddingModel(model_name=args.model).encoder_id(),
+    )
     print(
         f"coverage: {report['covered_nodes']}/{report['active_chunkable_nodes']} nodes "
         f"chunked ({report['pending_nodes']} pending, "
@@ -1259,10 +1276,13 @@ def _add_backup_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_filter_arguments(parser: argparse.ArgumentParser) -> None:
+def _add_encoder_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model", default=DEFAULT_EMBEDDING_MODEL, help="Embedding model to resolve.")
     parser.add_argument("--encoder-id", help="Target producer ID, e.g. st:MODEL:384. "
                         "Defaults to the resolved encoder. Writes require an exact match.")
+
+
+def _add_filter_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--scope", default=None, help="Only nodes in this scope.")
     parser.add_argument(
         "--level",
@@ -1290,6 +1310,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_db_argument(run)
     _add_backup_arguments(run)
+    _add_encoder_arguments(run)
     _add_filter_arguments(run)
     run.add_argument(
         "--dry-run",
@@ -1357,6 +1378,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Read-only report for active sources in the selected encoder space.",
     )
     _add_db_argument(verify)
+    _add_encoder_arguments(verify)
     _add_filter_arguments(verify)
     verify.add_argument("--json", type=Path, default=None, help="Write the report here.")
     verify.set_defaults(func=cmd_verify)
@@ -1369,6 +1391,7 @@ def build_parser() -> argparse.ArgumentParser:
         "still reads this column. Never invoked by the backfill.",
     )
     _add_db_argument(drop)
+    _add_encoder_arguments(drop)
     _add_backup_arguments(drop)
     drop.add_argument(
         "--yes", action="store_true", help="Required acknowledgement of the above."
