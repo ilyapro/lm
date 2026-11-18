@@ -23,6 +23,7 @@ def local_policy(monkeypatch):
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     monkeypatch.setenv("LIVING_MEMORY_CHUNK_TOKENIZER", "heuristic")
     monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
+    monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "0")
     monkeypatch.setenv("LM_RECALL_MAP", "0")
 
 
@@ -32,7 +33,7 @@ def test_recall_across_source_edit(warm, late_windows):
     model = LocalEmbeddingModel(backend="hash")
     server = create_mcp_server(":memory:")
     store = server.memory_store
-    target = store.create_node(level="concept", content=QUERY, embedding=model.embed(QUERY))
+    target = store.create_node(node_id="target", level="concept", content=QUERY, embedding=model.embed(QUERY))
     old_window, = store.list_node_chunks(target.id)
 
     async def scenario():
@@ -48,7 +49,7 @@ def test_recall_across_source_edit(warm, late_windows):
                 assert before["vector_score"] == pytest.approx(1)
             for i in range(40):
                 store.create_node(level="trace", content=f"quiet river {i}",
-                                  timestamp="2000-01-01T00:00:00Z")
+                                  timestamp=target.timestamp)
             store.update_node(target.id, content=NEW)
             assert not store.list_node_chunks(target.id)
             if late_windows:
@@ -83,11 +84,9 @@ def test_fingerprint_only_transitions_on_live_reader(tmp_path, side, old_format)
         with writer.transaction():
             writer.connection.execute("UPDATE node_chunk_embeddings SET char_start=NULL, char_end=NULL")
             if old_format:
-                writer.connection.executescript("""
-                    DROP TRIGGER chunk_corpus_update;
-                    DROP TRIGGER chunk_corpus_membership;
-                    UPDATE metadata SET value='2' WHERE key='chunk_scope_revision_format';
-                """)
+                writer.connection.execute("DROP TRIGGER chunk_corpus_update")
+                writer.connection.execute("DROP TRIGGER chunk_corpus_membership")
+                writer.connection.execute("UPDATE metadata SET value='2' WHERE key='chunk_scope_revision_format'")
         with ReadOnlyAuditStore.open_path(path) as reader:
             service = MemoryRecallService(reader, embedder=model)
 
