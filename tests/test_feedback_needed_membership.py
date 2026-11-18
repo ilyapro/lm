@@ -63,7 +63,7 @@ def test_repeated_explicit_marks_claim_newest_delivery_once(runtime):
     assert credit["source_id"] == f"mark:{marks[0]['id']}"
 
 
-def test_needed_malformed_delivery_refuses_without_credit_or_consumption(runtime):
+def test_needed_malformed_delivery_refuses_required_write(runtime):
     store, node, _, call = runtime
     event = call()["recall_event_id"]
     original = store.connection.execute("SELECT results FROM recall_events WHERE id = ?",
@@ -71,7 +71,7 @@ def test_needed_malformed_delivery_refuses_without_credit_or_consumption(runtime
     replace_results(store, event, "{")
     before = snapshot(store)
     with pytest.raises((sqlite3.DatabaseError, ToolError), match="malformed JSON"):
-        call(used=[node.id])
+        call("memory_remember", content=CONTENT, context=CONTEXT, used=[node.id])
     assert snapshot(store) == before
     replace_results(store, event, original)
     assert call(used=[node.id])["feedback_marks"]["accepted"] == 1

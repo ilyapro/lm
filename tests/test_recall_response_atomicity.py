@@ -316,3 +316,23 @@ def test_optional_mark_read_failure_preserves_recall(runtime, monkeypatch, polic
     recovered = call(used=[node.id])
     assert recovered["feedback_marks"]["accepted"] == 1
     assert store.credited_node_ids(second["recall_event_id"]) == ({node.id} if policy == "credit" else set())
+
+
+def test_failed_mark_read_does_not_mask_required_event_write(runtime, monkeypatch):
+    store, node, _, call = runtime
+    call()
+    before = snapshot(store)
+    denied = []
+
+    def authorize(action, table, column, *_):
+        if (action, table, column) == (sqlite3.SQLITE_READ, "recall_events", "query"):
+            denied.append(column)
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    with fault(store, monkeypatch, "event"):
+        store.connection.set_authorizer(authorize)
+        with pytest.raises((sqlite3.DatabaseError, ToolError), match="required consumption unavailable"):
+            call(used=[node.id])
+    assert denied and not store.connection.in_transaction
+    assert snapshot(store) == before
