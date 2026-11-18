@@ -1975,8 +1975,13 @@ class MemoryStore:
         for field, value in context_filters.items():
             if field not in _CONTEXT_LOOKUP_FIELDS:
                 raise ValueError(f"unsupported context lookup field: {field}")
-            clauses.append(f"JSON_EXTRACT(context, '$.{field}') = ?")
-            params.append(str(value))
+            # Compare decoded member names directly: a JSON path can alias a
+            # NUL-suffixed key. Only JSON strings can satisfy a string filter.
+            clauses.append(
+                "EXISTS (SELECT 1 FROM json_each(nodes.context) "
+                "WHERE key = ? AND type = 'text' AND atom = ?)"
+            )
+            params.extend((field, value))
 
         params.append(int(limit))
         rows = self._conn.execute(

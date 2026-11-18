@@ -829,7 +829,7 @@ Input:
 {
   "scope": "project:alpha",
   "level": "trace | concept | schema",
-  "lesson_kind": "optional context.type filter",
+  "lesson_kind": "optional context.lesson_kind filter",
   "procedure_id": "optional procedural pattern id",
   "task_pattern": "optional task pattern",
   "node_id": "optional node id",
@@ -839,8 +839,10 @@ Input:
 }
 ```
 
-Returns active nodes whose context fields match exactly, without ranked
-recall, and does not record a recall event.
+Within the requested scope and level, every supplied filter must match a
+top-level context field by its complete name and JSON string value. The tool
+returns up to 1000 active matches, newest timestamp first, then descending id
+for ties. A context-filter lookup does not record a recall event.
 
 `node_id`/`node_ids` switch the tool to direct id fetch — the re-fetch path
 that recall stub and snippet `content_ref`s advertise. By default, id fetches
