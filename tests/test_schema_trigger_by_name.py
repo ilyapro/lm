@@ -218,7 +218,7 @@ def test_ranked_trigger_read_observes_selection_boundary(tmp_path, monkeypatch, 
         for node_id in ids:
             store.create_node(
                 node_id=node_id, level="trace" if node_id == "promoted" else "schema",
-                content=query, context={"scope": SCOPE, "trigger": query},
+                content=f"{query} for {node_id}", context={"scope": SCOPE, "trigger": query},
             )
         service = MemoryRecallService(store)
         rank = service.rank_candidates
