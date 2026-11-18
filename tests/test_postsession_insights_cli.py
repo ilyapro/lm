@@ -173,7 +173,7 @@ def test_report_preserves_incomplete_mcp_read_and_usable_exact_match(cli, comple
     )
     assert report["dedup"] == {
         "index_configured": True, "unique": 0, "exact": int(complete),
-        "partial": int(complete), "unavailable": int(not complete), "within_run": 0,
+        "existing_knowledge": 0, "partial": int(complete), "unavailable": int(not complete), "within_run": 0,
     }
     assert report["extraction"]["proposed"] == int(not complete)
 

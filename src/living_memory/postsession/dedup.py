@@ -7,11 +7,13 @@ for the ordinary judge and write path.
 
 from __future__ import annotations
 
+import hashlib
 import threading
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+from .judge import canonical_json
 from .mining import hard_identifiers
 
 SourceIdentity = tuple[str, str]
@@ -22,7 +24,9 @@ def extraction_identity(context: Mapping[str, Any]) -> SourceIdentity | None:
 
     transcript = context.get("source_transcript_sha256") or context.get("transcript_sha256")
     span = context.get("source_span")
-    return (str(transcript), str(span)) if transcript and span else None
+    if isinstance(transcript, str) and transcript and isinstance(span, str) and span:
+        return transcript, span
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,7 +83,7 @@ DEFAULT_DEDUP = DedupConfig()
 
 @dataclass(frozen=True, slots=True)
 class DedupVerdict:
-    """Whether an exact repeat was found."""
+    """Whether existing knowledge or a prior proposal suppresses this remember."""
 
     duplicate: bool
     channel: str = ""
@@ -98,6 +102,8 @@ class DedupVerdict:
 
         if not self.duplicate:
             return ""
+        if self.channel == "existing_knowledge":
+            return self.channel
         return "duplicate_within_run" if self.channel == "within_run" else (
             "duplicate_of_existing_node"
         )
@@ -112,6 +118,46 @@ class DedupVerdict:
             "read_status": self.read_status,
             "errors": list(self.errors),
         }
+
+
+def remember_fingerprint(content: str, scope: str, span: str | None = None) -> str:
+    identity = {"kind": "remember", "content": content, "scope": scope}
+    if span is not None:
+        identity["source_span"] = span
+    return hashlib.sha256(canonical_json(identity, indent=None).encode("utf-8")).hexdigest()
+
+
+def has_remember_attribution(node: NodeSnapshot, span: str) -> bool:
+    if node.context.get("corrected_node_id"):
+        return False
+    fingerprint = node.context.get("extraction_fingerprint")
+    return not fingerprint or fingerprint in (
+        remember_fingerprint(node.content, node.scope or "", span),
+        remember_fingerprint(node.content, node.scope or ""),
+    )
+
+
+def match_remember(
+    observation: CandidateObservation, fact: str, scope: str, source: SourceIdentity | None,
+) -> DedupVerdict:
+    """Prefer an operation receipt over otherwise identical existing knowledge."""
+    details = {
+        "checked": len(observation.nodes), "read_status": observation.status,
+        "errors": observation.errors,
+    }
+    existing = None
+    for node in observation.nodes:
+        if not fact or node.content != fact or node.scope != scope:
+            continue
+        if not source or not all(source) or node.source_identity != source:
+            continue
+        if has_remember_attribution(node, source[1]):
+            return DedupVerdict(True, "exact", node_id=node.node_id, **details)
+        if existing is None:
+            existing = node
+    if existing:
+        return DedupVerdict(True, "existing_knowledge", node_id=existing.node_id, **details)
+    return DedupVerdict(False, **details)
 
 
 # --------------------------------------------------------------------------
@@ -173,6 +219,7 @@ class StoreMemoryIndex:
                 scope=getattr(node, "scope", None),
                 created_at=getattr(node, "created_at", None),
                 source_identity=extraction_identity(node.context),
+                context=node.context,
             )
             for node, _score in rows
         ))
@@ -217,15 +264,7 @@ class Deduper:
             observation = self.index.candidates(
                 fact, scope=scope, limit=self.config.candidate_limit,
             )
-        details = {
-            "checked": len(observation.nodes), "read_status": observation.status,
-            "errors": observation.errors,
-        }
-        for node in observation.nodes:
-            if (fact and node.content == fact and node.scope == scope
-                    and source_identity is not None and node.source_identity == source_identity):
-                return DedupVerdict(True, "exact", node_id=node.node_id, **details)
-        return DedupVerdict(False, **details)
+        return match_remember(observation, fact, scope, source_identity)
 
 
 def dedup_breakdown(verdicts: Iterable[DedupVerdict]) -> dict[str, Any]:
@@ -234,7 +273,7 @@ def dedup_breakdown(verdicts: Iterable[DedupVerdict]) -> dict[str, Any]:
     ``unique`` means no exact match in a successful bounded read, not absence.
     """
 
-    counts = {"unique": 0, "exact": 0, "within_run": 0, "unavailable": 0, "partial": 0}
+    counts = {"unique": 0, "exact": 0, "existing_knowledge": 0, "within_run": 0, "unavailable": 0, "partial": 0}
     for verdict in verdicts:
         if not verdict.available:
             counts[verdict.read_status] += 1

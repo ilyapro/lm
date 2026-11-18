@@ -94,6 +94,7 @@ REJECTION_CODES: tuple[str, ...] = (
     "judge_invalid",
     "judge_unavailable",
     "duplicate_of_existing_node",
+    "existing_knowledge",
     "duplicate_within_run",
 )
 

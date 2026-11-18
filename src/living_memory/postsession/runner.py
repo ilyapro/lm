@@ -75,7 +75,7 @@ from .corrections import (
 )
 from .dedup import (
     DEFAULT_DEDUP, CandidateObservation, Deduper, NodeSnapshot, NullMemoryIndex,
-    extraction_identity,
+    extraction_identity, has_remember_attribution, match_remember, remember_fingerprint,
 )
 from .evidence import proposed_attestations
 from .gate import DEFAULT_GATE, Gate
@@ -461,13 +461,6 @@ def evaluate_gate(
 # --------------------------------------------------------------------------
 
 
-def _remember_fingerprint(content: str, scope: str, span: str | None = None) -> str:
-    identity = {"kind": "remember", "content": content, "scope": scope}
-    if span is not None:
-        identity["source_span"] = span
-    return hashlib.sha256(canonical_json(identity, indent=None).encode("utf-8")).hexdigest()
-
-
 def op_fingerprint(op: ProposedOp, *, legacy: bool = False) -> str:
     """A stable identity for one op, independent of run-time context noise.
 
@@ -483,7 +476,7 @@ def op_fingerprint(op: ProposedOp, *, legacy: bool = False) -> str:
     payload = op.payload
     if op.kind == "remember":
         context = payload.get("context") or {}
-        return _remember_fingerprint(
+        return remember_fingerprint(
             str(payload.get("content") or ""), str(context.get("scope") or ""),
             None if legacy else op.provenance.source_span,
         )
@@ -544,12 +537,10 @@ def _entry_source_span(entry: Mapping[str, Any], receipt: _Receipt | None) -> st
     source = extraction_identity(node.context)
     if (node.node_id != entry.get("result_id") or not source
             or source[0] != entry["transcript_sha256"]
-            or node.context.get("corrected_node_id")):
+            or not has_remember_attribution(node, source[1])):
         return ""
-    legacy = _remember_fingerprint(node.content, str(node.scope or ""))
-    current = _remember_fingerprint(node.content, str(node.scope or ""), source[1])
-    fingerprint = node.context.get("extraction_fingerprint")
-    if entry["fingerprint"] != legacy or (fingerprint and fingerprint not in {legacy, current}):
+    legacy = remember_fingerprint(node.content, str(node.scope or ""))
+    if entry["fingerprint"] != legacy:
         return ""
     return source[1]
 
@@ -1030,7 +1021,8 @@ class ExtractionRunner:
                 nodes = self.client.lookup_nodes([node_id], view="full").get("results") or []
                 snapshots = tuple(
                     NodeSnapshot(node_id=n["id"], content=n.get("content", ""),
-                                 scope=n.get("scope"), context=n.get("context") or {})
+                                 scope=n.get("scope"), context=n.get("context") or {},
+                                 source_identity=extraction_identity(n.get("context") or {}))
                     for n in nodes if n.get("id") == node_id
                 )
                 observation = CandidateObservation(
@@ -1041,6 +1033,13 @@ class ExtractionRunner:
         except ClientError as exc:
             return "", CandidateObservation(errors=(str(exc)[:200],)).to_dict()
         detail = observation.to_dict()
+        if op.kind == "remember":
+            source = (op.provenance.transcript_sha256, op.provenance.source_span)
+            verdict = match_remember(observation, fact, scope, source)
+            if verdict.duplicate:
+                reason = "lm_prior_extraction" if verdict.channel == "exact" else verdict.channel
+                return reason, {"node_id": verdict.node_id, **detail}
+            return "", detail
         for snapshot in observation.nodes:
             if snapshot.scope != scope or snapshot.content != fact:
                 continue
@@ -1049,22 +1048,14 @@ class ExtractionRunner:
                 context.get("source_transcript_sha256") == op.provenance.transcript_sha256
                 or context.get("transcript_sha256") == op.provenance.transcript_sha256
             )
-            same_span = context.get("source_span") == op.provenance.source_span
-            same_correction = (
-                op.kind == "teach"
-                and context.get("corrected_node_id") == payload.get("trace_id")
-            )
-            same_operation = same_correction if op.kind == "teach" else (
-                same_span and not context.get("corrected_node_id")
-            )
             fingerprint = context.get("extraction_fingerprint")
             if fingerprint and fingerprint not in {op_fingerprint(op), op_fingerprint(op, legacy=True)}:
                 continue
-            if op.kind == "teach" and snapshot.node_id not in (
+            if snapshot.node_id not in (
                 results[0].get("superseded_by") or []
             ):
                 continue
-            if same_transcript and same_operation:
+            if same_transcript and context.get("corrected_node_id") == payload.get("trace_id"):
                 return "lm_prior_extraction", {
                     "node_id": snapshot.node_id,
                     **detail,
@@ -1154,7 +1145,7 @@ class ExtractionRunner:
             return False  # Receiver replay uses the exact saved event/evidence.
         reason, detail = self._lm_duplicate(op, node_id=node_id)
         decision.candidate_read = detail
-        if reason:
+        if reason == "lm_prior_extraction":
             decision.status, decision.reason = "reconciled", reason
             decision.node_id = detail["node_id"]
             if persist:
@@ -1337,7 +1328,7 @@ class ExtractionRunner:
                     decision.reason = reason
                     decision.detail = canonical_json(detail, indent=None)
                     decision.node_id = detail.get("node_id", "")
-                    if not self.config.dry_run:
+                    if reason == "lm_prior_extraction" and not self.config.dry_run:
                         try:
                             self.ledger.record(
                                 sha, decision.fingerprint, kind=op.kind,

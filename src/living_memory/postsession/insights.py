@@ -22,8 +22,8 @@ The pipeline, and why each stage cannot be merged into its neighbour
 3. :mod:`.gate` -- deterministic, and it can veto the judge. A model asked
    "is this an insight?" says yes far too often, and says it in execution-
    journal prose.
-4. :mod:`.dedup` -- exact repeats of the same recorded extraction, preserving
-   content, scope and source identity.
+4. :mod:`.dedup` -- suppress knowledge already recorded for this source and
+   distinguish a repeated remember from a differently attributed node.
 
 Attribution, and the defect it has to avoid
 -------------------------------------------
