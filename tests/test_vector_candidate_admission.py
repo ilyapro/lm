@@ -1,6 +1,6 @@
 """Vector discovery admits current source identities before decoding bodies."""
 
-from dataclasses import replace
+from dataclasses import fields, replace
 from math import sqrt
 import sqlite3
 import sys
@@ -13,6 +13,7 @@ from living_memory.embeddings import cosine_similarity
 from living_memory.retrieval import MemoryRecallService, _Candidate
 from living_memory.scope import ScopePlan, resolve_scope
 from living_memory.storage import MemoryStore
+from test_chunk_scope_reuse import resolved_scores
 from test_retrieval_chunk_maxpool import put_chunks
 
 
@@ -97,10 +98,10 @@ def measure_vector_state(call):
 
     Cached blocks, numeric arrays, input bodies/query and referenced strings
     are outside this measurement. Tuples, floats and order integers are counted
-    once by identity, even when both the lexical list and heap reference them.
+    once by identity, including match objects shared by the lexical list and heap.
     """
     codes = {
-        retrieval._pooled_chunk_similarities.__code__, MemoryRecallService._collect_vector.__code__,
+        retrieval._scalar_chunk_scores.__code__, retrieval._pooled_chunk_similarities.__code__, MemoryRecallService._collect_vector.__code__,
         MemoryRecallService._vector_winners.__code__, MemoryRecallService._admit_vector.__code__,
     }
     peak = {"container_entries": 0, "records": 0, "bytes": 0, "observations": 0}
@@ -115,6 +116,14 @@ def measure_vector_state(call):
 
         def visit(value):
             nonlocal entries, records, size
+            if isinstance(value, retrieval._VectorMatch) and id(value) not in seen:
+                seen.add(id(value))
+                size += sys.getsizeof(value)
+                records += 1
+                entries += len(fields(value))
+                for field in fields(value):
+                    visit(getattr(value, field.name))
+                return
             if type(value) not in (list, tuple, dict, set, float, int) or id(value) in seen:
                 return
             seen.add(id(value))
@@ -381,7 +390,7 @@ def test_streamed_pool_matches_full_arithmetic_and_first_winners(tmp_path, monke
             for query in (VECTOR, [0.3, 0.9, 0.2], [0.6, 0.8], [0.0, 0.0, 0.0]):
                 blocks = service._chunk_blocks(plan, len(query), FIXTURE_SPACE)
                 expected = full_pool_oracle(blocks, query)
-                actual = [row for block in blocks for row in retrieval._pooled_chunk_similarities(
+                actual = [row for block in blocks for row in resolved_scores(
                     block, query, retrieval._as_query_array(query),
                 )]
                 assert actual == expected
@@ -412,3 +421,33 @@ def test_vector_scoring_error_after_discovery_cutoff_propagates(tmp_path, monkey
         with pytest.raises(ArithmeticError, match="required scoring failed"):
             MemoryRecallService(store)._collect_vector(VECTOR, ScopePlan(SCOPE, (SCOPE,)), {}, max_results=2, encoder_id=FIXTURE_SPACE)
         assert calls == 51
+
+
+@pytest.mark.parametrize("numpy", [True, False], ids=["numpy", "scalar"])
+@pytest.mark.parametrize("rising", [False, True], ids=["tied", "rising"])
+def test_only_block_survivors_resolve_chunk_ids(tmp_path, monkeypatch, numpy, rising):
+    if not numpy:
+        monkeypatch.setattr(retrieval, "_np", None)
+    with MemoryStore(tmp_path / "chunks.sqlite3") as store:
+        with store.transaction():
+            for number in range(150):
+                score = 0.7 + 0.001 * number if rising else 1.0
+                vector = [score, sqrt(1 - score * score), 0.0]
+                node = put(store, f"n{number:03}")
+                put_chunks(store, node.id, [vector, vector])
+        service = MemoryRecallService(store)
+        plan = ScopePlan(SCOPE, (SCOPE,))
+        block, = service._chunk_blocks(plan, 3, FIXTURE_SPACE)
+        reads = []
+
+        class Counted(tuple):
+            def __getitem__(self, row):
+                reads.append(row)
+                return super().__getitem__(row)
+
+        counted = replace(block, chunk_ids=Counted(block.chunk_ids))
+        monkeypatch.setattr(service, "_chunk_blocks", lambda *_: (counted,))
+        heap, lexical = service._vector_winners(VECTOR, plan, FIXTURE_SPACE, 50, {"n000", "n149"})
+        assert len(heap) == 50 and len(lexical) == 2
+        assert len(reads) == len(set(reads)) == 51
+        assert all(row % 2 == 0 for row in reads)

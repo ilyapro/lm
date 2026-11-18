@@ -444,7 +444,14 @@ class _PromptDiscovery:
     by_limit: dict[int, dict[str, _Candidate]]
 
 
-_VectorMatch = tuple[float, int, str, str | None, str]
+@dataclass(order=True, slots=True)
+class _VectorMatch:
+    score: float
+    order: int
+    node_id: str = field(compare=False)
+    version: str = field(compare=False)
+    position: int = field(compare=False)
+    chunk_id: str | None = field(default=None, compare=False)
 
 
 def _vector_keep_n(plan: ScopePlan, max_results: int) -> int:
@@ -1288,20 +1295,33 @@ class MemoryRecallService:
         lexical: list[_VectorMatch] = []
         order = 0
         for block in self._chunk_blocks(plan, len(query_embedding), encoder_id):
-            scores = _pooled_chunk_similarities(block, query_embedding, q_arr)
-            for index, (similarity, node_id, chunk_id) in enumerate(scores):
+            scores, chunk_id = _pooled_chunk_similarities(block, query_embedding, q_arr)
+            for index, (similarity, position) in enumerate(scores):
                 if not similarity >= VECTOR_MATCH_THRESHOLD:
                     continue
-                # The worst retained discovery ranks first in the heap; an
-                # earlier scan position wins a tie, including across scopes.
-                item = (similarity, -order, node_id, chunk_id, block.source_versions[index])
                 order += 1
-                if node_id in lexical_ids:
+                node_id = block.node_ids[index]
+                lexical_hit = node_id in lexical_ids
+                # Later ties cannot displace the earliest matching node.
+                discover = len(discovery) < keep_n or similarity > discovery[0].score
+                if not (discover or lexical_hit):
+                    continue
+                item = _VectorMatch(similarity, 1 - order, node_id, block.source_versions[index], position)
+                if lexical_hit:
+                    item.chunk_id = chunk_id(position)
                     lexical.append(item)
-                if len(discovery) < keep_n:
-                    heappush(discovery, item)
-                elif item > discovery[0]:
-                    heapreplace(discovery, item)
+                if discover:
+                    if len(discovery) < keep_n:
+                        heappush(discovery, item)
+                    else:
+                        heapreplace(discovery, item)
+
+            # Resolve surviving discoveries while this block's row scores are
+            # available. Lexical hits already carry their winning chunk.
+            for item in discovery:
+                if item.chunk_id is None:
+                    item.chunk_id = chunk_id(item.position)
+            del scores, chunk_id
 
         return discovery, lexical
 
@@ -1311,29 +1331,30 @@ class MemoryRecallService:
     ) -> None:
         # Keep vector evidence for this selector's lexical tail, including
         # winners below its discovery cutoff, before current-source admission.
-        kept = [item for item in discovery if item[2] not in candidates]
-        kept.extend(item for item in lexical if item[2] in candidates)
+        kept = [item for item in discovery if item.node_id not in candidates]
+        kept.extend(item for item in lexical if item.node_id in candidates)
         kept.sort(reverse=True)
         # One query for the whole kept set rather than one per node. Max-pool
         # puts more nodes over VECTOR_MATCH_THRESHOLD than a single vector did
         # -- a node now clears it if *any* window does -- so this list runs
         # closer to its `keep_n` ceiling than it used to, and the per-node
         # round trip is the part of it that is pure overhead.
-        missing = [item[2] for item in kept if item[2] not in candidates]
+        missing = [item.node_id for item in kept if item.node_id not in candidates]
         fetched = self.store.get_recall_nodes(missing, plan) if missing else {}
-        for similarity, _order, node_id, chunk_id, version in kept:
+        for item in kept:
+            node_id = item.node_id
             existing = candidates.get(node_id)
             node = existing.node if existing is not None else fetched.get(node_id)
             # Hydration can span a concurrent edit. Historical source rows can
             # also retain a fingerprint predating their text. Check only the
             # bounded winners, using the version from the scored block.
-            if node is None or _content_fingerprint(node.content) != version:
+            if node is None or _content_fingerprint(node.content) != item.version:
                 continue
             if existing is None:
                 existing = candidates[node_id] = _Candidate(node=node)
-            if similarity > existing.vector_score:
-                existing.vector_score = similarity
-                existing.chunk_id = chunk_id
+            if item.score > existing.vector_score:
+                existing.vector_score = item.score
+                existing.chunk_id = item.chunk_id
 
     # ------------------------------------------------------------------
     # Chunk corpus cache
@@ -2669,41 +2690,34 @@ def _pooled_chunk_similarities(
     block: _ChunkBlock,
     query_embedding: Sequence[float],
     q_arr: Any,
-) -> Iterator[tuple[float, str, str | None]]:
-    """Stream pooled scores and winning chunk identities from one width block.
-
-    Negative cosines clip to 0 before pooling, as the single-vector path did;
-    clipping and ``max`` commute, so the order costs nothing either way. The
-    length-bias correction is then subtracted, and the result clipped again --
-    a node's score is a cosine, and cosines do not go below zero here.
-    Numeric pooling arrays retain the complete block's arithmetic; Python
-    score/winner records are yielded individually for bounded selection.
-    """
-
+) -> tuple[Iterable[tuple[float, int]], Callable[[int], str | None]]:
+    """Return pooled scores with positions that resolve in this block."""
     if _np is not None and isinstance(block.rows, _np.ndarray):
         if q_arr is None:
-            # A query with no direction has no cosine to anything.
-            return
+            return (), block.chunk_ids.__getitem__
         rows = block.rows / block.norms[:, None] if block.needs_normalization else block.rows
         sims = rows @ q_arr
         # `starts` is the run boundary of each node, so one reduceat pools
         # every node at once -- no Python loop over the corpus's 60k chunk rows.
         maxima = _np.maximum.reduceat(sims, block.starts)
         pooled = _np.clip(maxima, 0.0, None)
-        counts = _np.diff(_np.append(block.starts, block.row_count))
-        winners = _np.minimum.reduceat(
-            _np.where(sims == _np.repeat(maxima, counts), _np.arange(block.row_count), block.row_count),
-            block.starts,
-        )
         if LENGTH_BIAS_LOG2_COEFFICIENT:
             pooled -= LENGTH_BIAS_LOG2_COEFFICIENT * block.log2_chunk_counts
             _np.clip(pooled, 0.0, None, out=pooled)
-        for score, node_id, row in zip(pooled, block.node_ids, winners, strict=True):
-            chunk_id = block.chunk_ids[int(row)] if row < block.row_count else None
-            yield float(score), node_id, chunk_id
-        return
 
-    for index, node_id in enumerate(block.node_ids):
+        def chunk_id(index: int) -> str | None:
+            start = int(block.starts[index])
+            end = int(block.starts[index + 1]) if index + 1 < len(block.starts) else block.row_count
+            row = start if end == start + 1 else start + int(sims[start:end].argmax())
+            return None if sims[row] != sims[row] else block.chunk_ids[row]
+
+        return zip(map(float, pooled), range(len(pooled))), chunk_id
+
+    return _scalar_chunk_scores(block, query_embedding), block.chunk_ids.__getitem__
+
+
+def _scalar_chunk_scores(block: _ChunkBlock, query_embedding: Sequence[float]) -> Iterator[tuple[float, int]]:
+    for index in range(len(block.node_ids)):
         best = 0.0
         winner = block.starts[index]
         end = block.starts[index + 1] if index + 1 < len(block.starts) else block.row_count
@@ -2712,4 +2726,4 @@ def _pooled_chunk_similarities(
             if similarity > best:
                 best, winner = similarity, position
         penalty = LENGTH_BIAS_LOG2_COEFFICIENT * block.log2_chunk_counts[index]
-        yield max(0.0, best - penalty), node_id, block.chunk_ids[winner]
+        yield max(0.0, best - penalty), winner

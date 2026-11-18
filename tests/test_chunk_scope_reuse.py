@@ -14,6 +14,13 @@ from living_memory.storage import MemoryStore, pack_chunk_embedding
 from test_retrieval_chunk_maxpool import put_chunks
 
 
+def resolved_scores(block, query, query_array):
+    scores, chunk_id = retrieval._pooled_chunk_similarities(block, query, query_array)
+    return [(score, node_id, chunk_id(position))
+            for node_id, (score, position) in zip(block.node_ids, scores)]
+
+
+
 class FixedEmbedder:
     def embed(self, text):
         return fixture_vector([1.0, 0.0, 0.0])
@@ -324,9 +331,7 @@ def test_partition_gather_preserves_order_width_and_normalization(tmp_path, monk
                        if block.dimension == len(query)]
             assert len(gathered) == len(scanned) == 1
             query_array = retrieval._as_query_array(query)
-            assert list(retrieval._pooled_chunk_similarities(gathered[0], query, query_array)) == list(
-                retrieval._pooled_chunk_similarities(scanned[0], query, query_array)
-            )
+            assert resolved_scores(gathered[0], query, query_array) == resolved_scores(scanned[0], query, query_array)
         assert recall(warm) == recall(service(store))
 
 
@@ -392,6 +397,6 @@ def test_nonfinite_norm_preserves_the_complete_blocks_normalization_rule(tmp_pat
         assert not gathered.needs_normalization and not scanned.needs_normalization
         query = [1.0, 0.0, 0.0]
         q_arr = retrieval._as_query_array(query)
-        actual = dict((node_id, score) for score, node_id, _chunk_id in retrieval._pooled_chunk_similarities(gathered, query, q_arr))
-        expected = dict((node_id, score) for score, node_id, _chunk_id in retrieval._pooled_chunk_similarities(scanned, query, q_arr))
+        actual = dict((node_id, score) for score, node_id, _chunk_id in resolved_scores(gathered, query, q_arr))
+        expected = dict((node_id, score) for score, node_id, _chunk_id in resolved_scores(scanned, query, q_arr))
         assert actual["a"] == expected["a"] == 3.0
