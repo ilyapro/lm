@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from typing import Any
 import json
@@ -68,59 +70,65 @@ def retrieval_context_prompt(
     ambient_context: dict[str, Any] | None = None,
     repair_pending: bool = True,
     recall_service: MemoryRecallService | None = None,
+    guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
 ) -> str:
-    """Build active context; guarded callers prepare pending indexes beforehand."""
+    """Prepare retrieval inputs, then select and format from one store snapshot."""
 
     service = recall_service or MemoryRecallService(store)
-    query = task.text if isinstance(task, _PreparedQuery) else str(task or "").strip()
-    if not isinstance(task, _PreparedQuery):
-        task = query
-        if query and (int(max_concepts) > 0 or int(max_schemas) > 0):
-            task = service.prepare_query(query)
     ambient = dict(ambient_context or {})
     if agent:
         ambient["agent"] = agent
-    plan = resolve_scope(scope=scope, ambient_context=ambient, store=store)
-    concepts = select_context_concepts(
-        store,
-        task=task,
-        plan=plan,
-        max_concepts=max_concepts,
-        min_confidence=min_confidence,
-        retrieval_policy=retrieval_policy,
-        ambient_context=ambient,
-        repair_pending=repair_pending,
-        recall_service=service,
-    )
-    schemas = select_context_schemas(
-        store,
-        task=task,
-        plan=plan,
-        max_schemas=max_schemas,
-        min_confidence=min_confidence,
-        ambient_context=ambient,
-        repair_pending=repair_pending,
-        recall_service=service,
-    )
-    decisions = select_decision_history(
-        store,
-        task=task,
-        plan=plan,
-        max_items=max_concepts,
-        ambient_context=ambient,
-        repair_pending=repair_pending,
-        recall_service=service,
-    )
-    return format_retrieval_context(
-        concepts,
-        schemas=schemas,
-        decision_history=decisions,
-        task=query,
-        plan=plan,
-        store=store,
-        min_confidence=min_confidence,
-        retrieval_policy=retrieval_policy,
-    )
+    query = task.text if isinstance(task, _PreparedQuery) else str(task or "").strip()
+    if query and (int(max_concepts) > 0 or int(max_schemas) > 0):
+        prepared = task if isinstance(task, _PreparedQuery) else service.prepare_query(query)
+        if repair_pending:
+            service.refresh_pending_chunks(query=prepared, scope=scope, ambient_context=ambient, guard=guard)
+        task = service.prepare_anchor_history(prepared, scope=scope, ambient_context=ambient, guard=guard)
+    else:
+        task = query
+
+    with guard(), store.read_snapshot():
+        plan = resolve_scope(scope=scope, ambient_context=ambient, store=store)
+        concepts = select_context_concepts(
+            store,
+            task=task,
+            plan=plan,
+            max_concepts=max_concepts,
+            min_confidence=min_confidence,
+            retrieval_policy=retrieval_policy,
+            ambient_context=ambient,
+            repair_pending=False,
+            recall_service=service,
+        )
+        schemas = select_context_schemas(
+            store,
+            task=task,
+            plan=plan,
+            max_schemas=max_schemas,
+            min_confidence=min_confidence,
+            ambient_context=ambient,
+            repair_pending=False,
+            recall_service=service,
+        )
+        decisions = select_decision_history(
+            store,
+            task=task,
+            plan=plan,
+            max_items=max_concepts,
+            ambient_context=ambient,
+            repair_pending=False,
+            recall_service=service,
+        )
+        return format_retrieval_context(
+            concepts,
+            schemas=schemas,
+            decision_history=decisions,
+            task=query,
+            plan=plan,
+            store=store,
+            min_confidence=min_confidence,
+            retrieval_policy=retrieval_policy,
+        )
 
 
 def select_context_concepts(
@@ -169,7 +177,7 @@ def select_context_concepts(
     else:
         # Keep ranking facts and selected bodies in one read snapshot, including
         # when another store connection writes while the runtime lock is held.
-        with store.transaction():
+        with store.read_snapshot():
             candidates: dict[str, tuple[ConceptBrowseFields, float]] = {}
             for item_scope in plan.named_scopes:
                 weights = store.get_retrieval_weights(item_scope).normalized()

@@ -1805,31 +1805,19 @@ def _register_prompts(
     ) -> str:
         """Return a formatted active memory context block."""
 
-        query = str(task or "").strip()
-        if query and (max_concepts > 0 or max_schemas > 0):
-            prepared_query = recall_service.prepare_query(query)
-            recall_service.refresh_pending_chunks(
-                query=prepared_query, scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
-            )
-            prompt_task = recall_service.prepare_anchor_history(
-                prepared_query, scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
-            )
-        else:
-            prompt_task = query
-        with runtime_lock:
-            return retrieval_context_prompt(
-                store,
-                task=prompt_task,
-                scope=scope,
-                max_concepts=max_concepts,
-                max_schemas=max_schemas,
-                min_confidence=min_confidence,
-                retrieval_policy=retrieval_policy,
-                agent=agent,
-                ambient_context=ambient_context,
-                repair_pending=False,
-                recall_service=recall_service,
-            )
+        return retrieval_context_prompt(
+            store,
+            task=task,
+            scope=scope,
+            max_concepts=max_concepts,
+            max_schemas=max_schemas,
+            min_confidence=min_confidence,
+            retrieval_policy=retrieval_policy,
+            agent=agent,
+            ambient_context=ambient_context,
+            recall_service=recall_service,
+            guard=lambda: runtime_lock,
+        )
 
 
 _ADAPTIVE_MIN_WRITES = 5
