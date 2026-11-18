@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from fixture_vectors import fixture_vector
 from living_memory.models import Node
 from living_memory.retrieval import (
@@ -58,6 +60,48 @@ def _candidate(
 def _rank_ids(store: MemoryStore, candidates: dict[str, _Candidate], plan: ScopePlan) -> list[str]:
     ranked = MemoryRecallService(store).rank_candidates(candidates, plan)
     return [result.node.id for result in ranked]
+
+
+def test_rank_reads_each_admitted_scope_policy_once_per_call(tmp_path, monkeypatch):
+    monkeypatch.delenv("LM_RECALL_SCHEMA_TRIGGER", raising=False)
+    candidates = {
+        key: _candidate(key, scope, vector_score=0.8, decayed=key == "old")
+        for key, scope in [
+            ("p1", PROJECT_SCOPE), ("g1", "global"), ("p2", PROJECT_SCOPE),
+            ("g2", "global"), ("other", "project:other"), ("old", "global"),
+        ]
+    }
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        service = MemoryRecallService(store)
+        get_weights = store.get_retrieval_weights
+        reads = []
+
+        def observe(scope):
+            reads.append(scope)
+            return get_weights(scope)
+
+        monkeypatch.setattr(store, "get_retrieval_weights", observe)
+        original = service.rank_candidates(candidates, PROJECT_PLAN)
+        assert reads == [PROJECT_SCOPE, "global"]
+        with pytest.raises(RuntimeError, match="roll back"):
+            with store.transaction():
+                store.set_retrieval_weights(PROJECT_SCOPE, bm25=1, vector=0, graph=0)
+                reads.clear()
+                assert service.rank_candidates(candidates, PROJECT_PLAN) != original
+                assert reads == [PROJECT_SCOPE, "global"]
+                raise RuntimeError("roll back")
+        reads.clear()
+        assert service.rank_candidates(candidates, PROJECT_PLAN) == original
+        assert reads == [PROJECT_SCOPE, "global"]
+
+        with store.transaction():
+            store.connection.execute("DELETE FROM retrieval_weights")
+        with pytest.raises(LookupError, match="default retrieval weights are missing"):
+            service.rank_candidates(candidates, PROJECT_PLAN)
+        monkeypatch.setenv("LM_RECALL_SCHEMA_TRIGGER", "name")
+        reads.clear()
+        assert service.rank_candidates(candidates, PROJECT_PLAN)
+        assert reads == []
 
 
 def test_weak_global_tail_is_gated_under_project_plan(tmp_path: Path) -> None:
