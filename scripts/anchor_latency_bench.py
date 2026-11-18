@@ -142,24 +142,23 @@ def _parse_depth(raw: Any) -> int | str:
 
 
 class _AnchorStageTimer:
-    """Wraps ``_collect_anchor_seeds`` to bill the scan separately.
-
-    The wrapper is installed for the whole run and records nothing while the
-    anchors-off arm is active, because that arm short-circuits before the scan.
-    """
+    """Time historical verification, matching and admission before the graph walk."""
 
     def __init__(self, service: MemoryRecallService) -> None:
-        self._inner = service._collect_anchor_seeds
-        self.elapsed_ms: float = 0.0
-        self.seeds: int = 0
-        service._collect_anchor_seeds = self  # type: ignore[method-assign]
+        self.elapsed_ms = 0.0
+        self.seeds = 0
+        for method in ("prepare_anchor_history", "_match_query_anchors", "_collect_anchor_seeds"):
+            setattr(service, method, self._timed(getattr(service, method), method == "_collect_anchor_seeds"))
 
-    def __call__(self, plan: Any, query_embedding: Any) -> dict[str, float]:
-        start = time.perf_counter()
-        seeds = self._inner(plan, query_embedding)
-        self.elapsed_ms = (time.perf_counter() - start) * 1000.0
-        self.seeds = len(seeds)
-        return seeds
+    def _timed(self, function, count_seeds):
+        def measure(*args, **kwargs):
+            start = time.perf_counter()
+            result = function(*args, **kwargs)
+            self.elapsed_ms += (time.perf_counter() - start) * 1000.0
+            if count_seeds:
+                self.seeds = len(result)
+            return result
+        return measure
 
 
 def _time_recall(

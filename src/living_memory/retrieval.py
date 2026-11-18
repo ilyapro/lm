@@ -371,6 +371,7 @@ class _AnchorVectorCache:
     store: MemoryStore
     by_width: dict[_AnchorBlockKey, _PreparedAnchorVectors]
     has_anchors: bool
+    encoder_id: str | None = None
     layouts: dict[_AnchorBlockKey, list[tuple[str, str]]] = field(default_factory=dict)
     pending: dict[_AnchorBlockKey, set[str]] = field(default_factory=dict)
 
@@ -527,7 +528,7 @@ class MemoryRecallService:
                 and has_active_irrelevance(self.store)
             ):
                 return replace(query, historical_scores={})
-            source = self._anchor_vector_source()
+            source = self._anchor_vector_source(encoder)
             if source is None:
                 return replace(query, historical_scores={})
             plan = self.scope_resolver.resolve(scope=scope, ambient_context=ambient_context, store=self.store)
@@ -542,9 +543,16 @@ class MemoryRecallService:
         missing = [text for text in dict.fromkeys(texts.values()) if text not in vectors]
         if missing:
             batch = getattr(self.embedder, "embed_batch", None)
-            fresh = batch(missing) if batch else [self.embedder.embed(text) for text in missing]
+            try:
+                fresh = batch(missing) if batch else [self.embedder.embed(text) for text in missing]
+                encoded = list(zip(missing, fresh, strict=True))
+            except Exception as error:
+                logging.getLogger(__name__).warning(
+                    "historical anchor encoding deferred for %d questions (%s)", len(missing), type(error).__name__,
+                )
+                encoded = []
             with guard():
-                for text, vector in zip(missing, fresh, strict=True):
+                for text, vector in encoded:
                     if (isinstance(vector, EncodedVector) and vector.encoder_id == encoder
                             and len(vector) == len(query.embedding)):
                         vectors[text] = vector
@@ -1306,18 +1314,21 @@ class MemoryRecallService:
         include_targets: bool = True,
     ) -> list[AnchorMatch]:
         """Observe live matches and their current targets in this query's space."""
-        prepared = isinstance(query, _PreparedQuery)
-        vector = query.embedding if prepared else query
-        if not vector:
+        if isinstance(query, _PreparedQuery):
+            vector, encoder_id, scores = query.embedding, query.encoder_id, query.historical_scores
+        else:
+            vector = query
+            encoder_id = vector.encoder_id if isinstance(vector, EncodedVector) else None
+            scores = None
+        if not vector or encoder_id is None:
             return []
-        source = self._anchor_vector_source()
+        source = self._anchor_vector_source(encoder_id)
         if source is None:
             return []
         return match_anchors(
             source, vector, plan, limit=ANCHOR_MATCH_LIMIT if limit is None else limit,
             min_similarity=min_similarity, include_targets=include_targets,
-            encoder_id=query.encoder_id if prepared else None,
-            historical_scores=query.historical_scores if prepared else None,
+            encoder_id=encoder_id, historical_scores=scores,
         )
 
     def _collect_anchor_seeds(
@@ -1395,7 +1406,7 @@ class MemoryRecallService:
         try:
             if matches is not None:
                 return query_demotions(self.store, query_embedding, plan, matches=matches)
-            source = self._anchor_vector_source()
+            source = self._anchor_vector_source(encoder_id)
             if source is None:
                 return {}
             return query_demotions(source, query_embedding, plan, encoder_id=encoder_id, historical_scores=historical_scores)
@@ -1410,7 +1421,7 @@ class MemoryRecallService:
         except Exception:  # pragma: no cover - derived signal, never fatal
             return {}
 
-    def _anchor_vector_source(self) -> _AnchorVectorCache | MemoryStore | None:
+    def _anchor_vector_source(self, encoder_id: str | None = None) -> _AnchorVectorCache | MemoryStore | None:
         """The live anchor corpus, cached until ``query_anchor_revision`` moves.
 
         One indexed revision lookup guards reuse, including an empty corpus.
@@ -1425,10 +1436,10 @@ class MemoryRecallService:
             self._anchor_vectors = None
             return self.store
         cached = self._anchor_vectors
-        if cached is None or cached.revision != revision:
+        if cached is None or cached.revision != revision or (encoder_id and cached.encoder_id != encoder_id):
             cached = _AnchorVectorCache(
                 revision, self.store, {},
-                bool(self.store.count_query_anchors(include_decayed=False)),
+                bool(self.store.count_query_anchors(include_decayed=False)), encoder_id,
             )
             self._anchor_vectors = cached
         return cached if cached.has_anchors else None

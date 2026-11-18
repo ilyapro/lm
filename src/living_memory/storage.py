@@ -186,6 +186,7 @@ _QUERY_ANCHOR_CORPUS_TRIGGERS = (
     """.strip(),
 )
 
+
 def install_derived_only_authorizer(
     conn: sqlite3.Connection, *, corpus: Literal["chunks", "anchors"]
 ) -> None:
@@ -5286,9 +5287,8 @@ class MemoryStore:
         """Yield ``(anchor_id, scope, dimensions, embedding)`` for live anchors.
 
         The anchor analogue of :meth:`iter_chunk_embedding_rows`: a bare tuple
-        cursor over BLOB views, so a matcher decodes only what it keeps. The
-        corpus is small by design — one row per distinct remembered question,
-        estimated at a few thousand — so this is a scan, not an ANN index.
+        cursor over BLOB views. Space and scope filters apply before vector
+        preparation.
         ``dimensions`` is the row's own recorded width, never the BLOB length.
         A requested width filters rows in SQL before their BLOBs are read.
 

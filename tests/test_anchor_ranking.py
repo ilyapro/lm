@@ -49,7 +49,7 @@ def test_anchor_and_seed_membership(monkeypatch, numpy, prepared, scopes, strong
             store.upsert_query_anchor_edge(name, f"target-{name}", weight=1.0)
         service = retrieval.MemoryRecallService(store)
         if not prepared:
-            monkeypatch.setattr(service, "_anchor_vector_source", lambda: store)
+            monkeypatch.setattr(service, "_anchor_vector_source", lambda *_: store)
         plan = ScopePlan(scopes[0], scopes)
         for _ in range(2):  # Exercise both cold and warm prepared selection.
             matches = service._match_query_anchors(plan, fixture_vector(query))
