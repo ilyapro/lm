@@ -87,7 +87,7 @@ def test_distinct_scores_materialize_only_limited_ids():
         ids = CountedIds(corpus.ids)
         counted = replace(corpus, ids=ids)
         ranked = qa._rank_anchors(
-            SimpleNamespace(query_anchor_corpus=lambda *_: counted), [1.0, 0.0],
+            SimpleNamespace(query_anchor_corpus=lambda *_, **kwargs: counted), [1.0, 0.0],
             ["global"], min_similarity=0.0, limit=limit,
         )
         assert [name for name, _score in ranked] == [f"a{index:03d}" for index in range(127, 122, -1)]

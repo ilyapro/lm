@@ -370,14 +370,13 @@ def _rank_anchors(
         return []
 
     prepared = getattr(store, "query_anchor_corpus", None)
-    partition = {"space": space} if space is not None else {}
     if prepared is None:
         corpus = _prepare_anchor_vectors(
-            store.iter_query_anchor_vectors(scopes, dimensions=len(vector), **partition), len(vector),
+            store.iter_query_anchor_vectors(scopes, dimensions=len(vector), space=space), len(vector),
         )
         indices = slice(None)
     else:
-        corpus = prepared(len(vector), scopes, **partition)
+        corpus = prepared(len(vector), scopes, space=space)
         if corpus is None:
             return []
         indices = corpus.select(scopes)

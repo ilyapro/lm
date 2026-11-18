@@ -5242,19 +5242,24 @@ class MemoryStore:
         operator = "IS" if compatible else "IS NOT"
         return f" AND encoder_id {operator} ?", (encoder,)
 
-    def iter_foreign_anchor_queries(self, encoder_id: str, scopes: Sequence[str] | None):
+    def iter_foreign_anchor_queries(
+        self, encoder_id: str, scopes: Sequence[str] | None,
+    ) -> Iterator[tuple[str, str]]:
         """Source questions available for bounded cross-space candidate discovery."""
         if not self._anchor_tables_present():
             return
         condition, params = self._anchor_space_filter((encoder_id, False))
         if scopes is not None:
             condition += f" AND scope IN ({','.join('?' for _ in scopes)})"
-        yield from self._conn.execute(
+        for anchor_id, text in self._conn.execute(
             "SELECT id, query FROM query_anchors WHERE decayed = 0" + condition,
             (*params, *(scopes or ())),
-        )
+        ):
+            yield anchor_id, text
 
-    def query_anchor_vector_layout(self, dimensions: int, *, space: tuple[str, bool] | None = None) -> list[tuple[str, str]]:
+    def query_anchor_vector_layout(
+        self, dimensions: int, *, space: tuple[str, bool] | None = None,
+    ) -> list[tuple[str, str]]:
         """Live ids and scopes in vector scan order, without reading BLOBs."""
 
         if not self._anchor_tables_present():
@@ -5531,7 +5536,7 @@ class MemoryStore:
         return len(rows)
 
     def query_anchor_revision(self) -> int | None:
-        """Transactional revision of anchor ids, scopes, widths and vectors.
+        """Transactional revision of anchor membership, source text and vector space.
 
         SQLite triggers maintain it across connections and maintenance SQL,
         including decay and revival between reads. Reinforcement and edge or
