@@ -582,43 +582,60 @@ def _relevant_excerpt(
                     adjacent_groups.append(paragraphs[adjacent])
     adjacent_indices = {index for index in range(len(units)) if paragraphs[index] in adjacent_groups}
 
-    def render(selected: set[int], *, mark_omission: bool = True) -> str:
-        # Join adjacent source units verbatim; separated runs keep their own
-        # source label. This also handles an address spanning several records.
-        runs: list[tuple[int, int]] = []
+    # Keep the original separators for consecutive units of the same record.
+    gaps = [
+        content[spans[i - 1][1]:spans[i][0]] if i and units[i - 1][2] == unit[2] else ""
+        for i, unit in enumerate(units)
+    ]
+
+    def excerpt_parts(selected: set[int]) -> list[str]:
+        parts = [heading, "\n"] if heading else []
+        previous = None
         for index in sorted(selected):
-            if runs and runs[-1][1] + 1 == index and units[runs[-1][1]][2] == units[index][2]:
-                runs[-1] = (runs[-1][0], index)
-            else:
-                runs.append((index, index))
-        body = "\n".join(
-            units[first][0] + content[spans[first][0]:spans[last][1]]
-            for first, last in runs
-        )
-        if heading:
-            body = f"{heading}\n{body}"
-        if mark_omission and len(selected) < len(units):
-            body += ("\n[Incomplete source context]" if adjacent_indices - selected
-                     else "\n[Context omitted]")
-        return body
+            prefix, passage, record = units[index]
+            if previous is not None:
+                if previous + 1 == index and units[previous][2] == record:
+                    prefix = gaps[index]
+                else:
+                    parts.append("\n")
+            parts.extend((prefix, passage))
+            previous = index
+        # Keep the omission marker last, including when the excerpt is complete.
+        notice = ""
+        if len(selected) < len(units):
+            notice = ("\n[Incomplete source context]" if adjacent_indices - selected
+                      else "\n[Context omitted]")
+        parts.append(notice)
+        return parts
 
     picked = required.copy()
-    if len(render(picked)) > budget:
-        # No smaller arbitrary clause can stand in for the addressed source.
-        # Keep the source's beginning and explicitly expose the missing tail.
-        partial = render(picked, mark_omission=False)
+    parts = excerpt_parts(picked)
+    if sum(map(len, parts)) > budget:
+        # Only the beginning of the mandatory source can enter the truncated result.
         notice = "\n[Incomplete passage]"
         label_chars = len(heading) + (1 if heading else 0) + len(units[min(picked)][0])
-        if budget > label_chars + len(notice) + len(ELLIPSIS):
-            return _truncate_at_boundary(partial, budget - len(notice)) + notice
-        return _truncate_at_boundary(partial, budget)
+        if budget <= label_chars + len(notice) + len(ELLIPSIS):
+            notice = ""
+        remaining = max(0, budget - len(notice) - len(ELLIPSIS))
+        parts.pop()
+        prefix_parts = []
+        for part in parts:
+            if not remaining:
+                break
+            prefix_parts.append(part[:remaining])
+            remaining -= len(prefix_parts[-1])
+        return _truncate_at_boundary("".join(prefix_parts), budget - len(notice)) + notice
 
     def include(indices: set[int]) -> bool:
-        candidate = picked | indices
-        if len(render(candidate)) <= budget:
-            picked.update(indices)
+        nonlocal parts
+        if indices <= picked:
             return True
-        return False
+        candidate = excerpt_parts(picked | indices)
+        if sum(map(len, candidate)) > budget:
+            return False
+        picked.update(indices)
+        parts = candidate
+        return True
 
     # Prefer complete enclosing paragraphs, then immediate source neighbours.
     # Every addition is tested together with the mandatory source and labels.
@@ -658,7 +675,7 @@ def _relevant_excerpt(
             rejected.clear()
         else:
             rejected.add(paragraph)
-    return render(picked)
+    return "".join(parts)
 
 
 def _bearer_budget(
