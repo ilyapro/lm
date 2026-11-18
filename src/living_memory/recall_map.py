@@ -2639,8 +2639,8 @@ class RecallMapBuilder:
         trade is journaled before the next search, so both the newly affordable
         example space and the journal's own cost are remeasured.  At the
         breadth floor, journal names give way one at a time; the unconditional
-        withheld/dropped counts and ``names_omitted`` never do.  Only after no
-        name remains may the widest affordable gist fall below the floor. The
+        withheld/dropped counts and ``names_omitted`` never do. If this would
+        give an empty map, try sharing repeated wording in the plan items. The
         mandatory ``sel`` core participates in every measurement. Optional
         ``q`` samples are added only after the existing cluster shape fits, so
         they are always the first selection detail sacrificed to the budget.
@@ -2705,6 +2705,8 @@ class RecallMapBuilder:
                     high = example_chars - 1
             return best_chars, best
 
+        initial_name_limit = journal.name_limit
+        compact_plans = False
         while full:
             example_chars, clusters = widest()
             if example_chars >= 0 and floor_met(clusters):
@@ -2725,6 +2727,24 @@ class RecallMapBuilder:
 
             if journal.drop_name():
                 continue
+
+            if not compact_plans:
+                # A query that also names the topic can serve both roles in a
+                # standalone reminder. Keep distinct triggers and queries intact.
+                compact = [
+                    replace(
+                        cluster,
+                        plan_item=f"on touching '{cluster.ask_hint}' - recall it ({cluster.count})",
+                    )
+                    if cluster.label == _shorten(cluster.ask_hint, MAX_LABEL_CHARS)
+                    else cluster
+                    for cluster in full
+                ]
+                compact_plans = True
+                if compact != full:
+                    full = compact
+                    journal.name_limit = initial_name_limit
+                    continue
 
             # Long pre-existing anchor/structural hints can make even two
             # clusters cost more than the ordinary worst-case model.  A gist

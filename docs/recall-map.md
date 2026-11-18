@@ -44,7 +44,7 @@ Each cluster carries:
 | `medoid.node_id` | A representative node that `memory_lookup` can fetch |
 | `medoid.example` | A budget-dependent excerpt; omitted when squeezed away |
 | `ask_hint` | A query for a follow-up recall |
-| `plan_item` | `on touching <label> - recall '<ask_hint>' (<count>)` |
+| `plan_item` | `on touching <label> - recall '<ask_hint>' (<count>)`, or `on touching '<ask_hint>' - recall it (<count>)` when the query also names the topic |
 
 An agent can carry `plan_item` into its own plan. It is a conditional reminder
 to recall relevant knowledge when that part of the work becomes current. The
@@ -71,7 +71,9 @@ through `view="full"` for diagnostics.
 
 The response fitter searches for the widest common excerpt after each change
 in displayed breadth. It drops tail clusters and optional journal names to
-preserve a useful gist. If the minimum useful presentation cannot fit, it
+preserve a useful gist. If this would leave no clusters, it retries at the
+minimum breadth with the shorter reminder wherever the label is the query or
+its width-limited form. If the minimum useful presentation cannot fit, it
 retains selection accounting without clusters in the stored map and diagnostic
 view. `memory_lookup` remains the full-content path. A fully skipped curtail
 decision omits `pool` and `sel`:
