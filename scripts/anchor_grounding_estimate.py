@@ -507,7 +507,7 @@ def near_duplicate_similarity(
 ) -> dict[str, Any]:
     """Cosine between every pair of anchor queries that share a scope.
 
-    Report the similarity distribution, cluster sizes under transitive merging
+    Report the similarity distribution, cluster counts under transitive merging
     at each threshold, and how often qualifying pairs have different identifiers.
     """
 

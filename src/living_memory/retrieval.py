@@ -4,8 +4,8 @@ The vector channel pools the best matching chunk per node and applies a
 length correction proportional to the logarithm of the chunk count.
 
 A query anchor links a remembered question to its grounded targets. Matching
-a new question against anchor vectors lets similar wording retrieve a shared
-procedure even when the procedure uses a different language. Matched targets
+a new question against anchor vectors lets «сверь патч LX-42018» reach a
+procedure used for «сверь патч LX-42017», even across languages. Matched targets
 seed a separate graph walk with activation equal to cosine times edge weight.
 The ranker keeps the better of the blends with and without anchor evidence for
 candidates reached independently. Anchor vectors are cached by store revision.
