@@ -300,3 +300,75 @@ def test_lookup_keeps_one_snapshot_across_teach(tmp_path, monkeypatch, selectors
         for mcp in (reader, writer):
             mcp.auto_consolidation.close()
             mcp.memory_store.close()
+
+
+@pytest.mark.parametrize("view", ["knowledge", "full"])
+def test_recall_keeps_selected_knowledge_consistent_across_teach(tmp_path, monkeypatch, view):
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LIVING_MEMORY_CHUNK_TOKENIZER", "heuristic")
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
+    monkeypatch.setenv("LM_DELIVERY_SESSION_DEDUP", "0")
+    db = tmp_path / "memory.sqlite3"
+    reader, writer = create_mcp_server(db), create_mcp_server(db)
+    store = reader.memory_store
+    text = "Amber hatch before pressure release."
+    revised = "Amber hatch after pressure release."
+    scope = "project:read-validity"
+
+    async def teach(original):
+        async with Client(writer) as client:
+            result = await client.call_tool("memory_teach", {
+                "trace_id": original, "correction": revised, "context": {"scope": scope},
+            })
+            return result.data["corrective_trace"]["id"]
+
+    async def scenario():
+        async with Client(reader) as client:
+            original = (await client.call_tool("memory_remember", {
+                "content": text, "context": {"scope": scope},
+            })).data["node"]["id"]
+
+            async def recall():
+                response = (await client.call_tool("memory_recall", {
+                    "query": text, "depth": 0, "scope": scope, "max_results": 5, "view": view,
+                })).data
+                entries = response["results"]
+                assert store.get_recall_event(response["recall_event_id"]).result_ids == [
+                    entry.get("node", entry)["id"] for entry in entries
+                ]
+                return entries
+
+            before = await recall()
+            read_pairs = store.list_supersedes_pairs
+            corrections = []
+            with ThreadPoolExecutor(max_workers=1) as executor, monkeypatch.context() as patch:
+                def teach_then_read_pairs(ids):
+                    if not corrections:
+                        corrections.append(executor.submit(asyncio.run, teach(original)).result(timeout=30))
+                    return read_pairs(ids)
+
+                patch.setattr(store, "list_supersedes_pairs", teach_then_read_pairs)
+                during = await recall()
+            after = await recall()
+            correction, = corrections
+
+            def content_and_validity(entries):
+                return [(entry.get("node", entry)["id"], entry.get("node", entry)["content"],
+                         entry["delivery"], entry["superseded"], entry["superseded_by"],
+                         bool(entry.get("node", entry).get("provenance", {}).get("corrections")))
+                        for entry in entries]
+
+            old = content_and_validity(before)
+            new = content_and_validity(after)
+            assert old == [(original, text, "full", False, [], False)]
+            assert new[0][:5] == (correction, revised, "full", False, [])
+            stale, = [row for row in new if row[0] == original]
+            assert stale[3:5] == (True, [correction])
+            assert content_and_validity(during) in (old, new)
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        for mcp in (reader, writer):
+            mcp.auto_consolidation.close()
+            mcp.memory_store.close()
