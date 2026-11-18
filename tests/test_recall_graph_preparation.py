@@ -7,13 +7,14 @@ import pytest
 
 import living_memory.retrieval as retrieval
 import living_memory.storage as storage
+from fixture_vectors import fixture_vector
 from living_memory.retrieval import MemoryRecallService
 from living_memory.storage import MemoryStore
 
 
 class Encoder:
     def embed(self, text):
-        return [1.0, 0.0] if "needle" in text else [0.0, 1.0]
+        return fixture_vector([1.0, 0.0] if "needle" in text else [0.0, 1.0])
 
 
 def node(store, name, *, scope="project:graph", content=None):

@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory.chunking import TextChunk, count_tokens
 from living_memory.consolidation import memory_consolidate, memory_teach
 from living_memory.embeddings import LocalEmbeddingModel
@@ -1028,7 +1029,7 @@ def test_same_trigger_carriers_do_not_crowd_out_a_record_recall_delivers_directl
         # and recall-schema-trigger.md promises no title-only priority.
         def embed(text):
             cosine = 1.0 if text == query else 0.95 if text == recipe else 0.1
-            return [cosine, math.sqrt(1 - cosine**2)]
+            return fixture_vector([cosine, math.sqrt(1 - cosine**2)])
 
         monkeypatch.setattr(LocalEmbeddingModel, "embed", staticmethod(embed))
         store = mcp.memory_store

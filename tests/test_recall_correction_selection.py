@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory.models import Node
 from living_memory.retrieval import MemoryRecallService, RecallResult
 from living_memory.score_gate import apply_score_gate
@@ -18,11 +19,11 @@ class _Encoder:
         self.original_vector = original_vector
 
     def embed(self, text: str) -> list[float]:
-        return {
+        return fixture_vector({
             "bystander": [1.0, 0.0],
             "stale": [self.original_vector, math.sqrt(1 - self.original_vector**2)],
             "correction": [0.1, math.sqrt(0.99)],
-        }.get(text, [1.0, 0.0])
+        }.get(text, [1.0, 0.0]))
 
 
 def _recall(

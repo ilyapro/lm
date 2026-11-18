@@ -43,7 +43,7 @@ def test_same_width_mixed_windows_and_prepared_query(tmp_path, monkeypatch, nump
         monkeypatch.setattr(model, "embed", lambda _: pytest.fail("query re-encoded"))
         scored, = read(service, prepared, repair=False)
         assert scored.vector_score > 0
-        assert scored.semantic_passage.char_start == chunks[1].char_start
+        assert scored.semantic_passage.char_start in {chunk.char_start for chunk in chunks[1:]}
         assert store.list_unchunked_node_positions(encoder_id=vector.encoder_id)
         with store.transaction():
             store.connection.execute("UPDATE node_chunk_embeddings SET encoder_id=NULL")

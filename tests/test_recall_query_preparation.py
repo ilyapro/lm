@@ -9,7 +9,7 @@ from fastmcp.exceptions import ToolError
 import pytest
 
 from living_memory import embeddings, server
-from living_memory.embeddings import LocalEmbeddingModel
+from living_memory.embeddings import EncodedVector, LocalEmbeddingModel
 from living_memory.retrieval import MemoryRecallService
 from living_memory.storage import MemoryStore
 
@@ -54,7 +54,7 @@ def runtime(tmp_path, monkeypatch):
     state.mcp = server.create_mcp_server(tmp_path / "memory.sqlite3")
     state.store = state.mcp.memory_store
     state.node = state.store.create_node(level="concept", content=CONTENT,
-                                        context={"scope": SCOPE}, embedding=VECTOR)
+                                        context={"scope": SCOPE}, embedding=EncodedVector(VECTOR, "hash:3"))
     state.encoded.clear()
     try:
         yield state
@@ -116,7 +116,7 @@ def test_native_exact_lookup_finishes_while_query_encoder_is_held(runtime, view)
 def test_recall_reads_current_source_scope_and_validity_after_encoding(runtime):
     r = runtime
     obsolete = r.store.create_node(level="concept", content=CONTENT + " Old rule.",
-                                   context={"scope": SCOPE}, embedding=VECTOR)
+                                   context={"scope": SCOPE}, embedding=EncodedVector(VECTOR, "hash:3"))
     r.hold = True
     updated = "Cobalt certificate now requires a countersignature."
     new_scope = "project:current-query-source"
@@ -132,7 +132,7 @@ def test_recall_reads_current_source_scope_and_validity_after_encoding(runtime):
                 # writer changes both source and scope while encoding is held.
                 with MemoryStore(r.store.db_path) as writer:
                     writer.update_node(r.node.id, content=updated, context={"scope": new_scope},
-                                       embedding=VECTOR)
+                                       embedding=EncodedVector(VECTOR, "hash:3"))
                 lookup = await asyncio.wait_for(call(peer, "memory_lookup", node_id=r.node.id), 3)
                 assert entry(lookup)["content"] == updated
                 assert not pending.done()

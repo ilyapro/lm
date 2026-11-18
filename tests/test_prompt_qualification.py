@@ -6,6 +6,7 @@ from dataclasses import replace
 from fastmcp import Client
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory import prompts
 from living_memory.retrieval import MemoryRecallService
 from living_memory.scope import resolve_scope
@@ -221,10 +222,10 @@ def test_reference_rank_does_not_displace_qualified_selector_result(tmp_path, mo
 def test_nonlexical_qualified_vector_support_reaches_direct_prompt(tmp_path):
     class Encoder:
         def embed(self, text):
-            return [1.0, 0.0, 0.0]
+            return fixture_vector([1.0, 0.0, 0.0])
 
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
-        node = concept(store, "Bounded retries prevent lock contention.", embedding=[1.0, 0.0, 0.0])
+        node = concept(store, "Bounded retries prevent lock contention.", embedding=fixture_vector([1.0, 0.0, 0.0]))
         service = MemoryRecallService(store, embedder=Encoder())
         prepared = service.prepare_query(UNRELATED)
         raw = service.memory_recall(prepared, scope=SCOPE, log_access=False)

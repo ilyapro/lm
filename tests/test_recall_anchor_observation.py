@@ -4,6 +4,7 @@ from collections import Counter
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory import query_anchors as qa
 from living_memory import irrelevance
 from living_memory.irrelevance import QUERY_IRRELEVANCE_SCHEMA_SQL
@@ -13,7 +14,7 @@ from living_memory.storage import MemoryStore
 
 class Encoder:
     def embed(self, text):
-        return [0.0, 1.0] if text == "unrelated" else [1.0, 0.0]
+        return fixture_vector([0.0, 1.0] if text == "unrelated" else [1.0, 0.0])
 
 
 class IndependentMatches(MemoryRecallService):
@@ -42,7 +43,7 @@ def populate(store):
         ("decayed", "project:demo", [1.0, 0.0]),
     ):
         store.create_node(level="concept", content=name, node_id=name,
-                          context={"scope": scope}, embedding=vector)
+                          context={"scope": scope}, embedding=fixture_vector(vector))
     store.soft_delete_node("decayed", "inactive")
     for index in range(7):
         name = f"anchor-{index}"

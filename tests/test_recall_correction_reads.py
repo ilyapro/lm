@@ -4,6 +4,7 @@ from dataclasses import asdict
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory.replay import make_ranking_service
 from living_memory.retrieval import MemoryRecallService, _Candidate
 from living_memory.scope import ScopePlan
@@ -12,13 +13,13 @@ from living_memory.storage import MemoryStore
 
 class Encoder:
     def embed(self, text):
-        return [1.0, 0.0]
+        return fixture_vector([1.0, 0.0])
 
 
 def node(store, name, scope="project:focus"):
     return store.create_node(
         node_id=name, level="trace", content=f"Harbor signal {name}",
-        context={"scope": scope}, embedding=[1.0, 0.0],
+        context={"scope": scope}, embedding=fixture_vector([1.0, 0.0]),
     )
 
 

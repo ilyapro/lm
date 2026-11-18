@@ -7,6 +7,7 @@ import sqlite3
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory import storage as storage_module
 from living_memory.delivery import DeliveryHistory, shape_recall_results
 from living_memory.feedback import resolve_explicit_marks
@@ -24,7 +25,7 @@ TABLES = (
 
 class FixedEmbedder:
     def embed(self, text):
-        return [1.0, 0.0, 0.0]
+        return fixture_vector([1.0, 0.0, 0.0])
 
 
 @pytest.fixture
@@ -37,7 +38,7 @@ def seed(store, count=6):
     return [
         store.create_node(
             level="concept", content=f"cobalt routing fact {index}",
-            context={"scope": SCOPE}, embedding=[1.0, 0.0, 0.0],
+            context={"scope": SCOPE}, embedding=fixture_vector([1.0, 0.0, 0.0]),
             provenance={"corrections": [{"reason": "synthetic correction"}]},
         )
         for index in range(count)

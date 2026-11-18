@@ -5,6 +5,7 @@ from math import sqrt
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory import retrieval
 from living_memory.decay import memory_forget
 from living_memory.health_audit import ReadOnlyAuditStore
@@ -18,7 +19,7 @@ VECTOR = [1.0, 0.0, 0.0]
 
 class FixedEmbedder:
     def embed(self, text):
-        return list(VECTOR)
+        return fixture_vector(VECTOR)
 
 
 @pytest.fixture(params=[False, True], ids=["same-connection", "second-connection"])
@@ -35,7 +36,7 @@ def add_node(store, content, *, scope="global", similarity=1.0):
         level="concept",
         content=content,
         context={"scope": scope},
-        embedding=[similarity, sqrt(1.0 - similarity**2), 0.0],
+        embedding=fixture_vector([similarity, sqrt(1.0 - similarity**2), 0.0]),
     ).id
 
 

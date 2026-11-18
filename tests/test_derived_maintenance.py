@@ -5,6 +5,7 @@ import sqlite3
 
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory.chunking import chunk_text
 from living_memory.retrieval import MemoryRecallService
 from living_memory.storage import MemoryStore, install_derived_only_authorizer
@@ -12,14 +13,14 @@ from living_memory.storage import MemoryStore, install_derived_only_authorizer
 
 class FixedEmbedder:
     def embed(self, text):
-        return [1.0, 0.0]
+        return fixture_vector([1.0, 0.0])
 
 
 @pytest.fixture(params=["chunks", "anchors"])
 def maintenance(tmp_path, request):
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         node = store.create_node(
-            level="concept", content="cobalt prism", embedding=[0.0, 1.0],
+            level="concept", content="cobalt prism", embedding=fixture_vector([0.0, 1.0]),
             context={"scope": "project:synthetic"},
         )
         yield store, node, request.param
@@ -28,7 +29,7 @@ def maintenance(tmp_path, request):
 def write(store, node, corpus):
     if corpus == "chunks":
         store.replace_node_chunks(
-            node.id, [(chunk, [1.0, 0.0]) for chunk in chunk_text(node.content)]
+            node.id, [(chunk, fixture_vector([1.0, 0.0])) for chunk in chunk_text(node.content)]
         )
     else:
         with store.transaction():

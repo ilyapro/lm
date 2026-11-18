@@ -7,6 +7,7 @@ import json
 from fastmcp import Client
 import pytest
 
+from fixture_vectors import fixture_vector
 from living_memory import delivery, server
 from living_memory.chunking import TextChunk
 from living_memory.retrieval import MemoryRecallService
@@ -28,7 +29,7 @@ FOLLOWING = "The index records the current archive identifier."
 
 class Encoder:
     def embed(self, text):
-        return [1.0, 0.0, 0.0]
+        return fixture_vector([1.0, 0.0, 0.0])
 
     def embed_batch(self, texts):
         return [[0.0, 1.0, 0.0] for _ in texts]
@@ -40,7 +41,7 @@ def put_match(store, content, anchor):
     end = start + len(anchor)
     spans = [(0, min(200, len(content))), (start, end), (max(0, start - 10), end)]
     store.replace_node_chunks(node.id, [
-        (TextChunk(content[left:right], index, index * 30, index * 30 + 60, left, right), vector)
+        (TextChunk(content[left:right], index, index * 30, index * 30 + 60, left, right), fixture_vector(vector))
         for index, ((left, right), vector) in enumerate(zip(
             spans, ([0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.8, 0.6, 0.0]), strict=True,
         ))
