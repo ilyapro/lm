@@ -46,8 +46,8 @@ def put_match(store, content, start, end, *, scope=SCOPE, level="trace"):
     spans = [(0, min(200, len(content))), (start, end), (max(0, start - 10), end)]
     store.replace_node_chunks(node.id, [
         (TextChunk(content[a:b], index, index * 30, index * 30 + 60, a, b), fixture_vector(vector))
-        for index, ((a, b), fixture_vector(vector)) in enumerate(zip(
-            spans, (fixture_vector([0.0, 1.0, 0.0]), fixture_vector([1.0, 0.0, 0.0]), fixture_vector([0.8, 0.6, 0.0])), strict=True,
+        for index, ((a, b), vector) in enumerate(zip(
+            spans, ([0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.8, 0.6, 0.0]), strict=True,
         ))
     ])
     return node

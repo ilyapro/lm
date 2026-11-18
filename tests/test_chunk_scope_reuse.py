@@ -134,10 +134,10 @@ def test_changed_scope_is_fresh_without_reloading_other_scopes(stores, monkeypat
         if mutation == "vector":
             writer.connection.execute(
                 "UPDATE node_chunk_embeddings SET embedding=? WHERE node_id='b'",
-                (pack_chunk_embedding(fixture_vector([0.0, 1.0, 0.0])),),
+                (pack_chunk_embedding([0.0, 1.0, 0.0]),),
             )
         elif mutation == "chunks":
-            put_chunks(writer, "b", [fixture_vector([0.0, 1.0, 0.0]), fixture_vector([0.8, 0.6, 0.0])])
+            put_chunks(writer, "b", [[0.0, 1.0, 0.0], [0.8, 0.6, 0.0]])
         elif mutation == "chunk-delete":
             writer.delete_node_chunks("b")
             # The ordinary bounded lazy repair supplies the next chunk set.
@@ -199,7 +199,7 @@ def test_rollback_does_not_cache_a_revision_that_another_write_can_reuse(tmp_pat
         revision = store.chunk_corpus_revisions()
         store.connection.execute(
             "UPDATE node_chunk_embeddings SET embedding=? WHERE node_id='a'",
-            (pack_chunk_embedding(fixture_vector([0.0, 1.0, 0.0])),),
+            (pack_chunk_embedding([0.0, 1.0, 0.0]),),
         )
         assert recall(warm, scope) == []
         assert warm._chunk_index == committed
@@ -209,7 +209,7 @@ def test_rollback_does_not_cache_a_revision_that_another_write_can_reuse(tmp_pat
         with store.connection:
             store.connection.execute(
                 "UPDATE node_chunk_embeddings SET embedding=? WHERE node_id='b'",
-                (pack_chunk_embedding(fixture_vector([1.0, 0.0, 0.0])),),
+                (pack_chunk_embedding([1.0, 0.0, 0.0]),),
             )
         assert [r.node.id for r in recall(warm, scope)] == ["a", "b"]
         assert recall(warm, scope) == recall(service(store), scope)
@@ -222,7 +222,7 @@ def test_scope_move_during_partition_read_keeps_one_version_per_node(tmp_path, m
         add(writer, "b", "project:beta")
         warm = service(reader)
         recall(warm)
-        put_chunks(writer, "b", [fixture_vector([0.8, 0.6, 0.0])])
+        put_chunks(writer, "b", [[0.8, 0.6, 0.0]])
         original = reader.iter_chunk_embedding_rows
         moved = False
 
@@ -256,7 +256,7 @@ def test_read_only_legacy_snapshot_does_not_cache_vectors(tmp_path, monkeypatch)
         assert reader.chunk_corpus_revisions() is None
         assert [r.node.id for r in recall(warm)] == ["a"]
         with writer:
-            writer.execute("UPDATE node_chunk_embeddings SET embedding=?", (pack_chunk_embedding(fixture_vector([0.0, 1.0, 0.0])),))
+            writer.execute("UPDATE node_chunk_embeddings SET embedding=?", (pack_chunk_embedding([0.0, 1.0, 0.0]),))
         assert recall(warm) == recall(warm, "project:alpha") == []
         assert warm._chunk_index == {}
         original = reader.get_node("a")
@@ -301,15 +301,15 @@ def test_partition_gather_preserves_order_width_and_normalization(tmp_path, monk
             node = add(store, f"node-{number:03}", scope)
             # Interleaved scopes, multiple chunks, two widths, near-unit rows
             # sharing a broad width block with non-unit and zero rows.
-            vectors = [fixture_vector([1.00005, 0.0, 0.0]), fixture_vector([0.8, 0.6, 0.0])]
+            vectors = [[1.00005, 0.0, 0.0], [0.8, 0.6, 0.0]]
             if number % 3 == 0:
-                vectors += [[3.0, 4.0, 0.0], fixture_vector([0.0, 0.0, 0.0])]
+                vectors += [[3.0, 4.0, 0.0], [0.0, 0.0, 0.0]]
             if number % 4 == 0:
-                vectors.append(fixture_vector([0.2, 0.9]))
+                vectors.append([0.2, 0.9])
             put_chunks(store, node.id, vectors)
         warm = service(store)
         plan = warm.scope_resolver.resolve(store=store)
-        for query in (fixture_vector([1.0, 0.0, 0.0]), fixture_vector([0.3, 0.9, 0.2]), fixture_vector([0.2, 0.9])):
+        for query in ([1.0, 0.0, 0.0], [0.3, 0.9, 0.2], [0.2, 0.9]):
             gathered = list(warm._chunk_blocks(plan, len(query), FIXTURE_SPACE))
             scanned = [block for block in warm._build_chunk_index(None, None).blocks
                        if block.dimension == len(query)]
@@ -381,7 +381,7 @@ def test_nonfinite_norm_preserves_the_complete_blocks_normalization_rule(tmp_pat
         gathered, = warm._chunk_blocks(plan, 3, FIXTURE_SPACE)
         scanned, = warm._build_chunk_index(None, None).blocks
         assert not gathered.needs_normalization and not scanned.needs_normalization
-        query = fixture_vector([1.0, 0.0, 0.0])
+        query = [1.0, 0.0, 0.0]
         q_arr = retrieval._as_query_array(query)
         actual = dict((node_id, score) for score, node_id, _chunk_id in retrieval._pooled_chunk_similarities(gathered, query, q_arr))
         expected = dict((node_id, score) for score, node_id, _chunk_id in retrieval._pooled_chunk_similarities(scanned, query, q_arr))
