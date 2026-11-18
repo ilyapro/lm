@@ -1239,7 +1239,7 @@ def _register_tools(
         query: Annotated[str, Field(description=(
             "Include relevant identifiers. For an action, keep the user's wording "
             "and describe the procedure sought for your current role or stage. "
-            "For a question, name the fact sought."
+            "For a factual question, name the fact sought."
         ))],
         scope: str | None = None,
         depth: int | str | None = 1,
