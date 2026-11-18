@@ -11,6 +11,7 @@ from urllib.parse import quote
 import sqlite3
 import time
 
+from living_memory.relations import register_file_evidence
 from living_memory.config import MemoryConfig
 from living_memory.models import Node, RecallEvent, RetrievalWeights
 from living_memory.retrieval import memory_recall
@@ -251,6 +252,7 @@ class ReadOnlyAuditStore(MemoryStore):
         self.config = replace(base_config, db_path=Path(db_path))
         self.db_path = Path(db_path)
         self._conn = connection
+        register_file_evidence(connection)
         self._conn.row_factory = sqlite3.Row
         self._owns_connection = owns_connection
 

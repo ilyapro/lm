@@ -76,7 +76,7 @@ from living_memory.edge_derivation import (
 from living_memory.models import Connection, Node
 from living_memory.health_audit import open_read_only_store
 from living_memory.file_evidence import file_citations
-from living_memory.relations import is_semantic_relation, semantic_relation_sql
+from living_memory.relations import current_relation_sql, is_semantic_relation
 from living_memory.storage import (
     MemoryStore,
     _json_dumps,
@@ -283,7 +283,7 @@ def _existing_edges(
     """
 
     rows = store.connection.execute(
-        "SELECT source_id, target_id, type, metadata FROM connections"
+        f"SELECT source_id, target_id, type, {current_relation_sql()} AS current FROM connections"
     ).fetchall()
     keys: set[tuple[str, str, str]] = set()
     pairs: set[frozenset[str]] = set()
@@ -293,7 +293,7 @@ def _existing_edges(
         relation_type = str(row["type"])
         key = (source, target, relation_type)
         keys.add(key)
-        if is_semantic_relation(relation_type, json.loads(row["metadata"])):
+        if row["current"]:
             pairs.add(frozenset((source, target)))
         else:
             technical.add(key)
@@ -346,7 +346,7 @@ def _type_counts(store: MemoryStore) -> dict[str, int]:
     counts = {
         edge_type: int(
             store.connection.execute(
-                f"SELECT COUNT(*) FROM connections WHERE type = ? AND {semantic_relation_sql()}",
+                f"SELECT COUNT(*) FROM connections WHERE type = ? AND {current_relation_sql()}",
                 (edge_type,)
             ).fetchone()[0]
         )
@@ -358,12 +358,12 @@ def _type_counts(store: MemoryStore) -> dict[str, int]:
 
 def _share_counts(store: MemoryStore) -> dict[str, Any]:
     total = int(store.connection.execute(
-        f"SELECT COUNT(*) FROM connections WHERE {semantic_relation_sql()}"
+        f"SELECT COUNT(*) FROM connections WHERE {current_relation_sql()}"
     ).fetchone()[0])
     strict = int(
         store.connection.execute(
             f"SELECT COUNT(*) FROM connections WHERE type IN ({_placeholders(STRICT_TYPES)}) "
-            f"AND {semantic_relation_sql()}",
+            f"AND {current_relation_sql()}",
             STRICT_TYPES,
         ).fetchone()[0]
     )
@@ -371,7 +371,7 @@ def _share_counts(store: MemoryStore) -> dict[str, Any]:
         store.connection.execute(
             f"""
             SELECT COUNT(*) FROM connections
-            WHERE {semantic_relation_sql()} AND (type IN ({_placeholders(STRICT_TYPES)})
+            WHERE {current_relation_sql()} AND (type IN ({_placeholders(STRICT_TYPES)})
                OR json_extract(metadata, '$.kind') IN ({_placeholders(_PROVENANCE_KINDS)})
                OR json_extract(metadata, '$.basis') IN ({_placeholders(_PROVENANCE_BASES)})
                OR json_extract(metadata, '$.rule_basis') IN ({_placeholders(_PROVENANCE_RULE_BASES)}))

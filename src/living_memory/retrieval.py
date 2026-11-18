@@ -1633,7 +1633,11 @@ class MemoryRecallService:
                 neighbors = {node_id: [] for node_id in connections}
                 for node_id, edges in connections.items():
                     for edge in edges:
-                        if not source_only and source_relation_weight(edge.type, edge.weight, edge.metadata) != edge.weight:
+                        if not source_only and (
+                            source_relation_weight(edge.type, edge.weight, edge.metadata) != edge.weight
+                            or (edge.metadata.get("rule") == "R4b"
+                                and edge.metadata.get("basis") in ("co_access", "cluster"))
+                        ):
                             historical_edges = True
                         traversal = _traversal(
                             edge, node_id, causal_mode=causal_mode,

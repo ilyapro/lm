@@ -9,7 +9,11 @@ Unrecognized metadata retains its ordinary relation semantics.
 """
 
 from collections.abc import Mapping
+import json
+import sqlite3
 from typing import Any
+
+from living_memory.file_evidence import file_citations
 
 
 _NON_CORRECTION_KINDS = ("drain_near_duplicate", "duplicate_content", "content_correction")
@@ -79,6 +83,60 @@ def source_relation_weight_sql(alias: str = "") -> str:
         f" WHEN {basis} = 'cluster' THEN MIN({weight}, {CLUSTER_MEMBERSHIP_WEIGHT})"
         f" WHEN {basis} = 'co_access' THEN 0.0 ELSE {weight} END"
     )
+
+
+def _checked_file_weight(metadata_json, weight, left_scope, left_json, right_scope, right_json, source_only):
+    """Project a stored maximum onto the contributions its endpoints support."""
+    metadata = json.loads(metadata_json)
+    files = metadata.get("files")
+    names = {f for f in files if isinstance(f, str)} if isinstance(files, list) else set()
+    left = dict(file_citations(left_scope, json.loads(left_json)))
+    right = dict(file_citations(right_scope, json.loads(right_json)))
+    shared = {key for key in left.keys() & right.keys() if left[key] in names or right[key] in names}
+    count = len(shared)
+    if count and count == len(files) and not source_only:
+        return weight
+    contributions = []
+    if count:
+        contributions.append(shared_files_weight(shared))
+    if metadata.get("commit") or metadata.get("kind") == "content_reference":
+        contributions.append(CONTENT_REFERENCE_WEIGHT)
+    if metadata.get("kind") == "derived_from":
+        contributions.append(DERIVED_FROM_WEIGHT)
+    basis = metadata.get("basis")
+    if basis == "explicit":
+        contributions.append(weight)
+    if basis == "cluster" or (basis == "co_access" and not source_only):
+        # A merged maximum above the recorded file contribution came from
+        # another writer. Otherwise only the membership/co-access floor is known.
+        floor = CLUSTER_MEMBERSHIP_WEIGHT if basis == "cluster" else 0.25
+        independent = isinstance(files, list) and weight > shared_files_weight(files)
+        contributions.append(weight if independent and not source_only else floor)
+    return min(weight, max(contributions)) if contributions else None
+
+
+def register_file_evidence(connection: sqlite3.Connection) -> None:
+    connection.create_function("lm_checked_file_weight", 7, _checked_file_weight, deterministic=True)
+
+
+def checked_weight_sql(alias: str = "connections", *, source_only: bool = False) -> str:
+    """Only file-derived edges fetch endpoint contexts, by primary key."""
+    meta = f"{alias}.metadata"
+    weight = f"{alias}.weight"
+    other = source_relation_weight_sql(alias) if source_only else weight
+    return (
+        f"CASE WHEN {alias}.type = 'related' AND (json_extract({meta}, '$.rule') = 'R4b'"
+        f" OR json_extract({meta}, '$.basis') = 'shared_files'"
+        f" OR json_extract({meta}, '$.rule_basis') = 'shared_files') THEN ("
+        f"SELECT lm_checked_file_weight({meta}, {weight}, a.scope, a.context,"
+        f" b.scope, b.context, {int(source_only)}) FROM nodes a JOIN nodes b"
+        f" ON b.id = {alias}.target_id WHERE a.id = {alias}.source_id)"
+        f" ELSE {other} END"
+    )
+
+
+def current_relation_sql(alias: str = "connections") -> str:
+    return f"({semantic_relation_sql(alias)} AND ({checked_weight_sql(alias)}) IS NOT NULL)"
 
 
 def is_correction(relation_type: str, metadata: Mapping[str, Any]) -> bool:

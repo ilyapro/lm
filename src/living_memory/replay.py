@@ -58,7 +58,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from living_memory.relations import correction_sql, semantic_relation_sql
+from living_memory.relations import correction_sql, current_relation_sql, register_file_evidence, semantic_relation_sql
 from living_memory.config import MemoryConfig
 from living_memory.feedback import _method_signals, ungrounded_negative_signals
 from living_memory.grounding import (
@@ -806,6 +806,9 @@ def snapshot_evidence(connection: sqlite3.Connection) -> Callable[[str], tuple[b
         str(row["name"]) for row in connection.execute("PRAGMA table_info(connections)")
     }
     graph_relation = semantic_relation_sql("c") if "metadata" in relation_columns else "1"
+    if "metadata" in relation_columns and {"scope", "context"} <= node_columns and "weight" in relation_columns:
+        register_file_evidence(connection)
+        graph_relation = current_relation_sql("c")
     chunk_table = (
         connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",

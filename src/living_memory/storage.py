@@ -45,7 +45,7 @@ from living_memory.models import (
     SourcePassage,
 )
 from living_memory.relations import (
-    source_relation_weight_sql,
+    checked_weight_sql, current_relation_sql, register_file_evidence,
     correction_sql, is_correction, is_semantic_relation, semantic_relation_sql,
 )
 from living_memory.scope import ALL_SCOPES, ScopePlan, normalize_scope, resolve_scope
@@ -1114,6 +1114,7 @@ class MemoryStore:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        register_file_evidence(self._conn)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
@@ -2093,8 +2094,8 @@ class MemoryStore:
         metadata_data = dict(metadata or {})
         if merge:
             row = self._conn.execute(
-                """
-                SELECT * FROM connections
+                f"""
+                SELECT *, {checked_weight_sql()} AS checked_weight FROM connections
                 WHERE source_id = ? AND target_id = ? AND type = ?
                 """,
                 (source_id, target_id, relation_type),
@@ -2102,12 +2103,13 @@ class MemoryStore:
             if row is not None:
                 existing = _connection_from_row(row)
                 if (is_semantic_relation(relation_type, metadata_data)
-                        and not is_semantic_relation(existing.type, existing.metadata)):
+                        and (row["checked_weight"] is None
+                             or not is_semantic_relation(existing.type, existing.metadata))):
                     # Fresh semantic evidence replaces technical history; the
                     # old marker and weight do not describe this contribution.
                     existing = None
                 else:
-                    weight = max(float(weight), existing.weight)
+                    weight = max(float(weight), row["checked_weight"] or 0.0)
                     metadata_data = {**existing.metadata, **metadata_data}
             weight = round(min(1.0, max(0.0, float(weight))), 6)
 
@@ -2120,7 +2122,7 @@ class MemoryStore:
 
         now = _utc_now()
         metadata_json = _json_dumps(metadata_data)
-        if (existing is not None and weight == existing.weight
+        if (existing is not None and weight == row["weight"]
                 and metadata_json == _json_dumps(existing.metadata)):
             connection = existing
         else:
@@ -2261,10 +2263,10 @@ class MemoryStore:
             params.append(relation_type)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         rows = self._conn.execute(
-            f"SELECT * FROM connections {where} ORDER BY weight DESC, created_at DESC",
+            f"SELECT *, {checked_weight_sql()} AS checked_weight FROM connections {where} ORDER BY checked_weight DESC, created_at DESC",
             params,
         ).fetchall()
-        return [_connection_from_row(row) for row in rows]
+        return [_connection_from_row(row) for row in rows if row["checked_weight"] is not None]
 
     def list_supersedes_pairs(self, node_ids: Iterable[str]) -> list[tuple[str, str]]:
         """Return unique (correction, original) pairs touching any requested id.
@@ -2312,10 +2314,10 @@ class MemoryStore:
             chunk = ids[i : i + 400]
             placeholders = ",".join("?" for _ in chunk)
             rows = self._conn.execute(
-                f"SELECT * FROM connections WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders})) AND {semantic_relation_sql()} ORDER BY weight DESC, created_at DESC",
+                f"SELECT *, {checked_weight_sql()} AS checked_weight FROM connections WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders})) AND {semantic_relation_sql()} ORDER BY checked_weight DESC, created_at DESC",
                 chunk + chunk
             ).fetchall()
-            connections.extend([_connection_from_row(row) for row in rows])
+            connections.extend(_connection_from_row(row) for row in rows if row["checked_weight"] is not None)
             
         conns_by_node: dict[str, list[Connection]] = {node_id: [] for node_id in ids}
         seen = set()
@@ -2347,17 +2349,18 @@ class MemoryStore:
             return result
         remaining = len(ids)
         seen: set[str] = set()
-        weight = source_relation_weight_sql() if source_only else "weight"
-        positive = f" AND ({weight}) > 0.0" if source_only else ""
+        weight = checked_weight_sql(source_only=source_only)
         for i in range(0, len(ids), 400):
             chunk = ids[i : i + 400]
             placeholders = ",".join("?" for _ in chunk)
             cursor = self._conn.execute(
-                f"SELECT *, {weight} AS recall_weight FROM connections WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders})) AND {semantic_relation_sql()}{positive} ORDER BY recall_weight DESC, created_at DESC",
+                f"SELECT *, {weight} AS checked_weight FROM connections WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders})) AND {semantic_relation_sql()} ORDER BY checked_weight DESC, created_at DESC",
                 chunk + chunk,
             )
             try:
                 for row in cursor:
+                    if row["checked_weight"] is None or (source_only and row["checked_weight"] <= 0):
+                        continue
                     if row["id"] in seen:
                         continue
                     targets = [
@@ -2367,8 +2370,6 @@ class MemoryStore:
                     if not targets:
                         continue
                     connection = _connection_from_row(row)
-                    if source_only:
-                        connection = replace(connection, weight=float(row["recall_weight"]))
                     seen.add(connection.id)
                     for node_id in targets:
                         result[node_id].append(connection)
@@ -5055,7 +5056,7 @@ class MemoryStore:
 
     def _has_graph_evidence(self, scope: str) -> bool:
         """Whether an active scoped node has a semantic edge to an active node."""
-        relation = semantic_relation_sql("c")
+        relation = current_relation_sql("c")
         row = self._conn.execute(
             f"""
             SELECT 1
@@ -6992,7 +6993,7 @@ def _connection_from_row(row: sqlite3.Row) -> Connection:
         source_id=str(row["source_id"]),
         target_id=str(row["target_id"]),
         type=row["type"],
-        weight=float(row["weight"]),
+        weight=float(row["checked_weight"] if "checked_weight" in row.keys() and row["checked_weight"] is not None else row["weight"]),
         metadata=_json_loads(row["metadata"], {}),
         created_at=str(row["created_at"]),
         updated_at=str(row["updated_at"]),
