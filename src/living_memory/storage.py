@@ -1965,11 +1965,11 @@ class MemoryStore:
             json_values["context"] = context_data
         if vector is not None:
             _record_embedding_space(provenance_data, vector)
-        elif "embedding_space" in existing.provenance:
+        elif not content_changed and "embedding_space" in existing.provenance:
             provenance_data["embedding_space"] = existing.provenance["embedding_space"]
         else:
             provenance_data.pop("embedding_space", None)
-        if provenance is not None or vector is not None:
+        if provenance is not None or vector is not None or (content_changed and "embedding_space" in existing.provenance):
             json_values["provenance"] = provenance_data
             if provenance is not None and "source_traces" in provenance:
                 json_values["source_traces"] = source_traces
@@ -6957,7 +6957,7 @@ def _node_from_row(row: sqlite3.Row) -> Node:
     raw_embedding = _row_value(row, "embedding")
     if space is not None and not (
         isinstance(space, list) and len(space) == 2 and isinstance(space[0], str)
-        and raw_embedding and space[1] == _content_fingerprint(raw_embedding)
+        and isinstance(raw_embedding, str) and space[1] == _content_fingerprint(raw_embedding)
     ):
         provenance.pop("embedding_space")
     return Node(

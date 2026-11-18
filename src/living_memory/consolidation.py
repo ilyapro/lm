@@ -1538,13 +1538,11 @@ def _trace_embeddings(
     embedder: LocalEmbeddingModel | None,
     step: Callable[[], AbstractContextManager[Any]],
 ) -> dict[str, list[float]]:
-    """Whole-content vector per trace, encoding only what the cache lacks.
+    """Prepare comparable representatives for one detached source set.
 
-    Cache reads and writes run inside ``step`` and qualify vectors by content
-    fingerprint and encoder identity. Encoding and identity resolution use
-    the embedder's shared encoder lock outside the store guard. Fresh vectors
-    are cached only if the encoder stayed the same throughout preparation;
-    a pass that falls back to hashing must not cache mixed encoder outputs.
+    Reuse a shared known space. Otherwise resolve the active producer and
+    recover missing evidence from fingerprinted whole-content cache rows or
+    text. Model calls and fallback retries run outside guarded store steps.
     """
 
     if embedder is None or not traces:

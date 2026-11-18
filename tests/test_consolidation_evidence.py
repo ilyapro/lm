@@ -362,3 +362,16 @@ def test_promotion_compares_reopened_concepts_across_encoders(tmp_path, monkeypa
             assert set(promoted.provenance["promoted_from"]) == set(scopes)
         else:
             assert persisted == []
+
+
+def test_replacing_evidence_invalidates_its_old_encoder(tmp_path):
+    with MemoryStore(tmp_path / "memory.db") as store:
+        supplied = EncodedVector([1., 0.], "fixture:old")
+        original = store.create_node(level="concept", content="Harbor tide.", embedding=supplied)
+        assert c._embedding_space(original) == supplied.encoder_id
+        renamed = store.update_node(original.id, content="Release approval.")
+        assert c._embedding_space(renamed) is None
+        store.update_node(original.id, embedding=supplied)
+        # A coordinate-only writer can update the legacy column independently.
+        store.connection.execute("UPDATE nodes SET embedding = ? WHERE id = ?", ("[0,1]", original.id))
+        assert c._embedding_space(store.get_node(original.id)) is None

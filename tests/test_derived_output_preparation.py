@@ -258,7 +258,8 @@ def test_promotion_rechecks_original_authors_after_detached_preparation(store, p
     if phase == "refresh":
         owner, = c._cross_scope_promotion(store, projects[0])
         assert owner.unique_agents == 3
-        store.update_node(projects[0].id, content=CORRECTION)
+        store.update_node(projects[0].id, content=CORRECTION,
+                          representative_embedding=EncodedVector([1., 0., 0.], "fixture:3"))
     guard = RLock()
     with preparing(store, guard) as (workers, entered, release, _):
         work = workers.submit(c._cross_scope_promotion, store, projects[0], step=lambda: guard)
