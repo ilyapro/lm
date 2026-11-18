@@ -1136,6 +1136,7 @@ class MemoryStore:
     """
 
     _owns_read_snapshot = False
+    _filtered_map_chunks: tuple[int, int] | None = None
 
     def __init__(
         self,
@@ -4403,8 +4404,8 @@ class MemoryStore:
         ).fetchone()
         return int(row[0]) if row is not None else None
 
-    def recall_map_revision_counters(self) -> tuple[int | None, int] | None:
-        """Pending-chunk and anchor counters from one committed, supported format."""
+    def filtered_map_revision(self) -> tuple[int, int] | None:
+        """Compact committed corpus stamp for ordering filtered map keys."""
         if self._conn.in_transaction or not self._anchor_tables_present():
             return None
         row = self._conn.execute(
@@ -4415,7 +4416,21 @@ class MemoryStore:
         ).fetchone()
         if row is None:
             return None
-        return (int(row[0]) if row[0] is not None else None, int(row[1]))
+        pending = int(row[0]) if row[0] is not None else None
+        previous = self._filtered_map_chunks
+        if previous is not None and previous[0] == pending:
+            return previous[1], int(row[1])
+
+        # Every chunk change advances pending, but chunkless writes can advance
+        # it too. Only the actual scope counters determine FIFO equivalence.
+        # They never decrease or disappear; a new scope at zero counts as one.
+        rows = self._conn.execute(
+            "SELECT value FROM metadata WHERE key >= ? AND key < ?",
+            (_CHUNK_SCOPE_REVISION_PREFIX, "chunk_scope_revision;"),
+        )
+        chunks = sum(1 + int(value) for (value,) in rows)
+        self._filtered_map_chunks = (pending, chunks) if pending is not None else None
+        return chunks, int(row[1])
 
     def chunk_corpus_revisions(
         self, scopes: Sequence[str] | None = None,
