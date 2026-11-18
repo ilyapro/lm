@@ -1241,13 +1241,15 @@ def prepared_read_feedback(
             if marked:
                 marks = resolve_explicit_marks(store, used, irrelevant, transport_session_id, context=context)
         except Exception as error:
+            if preparation is None:
+                stack.enter_context(guard())
+            if store.connection.in_transaction:
+                raise
             _LOG.warning(
                 "%s preparation failed (%s; %d requested id(s)); credit skipped",
                 "explicit mark" if marked else "lookup credit", type(error).__name__[:80],
                 len(lookup_ids or ()) + len(used or ()) + len(irrelevant or ()),
             )
-            if preparation is None:
-                stack.enter_context(guard())
             if marked:
                 marks = _explicit_mark_requests(used, irrelevant, transport_session_id)
                 for mark in marks:

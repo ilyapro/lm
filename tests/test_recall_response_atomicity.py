@@ -1,7 +1,7 @@
 """Required recall preparation and consumption have one durable outcome."""
 
 import asyncio
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import sqlite3
 
 from fastmcp import Client
@@ -9,6 +9,7 @@ from fastmcp.exceptions import ToolError
 import pytest
 
 from living_memory import server
+from living_memory.feedback import prepared_read_feedback
 from living_memory.retrieval import MemoryRecallService
 from test_transport_identity import FakeMCP
 
@@ -336,3 +337,14 @@ def test_failed_mark_read_does_not_mask_required_event_write(runtime, monkeypatc
             call(used=[node.id])
     assert denied and not store.connection.in_transaction
     assert snapshot(store) == before
+
+
+def test_read_feedback_requires_an_independent_transaction(runtime):
+    store, node, _, _call = runtime
+
+    with store.transaction():
+        with pytest.raises(RuntimeError, match="must precede the operation transaction"):
+            with prepared_read_feedback(
+                store, guard=nullcontext, used=[node.id], transport_session_id="fixture-transport",
+            ):
+                pytest.fail("entered recall inside an existing transaction")
