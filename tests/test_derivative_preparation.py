@@ -4,6 +4,7 @@ from collections import Counter
 
 import pytest
 
+from living_memory.embeddings import EncodedVector
 from living_memory import consolidation as c
 from living_memory.models import Node
 from living_memory.storage import MemoryStore
@@ -187,7 +188,7 @@ def test_overlapping_owners_share_text_preparation_only_within_one_operation(sto
     else:
         members = [store.create_node(
             level="concept", content=text, context={"scope": f"project:harbor-{i}"},
-            embedding=[1.0, 0.0],
+            embedding=EncodedVector([1.0, 0.0], "fixture:2"),
         ) for i, text in enumerate([
             "Harbor crane checks the paper permit.",
             "Harbor crane inspects the brake assembly.",
