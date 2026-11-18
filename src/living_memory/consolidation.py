@@ -38,7 +38,7 @@ import re
 from living_memory.decay import DecayResult, apply_decay
 from living_memory.chunking import TextChunk
 from living_memory.edge_derivation import DERIVED_FROM_ANNOTATION, DERIVED_FROM_KIND
-from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
+from living_memory.embeddings import EncodedVector, LocalEmbeddingModel, copy_vector, cosine_similarity
 from living_memory.feedback import ImplicitRecallFeedback, apply_pending_recall_feedback
 from living_memory.models import Connection, ConnectionType, Node, string_list
 from living_memory.query_anchors import resolve_replacement
@@ -216,7 +216,7 @@ class _TraceCluster:
         self.token_counts.update(tokens)
         if embedding is None:
             return
-        self.embeddings_by_trace_id[trace.id] = list(embedding)
+        self.embeddings_by_trace_id[trace.id] = copy_vector(embedding)
         if self.embedding_sum is None:
             self.embedding_sum = [0.0] * len(embedding)
         for index, value in enumerate(embedding):
@@ -438,7 +438,7 @@ def memory_consolidate(
         candidates = _promotion_matches(store, projects, step=step)
         for concept in projects:
             result.concepts_promoted.extend(
-                _cross_scope_promotion(store, concept, candidates=candidates[concept.id], step=step)
+                _cross_scope_promotion(store, concept, matches=candidates[concept.id], step=step)
             )
 
     # Existing promotions consume current project digests even if no new
@@ -1520,6 +1520,18 @@ def _connect_schema_to_traces(
         )
 
 
+def _embedding_space(node: Node) -> str | None:
+    space = node.provenance.get("embedding_space")
+    return space[0] if space else None
+
+
+def _stored_vector(node: Node) -> list[float] | None:
+    space = _embedding_space(node)
+    if space and node.embedding:
+        return EncodedVector(node.embedding, space)
+    return node.embedding
+
+
 def _trace_embeddings(
     store: MemoryStore,
     traces: Sequence[Node],
@@ -1537,13 +1549,12 @@ def _trace_embeddings(
 
     if embedder is None:
         return {}
-    vectors = {trace.id: trace.embedding for trace in traces if trace.embedding is not None}
-    missing = [trace for trace in traces if trace.embedding is None]
-    if not missing:
-        return vectors
-    # Resolving the encoder may load the model: seconds, and no store access,
-    # so not under the guard (a server has usually warmed it already).
+    if not traces:
+        return {}
     encoder = embedder.encoder_id()
+    vectors = {node.id: EncodedVector(node.embedding, encoder) for node in traces
+               if node.embedding and _embedding_space(node) == encoder}
+    missing = [node for node in traces if node.id not in vectors]
     for start in range(0, len(missing), _CACHE_READ_BATCH):
         with step():
             vectors.update(
@@ -1559,7 +1570,11 @@ def _trace_embeddings(
         for trace, vector in zip(batch, encoded, strict=True):
             vectors[trace.id] = vector
             fresh.append((trace, vector))
-    if fresh and embedder.encoder_id() == encoder:
+    if fresh and embedder.encoder_id() != encoder:
+        # LocalEmbeddingModel can fall back mid-batch. Reuse only content
+        # produced in its final space, including for earlier cache hits.
+        return _trace_embeddings(store, traces, embedder, step)
+    if fresh:
         with step():
             try:
                 store.put_consolidation_embeddings(fresh, encoder)
@@ -1629,9 +1644,9 @@ def _cluster_prepared_reference(
                     trace.scope,
                     [trace],
                     Counter(tokens),
-                    embedding_sum=list(embedding) if embedding is not None else None,
+                    embedding_sum=copy_vector(embedding) if embedding is not None else None,
                     embedding_count=1 if embedding is not None else 0,
-                    embeddings_by_trace_id={trace.id: list(embedding)}
+                    embeddings_by_trace_id={trace.id: copy_vector(embedding)}
                     if embedding is not None
                     else {},
                     strategy="embedding-cosine" if embedding is not None else "token-jaccard",
@@ -1732,7 +1747,7 @@ def _cluster_traces_indexed(
                 cluster.traces.append(trace)
                 cluster.token_counts.update(tokens)
                 if embedding is not None:
-                    cluster.embeddings_by_trace_id[trace.id] = list(embedding)
+                    cluster.embeddings_by_trace_id[trace.id] = copy_vector(embedding)
                     state.sums[best] += vector
                     cluster.embedding_count += 1
                     state.set_rep(best, cluster.embedding_count)
@@ -1743,7 +1758,7 @@ def _cluster_traces_indexed(
             [trace],
             Counter(tokens),
             embedding_count=1 if embedding is not None else 0,
-            embeddings_by_trace_id={trace.id: list(embedding)} if embedding is not None else {},
+            embeddings_by_trace_id={trace.id: copy_vector(embedding)} if embedding is not None else {},
             strategy="embedding-cosine" if embedding is not None else "token-jaccard",
         )
         index = len(state.clusters)
@@ -1931,7 +1946,7 @@ def _write_cluster_concept(
 
     members = assessment.live
     best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
-    representative = best_trace.embedding or (embeddings or {}).get(best_trace.id)
+    representative = (embeddings or {}).get(best_trace.id) or _stored_vector(best_trace)
     prepared_digest = _derived_digest(
         store, "cluster", scope, members, best_trace, existing, representative, prepared_digest, source_inputs,
     )
@@ -2167,29 +2182,38 @@ def _promotion_candidates(
 def _promotion_matches(
     store: MemoryStore, concepts: Sequence[Node],
     *, step: Callable[[], AbstractContextManager[Any]] = nullcontext,
-) -> dict[str, list[Node]]:
-    """Share each candidate read across seeds, retaining only the best per scope.
-
-    Scoring happens outside the store guard. Search snapshots confer no write
-    authority: each promotion rereads current sources and similarity below.
-    """
+    candidates: Iterable[Node] | None = None,
+) -> dict[str, list[tuple[Node, float]]]:
+    """Score detached candidates in bounded pages, keeping the best per scope."""
     selected: dict[str, dict[str, tuple[Node, float]]] = {node.id: {} for node in concepts}
     groups: dict[str | None, list[Node]] = {}
     for concept in concepts:
         groups.setdefault(_cluster_group(concept)[1], []).append(concept)
-    for candidate in _promotion_candidates(store, step=step):
-        for concept in groups.get(_cluster_group(candidate)[1], []):
-            if candidate.scope == concept.scope:
-                continue
-            similarity = cosine_similarity(concept.embedding, candidate.embedding)
+    model = LocalEmbeddingModel(model_name=store.config.embedding_model)
+    stream = iter(_promotion_candidates(store, step=step) if candidates is None else candidates)
+    while page := list(islice(stream, _PROMOTION_READ_BATCH)):
+        pairs = [(seed, candidate) for candidate in page
+                 for seed in groups.get(_cluster_group(candidate)[1], ())
+                 if seed.scope != candidate.scope and _promotion_source(candidate)]
+        # A known shared producer can compare its original representatives.
+        # Recover other comparisons from content in one available space.
+        repair = {n.id: n for seed, candidate in pairs
+                  if not _embedding_space(seed) or _embedding_space(seed) != _embedding_space(candidate)
+                  for n in (seed, candidate)}
+        vectors = _trace_embeddings(store, list(repair.values()), model, step)
+        for seed, candidate in pairs:
+            if _embedding_space(seed) and _embedding_space(seed) == _embedding_space(candidate):
+                similarity = cosine_similarity(seed.embedding, candidate.embedding)
+            else:
+                similarity = cosine_similarity(vectors[seed.id], vectors[candidate.id])
             if similarity < CROSS_SCOPE_PROMOTION_THRESHOLD:
                 continue
-            best = selected[concept.id].get(candidate.scope)
+            best = selected[seed.id].get(candidate.scope)
             if best is None or (similarity, candidate.confidence, candidate.usefulness_score) > (
                 best[1], best[0].confidence, best[0].usefulness_score
             ):
-                selected[concept.id][candidate.scope] = candidate, similarity
-    return {key: [node for node, _ in matches.values()] for key, matches in selected.items()}
+                selected[seed.id][candidate.scope] = candidate, similarity
+    return {key: list(matches.values()) for key, matches in selected.items()}
 
 
 def _promotion_source(node: Node | None) -> bool:
@@ -2200,32 +2224,18 @@ def _promotion_source(node: Node | None) -> bool:
 
 def _cross_scope_promotion(
     store: MemoryStore, concept: Node, *, candidates: Sequence[Node] | None = None,
+    matches: Sequence[tuple[Node, float]] | None = None,
     step: Callable[[], AbstractContextManager[Any]] = nullcontext,
 ) -> list[Node]:
-    with step():
-        concept = store.get_node(concept.id)
-        if not _promotion_source(concept) or _is_superseded(store, concept.id):
-            return []
-    if candidates is None:
-        candidates = _promotion_matches(store, [concept], step=step)[concept.id]
-
-    # Scoring is pure computation on this operation's detached snapshot.
-    group = _cluster_group(concept)[1]
-    sources_by_scope: dict[str, tuple[Node, float]] = {concept.scope: (concept, 1.0)}
-    for candidate in candidates:
-        if candidate.id == concept.id or candidate.scope == concept.scope:
-            continue
-        if _cluster_group(candidate)[1] != group:
-            continue
-        similarity = cosine_similarity(concept.embedding, candidate.embedding)
-        if similarity < CROSS_SCOPE_PROMOTION_THRESHOLD:
-            continue
-        current = sources_by_scope.get(candidate.scope)
-        if current is None or (similarity, candidate.confidence, candidate.usefulness_score) > (
-            current[1], current[0].confidence, current[0].usefulness_score
-        ):
-            sources_by_scope[candidate.scope] = (candidate, similarity)
-    if len(sources_by_scope) < 3:
+    if matches is None:
+        with step():
+            concept = store.get_node(concept.id)
+            if not _promotion_source(concept) or _is_superseded(store, concept.id):
+                return []
+        matches = _promotion_matches(store, [concept], candidates=candidates, step=step)[concept.id]
+    scored = {node.id: (node, score) for node, score in matches}
+    scored[concept.id] = (concept, 1.0)
+    if len(scored) < 3:
         return []
 
     preparation = _DerivationPreparation({}, {})
@@ -2238,15 +2248,20 @@ def _cross_scope_promotion(
                     if not _promotion_source(concept) or _is_superseded(store, concept.id):
                         return []
                     group = _cluster_group(concept)[1]
-                    current = _current_sources(store, (source.id for source, _ in sources_by_scope.values())).live
-                    members = {source.id: source for source in current
-                               if _promotion_source(source) and not _is_superseded(store, source.id)
-                               and _cluster_group(source)[1] == group
-                               and cosine_similarity(concept.embedding, source.embedding) >= CROSS_SCOPE_PROMOTION_THRESHOLD}
-                    if len(_source_scopes(members.values())) < 3:
+                    current = _current_sources(store, scored).live
+                    members = {}
+                    for source in current:
+                        match = scored.get(source.id)
+                        if match is None or not _promotion_source(source) or _is_superseded(store, source.id):
+                            continue
+                        previous, _ = match
+                        if (source.scope == previous.scope and _cluster_group(source)[1] == group
+                                and source.content == previous.content and source.embedding == previous.embedding
+                                and _embedding_space(source) == _embedding_space(previous)):
+                            members[source.id] = source
+                    if concept.id not in members or len(_source_scopes(members.values())) < 3:
                         return []
-                    similarities = {source.id: cosine_similarity(concept.embedding, source.embedding)
-                                    for source in members.values()}
+                    similarities = {key: scored[key][1] for key in members}
                     sources = list(members.values())
                     ancestors = _source_ancestors(store, sources)
                     owners = [
@@ -2366,12 +2381,12 @@ def _write_global_promotion(
             global_concept = store.create_node(
                 level="concept", content=digest,
                 context=context,
-                representative_embedding=best_source.embedding, stats=stats, provenance=provenance,
+                representative_embedding=_stored_vector(best_source), stats=stats, provenance=provenance,
                 prepared_chunks=prepared_digest.chunks,
             )
         else:
             global_concept = store.update_node(
-                existing.id, content=digest, representative_embedding=best_source.embedding,
+                existing.id, content=digest, representative_embedding=_stored_vector(best_source),
                 prepared_chunks=prepared_digest.chunks,
                 stats=stats, provenance=provenance,
             )

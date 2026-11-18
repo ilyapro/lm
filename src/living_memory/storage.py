@@ -832,6 +832,12 @@ def _node_read_batches(
         yield sorted(ids[i : i + batch_size])
 
 
+def _record_embedding_space(provenance: dict[str, Any], vector: Iterable[float] | None) -> None:
+    provenance.pop("embedding_space", None)
+    if isinstance(vector, EncodedVector):
+        provenance["embedding_space"] = [vector.encoder_id, _content_fingerprint(_json_dumps(vector))]
+
+
 def _content_fingerprint(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -1408,9 +1414,10 @@ class MemoryStore:
 
         content_vector = None if embedding is None else copy_vector(embedding)
         vector = (
-            list(representative_embedding)
+            copy_vector(representative_embedding)
             if representative_embedding is not None else content_vector
         )
+        _record_embedding_space(provenance_data, vector)
         legacy_embedding = self._node_embedding_column_present()
         embedding_column = "embedding, " if legacy_embedding else ""
         embedding_placeholder = "?, " if legacy_embedding else ""
@@ -1925,7 +1932,7 @@ class MemoryStore:
         content_changed = new_content != existing.content
         content_vector = None if embedding is None else copy_vector(embedding)
         vector = (
-            list(representative_embedding)
+            copy_vector(representative_embedding)
             if representative_embedding is not None else content_vector
         )
         unique_agents = int(stats_data.get("unique_agents", existing.unique_agents))
@@ -1954,11 +1961,17 @@ class MemoryStore:
         json_values = {}
         if context is not None or context_data != existing.context:
             json_values["context"] = context_data
-        if provenance is not None:
+        if vector is not None:
+            _record_embedding_space(provenance_data, vector)
+        elif "embedding_space" in existing.provenance:
+            provenance_data["embedding_space"] = existing.provenance["embedding_space"]
+        else:
+            provenance_data.pop("embedding_space", None)
+        if provenance is not None or provenance_data != existing.provenance and vector is not None:
             json_values["provenance"] = provenance_data
-            if "source_traces" in provenance:
+            if provenance is not None and "source_traces" in provenance:
                 json_values["source_traces"] = source_traces
-            if "corrections" in provenance:
+            if provenance is not None and "corrections" in provenance:
                 json_values["corrections"] = corrections
         if vector is not None and self._node_embedding_column_present():
             json_values["embedding"] = vector
@@ -6482,7 +6495,7 @@ class MemoryStore:
                 if sys.byteorder != "little":  # pragma: no cover - little-endian CI
                     values.byteswap()
                 if len(values) == int(row["dimensions"]):
-                    found[node_id] = values.tolist()
+                    found[node_id] = EncodedVector(values, encoder)
         return found
 
     def put_consolidation_embeddings(
@@ -6938,11 +6951,18 @@ def _node_from_row(row: sqlite3.Row) -> Node:
     provenance["source_traces"] = source_traces
     provenance["corrections"] = corrections
 
+    space = provenance.get("embedding_space")
+    raw_embedding = _row_value(row, "embedding")
+    if space is not None and not (
+        isinstance(space, list) and len(space) == 2 and isinstance(space[0], str)
+        and raw_embedding and space[1] == _content_fingerprint(raw_embedding)
+    ):
+        provenance.pop("embedding_space")
     return Node(
         id=str(row["id"]),
         level=row["level"],
         content=str(row["content"]),
-        embedding=_json_loads(_row_value(row, "embedding"), None),
+        embedding=_json_loads(raw_embedding, None),
         context=_json_loads(row["context"], {}),
         scope=str(row["scope"]),
         agent=row["agent"],
