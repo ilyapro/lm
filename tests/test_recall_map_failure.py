@@ -10,6 +10,7 @@ import sys
 import pytest
 
 from living_memory import storage
+from living_memory.embeddings import EncodedVector
 from living_memory.recall_map import RecallMap, RecallMapBuilder
 from living_memory.score_gate import QueryRelevance
 from living_memory.server import create_mcp_server
@@ -190,14 +191,14 @@ def test_native_embedding_read_finishes_before_map_writes(tmp_path, monkeypatch,
     for index in range(32):
         store.create_node(
             level="trace", content=f"quarterly ledger reconciliation {index}",
-            embedding=[float(axis == 10) for axis in range(384)],
+            embedding=EncodedVector((float(axis == 10) for axis in range(384)), "hash:384"),
         )
     for index in range(12):
         topic = "orbital telemetry calibration" if index % 2 else "orchard harvest rotation"
         store.create_node(
             node_id=f"vector-{index:02}", level="trace", content=f"{MAP_QUERY} {topic} {index}",
             context={"scope": MAP_SCOPE},
-            embedding=[float(axis == index % 2) for axis in range(384)],
+            embedding=EncodedVector((float(axis == index % 2) for axis in range(384)), "hash:384"),
         )
     original_stream = store.iter_node_chunk_vectors
     original_reduce = RecallMapBuilder._node_vector

@@ -1,6 +1,5 @@
 """A chunk contributes a cosine only in its producer's coordinate space."""
 
-
 import pytest
 
 from living_memory import embeddings, retrieval
