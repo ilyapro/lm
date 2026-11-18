@@ -271,7 +271,8 @@ def test_native_recall_finishes_history_before_response_and_discards_partial_pro
             store.record_recall_event(
                 query=event.query, scope=event.scope,
                 ambient_context={"transport_session_id": event.transport_session_id},
-                results=event.results,
+                results=[*event.results, evidence(replace(node, id="unrelated")),
+                         evidence(replace(node, content="Old version."))],
             )
             if failure == "parse":
                 with store.transaction():
@@ -283,6 +284,9 @@ def test_native_recall_finishes_history_before_response_and_discards_partial_pro
 
             def checked_selection(*args, **kwargs):
                 assert watch.cursors and watch.cursors[-1].closed
+                limited, _, _, history = args
+                expected_key = (node.id, digest(limited[0].node.content))
+                assert history._versions.keys() <= {expected_key}
                 return select(*args, **kwargs)
 
             monkeypatch.setattr(server, "_select_distinct_results", checked_selection)
