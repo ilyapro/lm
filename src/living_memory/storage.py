@@ -2971,19 +2971,25 @@ class MemoryStore:
         with self.transaction():
             eligible = {row["id"] for row in self._recent_delivery_events(transport, context, limit)
                         if _in_delivery_window(row, earliest, latest)}
-            rows = self._conn.execute(
-                f"""SELECT r.node_id, r.event_id, e.query, e.scope, l.occurred_at AS created_at
-                    FROM json_each(?) AS request
-                    JOIN recall_map_reads AS r ON r.node_id = request.key AND r.lookup_id = request.value
-                    JOIN {RECALL_LOOKUP_EVENT_TABLE} AS l
-                      ON l.lookup_event_id = r.lookup_id AND l.node_id = r.node_id
-                    JOIN recall_events AS e ON e.id = r.event_id AND e.transport_session_id = l.transport_session_id
-                    JOIN nodes AS n ON n.id = r.node_id AND n.scope = r.scope
-                                   AND n.content_fingerprint = r.content_fingerprint""",
-                (_json_dumps(reads),),
-            )
-            return {row["node_id"]: {**dict(row), "rank": None, "result": {}}
-                    for row in rows if row["event_id"] in eligible and _in_delivery_window(row, earliest, latest)}
+            return {
+                row["node_id"]: {**dict(row), "rank": None, "result": {}}
+                for row in self.current_map_reads(reads)
+                if row["event_id"] in eligible and _in_delivery_window(row, earliest, latest)
+            }
+
+    def current_map_reads(self, reads: Mapping[str, str]) -> list[sqlite3.Row]:
+        """Read only receipts whose scope and content version still match."""
+        return self._conn.execute(
+            f"""SELECT r.node_id, r.event_id, e.query, e.scope, l.occurred_at AS created_at
+                FROM json_each(?) AS request
+                JOIN recall_map_reads AS r ON r.node_id = request.key AND r.lookup_id = request.value
+                JOIN {RECALL_LOOKUP_EVENT_TABLE} AS l
+                  ON l.lookup_event_id = r.lookup_id AND l.node_id = r.node_id
+                JOIN recall_events AS e ON e.id = r.event_id AND e.transport_session_id = l.transport_session_id
+                JOIN nodes AS n ON n.id = r.node_id AND n.scope = r.scope
+                               AND n.content_fingerprint = r.content_fingerprint""",
+            (_json_dumps(reads),),
+        ).fetchall()
 
     def recall_deliveries(
         self,

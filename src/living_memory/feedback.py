@@ -990,92 +990,112 @@ def apply_explicit_marks(
         outcome.marks = list(marks)
         if not marks:
             return outcome
-        outcome.mark_ids = store.record_feedback_marks(
-            [
-                {
-                    "recall_event_id": mark.event.id if mark.event is not None else "",
-                    "node_id": mark.node_id,
-                    "mark": mark.mark,
-                    "accepted": mark.accepted,
-                    "reject_reason": mark.reject_reason,
-                    "via_tool": via_tool,
-                    "source_id": source_id,
-                    "transport_session_id": transport_session_id,
-                    "agent": agent,
-                    "rank": mark.rank,
-                }
-                for mark in marks
-            ]
-        )
-
-        if policy != "credit":
-            return outcome
-
-        irrelevant_by_event: dict[str, tuple[RecallEventHeader, list[str]]] = {}
-        for mark in marks:
-            if mark.accepted and mark.mark == "irrelevant" and mark.event is not None:
-                entry = irrelevant_by_event.setdefault(mark.event.id, (mark.event, []))
-                if mark.node_id not in entry[1]:
-                    entry[1].append(mark.node_id)
-
-        weight = _explicit_credit_weight()
-        anchor_work: dict[str, tuple[RecallEventHeader, list[str], list[str]]] = {}
-        for mark, mark_id in zip(marks, outcome.mark_ids, strict=True):
-            if not (mark.accepted and mark.mark == "used" and mark.event is not None):
-                continue
-            event = mark.event
-            entry = anchor_work.setdefault(event.id, (event, [], []))
-            entry[2].append(mark.node_id)
-            try:
-                with store.transaction():
-                    if not store.claim_recall_credit(
-                        event.id, mark.node_id, basis="explicit", source_id=f"mark:{mark_id}"
-                    ):
-                        continue
-                    if mark.rank is None:
-                        # Map reads have no retrieval rank or component scores.
-                        if weight > 0:
-                            entry[1].append(mark.node_id)
-                        continue
-                    signal = max(0.2, 1.0 / (mark.rank + 1)) * weight
-                    if signal > 0.0:
-                        apply_retrieval_feedback(
-                            store,
-                            SimpleNamespace(
-                                node_id=mark.node_id,
-                                bm25_score=float(mark.result.get("bm25_score", 0.0) or 0.0),
-                                vector_score=float(mark.result.get("vector_score", 0.0) or 0.0),
-                                graph_score=float(mark.result.get("graph_score", 0.0) or 0.0),
-                            ),
-                            useful=True,
-                            signal=signal,
-                            scope=event.scope,
-                        )
-            except Exception:
-                _LOG.warning(
-                    "explicit credit failed for %s %s, pair (%s, %s)",
-                    via_tool, source_id, event.id, mark.node_id, exc_info=True,
-                )
-                continue
-            if signal > 0.0:
-                outcome.credited.append((event.id, mark.node_id))
-                entry[1].append(mark.node_id)
-        outcome.anchor_ids.extend(
-            _apply_query_feedback(
-                store,
-                [
-                    (event, tuple(targets), tuple(confirmed))
-                    for event, targets, confirmed in anchor_work.values()
-                ],
-                irrelevant_work=list(irrelevant_by_event.values()),
-                preparation=preparation,
-            )
-        )
+        reads = {m.node_id: m.map_lookup_id for m in marks if m.accepted and m.map_lookup_id}
+        with ExitStack() as guard:
+            if reads:
+                guard.enter_context(store.transaction())
+                current = {row["node_id"] for row in store.current_map_reads(reads)}
+                for mark in marks:
+                    if mark.accepted and mark.map_lookup_id and mark.node_id not in current:
+                        mark.accepted = False
+                        mark.reject_reason = "not_delivered"
+                        mark.event = None
+            _record_explicit_marks(store, outcome, via_tool, source_id, transport_session_id,
+                                   agent, preparation)
     except Exception:
         _LOG.warning(
             "explicit feedback marks failed for %s %s", via_tool, source_id, exc_info=True
         )
     return outcome
+
+
+def _record_explicit_marks(
+    store: MemoryStore, outcome: ExplicitMarks, via_tool: str, source_id: str,
+    transport_session_id: str | None, agent: str | None,
+    preparation: Mapping[tuple[str, str], Sequence[float]] | None,
+) -> None:
+    marks = outcome.marks
+    outcome.mark_ids = store.record_feedback_marks(
+        [
+            {
+                "recall_event_id": mark.event.id if mark.event is not None else "",
+                "node_id": mark.node_id,
+                "mark": mark.mark,
+                "accepted": mark.accepted,
+                "reject_reason": mark.reject_reason,
+                "via_tool": via_tool,
+                "source_id": source_id,
+                "transport_session_id": transport_session_id,
+                "agent": agent,
+                "rank": mark.rank,
+            }
+            for mark in marks
+        ]
+    )
+
+    if outcome.policy != "credit":
+        return
+
+    irrelevant_by_event: dict[str, tuple[RecallEventHeader, list[str]]] = {}
+    for mark in marks:
+        if mark.accepted and mark.mark == "irrelevant" and mark.event is not None:
+            entry = irrelevant_by_event.setdefault(mark.event.id, (mark.event, []))
+            if mark.node_id not in entry[1]:
+                entry[1].append(mark.node_id)
+
+    weight = _explicit_credit_weight()
+    anchor_work: dict[str, tuple[RecallEventHeader, list[str], list[str]]] = {}
+    for mark, mark_id in zip(marks, outcome.mark_ids, strict=True):
+        if not (mark.accepted and mark.mark == "used" and mark.event is not None):
+            continue
+        event = mark.event
+        entry = anchor_work.setdefault(event.id, (event, [], []))
+        entry[2].append(mark.node_id)
+        try:
+            with store.transaction():
+                if not store.claim_recall_credit(
+                    event.id, mark.node_id, basis="explicit", source_id=f"mark:{mark_id}"
+                ):
+                    continue
+                if mark.rank is None:
+                    # Map reads have no retrieval rank or component scores.
+                    if weight > 0:
+                        entry[1].append(mark.node_id)
+                    continue
+                signal = max(0.2, 1.0 / (mark.rank + 1)) * weight
+                if signal > 0.0:
+                    apply_retrieval_feedback(
+                        store,
+                        SimpleNamespace(
+                            node_id=mark.node_id,
+                            bm25_score=float(mark.result.get("bm25_score", 0.0) or 0.0),
+                            vector_score=float(mark.result.get("vector_score", 0.0) or 0.0),
+                            graph_score=float(mark.result.get("graph_score", 0.0) or 0.0),
+                        ),
+                        useful=True,
+                        signal=signal,
+                        scope=event.scope,
+                    )
+        except Exception:
+            _LOG.warning(
+                "explicit credit failed for %s %s, pair (%s, %s)",
+                via_tool, source_id, event.id, mark.node_id, exc_info=True,
+            )
+            continue
+        if signal > 0.0:
+            outcome.credited.append((event.id, mark.node_id))
+            entry[1].append(mark.node_id)
+    outcome.anchor_ids.extend(
+        _apply_query_feedback(
+            store,
+            [
+                (event, tuple(targets), tuple(confirmed))
+                for event, targets, confirmed in anchor_work.values()
+            ],
+            irrelevant_work=list(irrelevant_by_event.values()),
+            preparation=preparation,
+        )
+    )
 
 
 def _lookup_instant(value: str | datetime | Any) -> datetime | None:
@@ -1110,7 +1130,8 @@ def _feedback_queries(
     if ((_lookup_credit_policy() != "off" and lookup_ids is not None)
             or (_explicit_feedback_policy() == "credit" and has_explicit_marks(used, irrelevant))):
         if lookup_ids is not None:
-            hits = _current_deliveries(store, lookup_ids, transport_session_id, occurred_at,
+            requested = [node_id.strip() for node_id in lookup_ids if node_id.strip()]
+            hits = _current_deliveries(store, requested, transport_session_id, occurred_at,
                                        query_inputs_only=True)
             for hit in hits.values():
                 if not hit["credited"]:
