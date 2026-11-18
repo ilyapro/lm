@@ -8,7 +8,7 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 import pytest
 
-from living_memory import feedback
+from living_memory import feedback, storage
 from living_memory.storage import MemoryStore
 from test_derived_read_preparation import anchor, consume, runtime
 from test_lookup import _lookup_events
@@ -28,6 +28,9 @@ def assert_uncredited(r):
 def test_churning_lookup_reads_current_source_without_credit(runtime, monkeypatch, caplog, selectors, change):
     r = runtime
     batches, replacement = [], []
+    # All three deliveries must be eligible at the lookup's fixed upper timestamp.
+    occurred_at = storage._utc_now()
+    monkeypatch.setattr(storage, "_utc_now", lambda: occurred_at)
 
     async def scenario():
         async with Client(r.mcp) as owner:
