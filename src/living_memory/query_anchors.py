@@ -138,8 +138,7 @@ def upsert_anchor(
 
     anchor_scope = normalize_scope(scope)
     stamp = _timestamp(now)
-    vector = [float(value) for value in embedding]
-    if not vector:
+    if not embedding:
         raise ValueError("anchor embedding must not be empty")
 
     fingerprint = recall_fingerprint(query, anchor_scope)
@@ -156,7 +155,7 @@ def upsert_anchor(
             scope=anchor_scope,
             query=query,
             fingerprint=fingerprint,
-            embedding=vector,
+            embedding=embedding,
             now=stamp,
         )
         created = True
@@ -230,8 +229,7 @@ def resolve_query_anchor(
     """
 
     anchor_scope = normalize_scope(scope)
-    vector = [float(value) for value in embedding]
-    if not vector:
+    if not embedding:
         raise ValueError("anchor embedding must not be empty")
     fingerprint = recall_fingerprint(query, anchor_scope)
     anchor = store.find_query_anchor(anchor_scope, fingerprint)
@@ -241,7 +239,7 @@ def resolve_query_anchor(
         scope=anchor_scope,
         query=query,
         fingerprint=fingerprint,
-        embedding=vector,
+        embedding=embedding,
         now=_timestamp(now),
     )
 

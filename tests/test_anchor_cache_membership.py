@@ -120,7 +120,7 @@ def test_sql_mutations_refresh_cached_vectors(stores, mutation):
                 "INSERT OR REPLACE INTO query_anchors "
                 "SELECT id, scope, query, fingerprint, dimensions, embedding, "
                 "reinforcement_count, usefulness_score, 1, 'inactive', first_seen, "
-                "last_matched_at, created_at, updated_at FROM query_anchors WHERE id = 'a'"
+                "last_matched_at, created_at, updated_at, encoder_id FROM query_anchors WHERE id = 'a'"
             )
             expected = []
         else:

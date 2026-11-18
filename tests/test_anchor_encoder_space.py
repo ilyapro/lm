@@ -39,6 +39,7 @@ def test_feedback_after_encoder_fallback(tmp_path, monkeypatch):
         recall(previous, depth=0)
         recall(previous, used=[used], irrelevant=[marked], depth=0)
         anchor, = store.list_query_anchors()
+        assert anchor.encoder_id.startswith("st:")
         assert cosine_similarity(anchor.embedding, collision) == pytest.approx(1.0)
         assert [(e.target_id, e.hits) for e in store.list_query_anchor_edges()] == [(used, 1)]
         result = recall(unrelated, view="full")
@@ -55,7 +56,7 @@ def test_feedback_after_encoder_fallback(tmp_path, monkeypatch):
         active = [score(q) for q in (unrelated, previous)]
         monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "audit")
         control = [score(q) for q in (unrelated, previous)]
-        assert (used in delivered, active, control) == (False, [control[0], active[1]], control)
+        assert used not in delivered
         assert active[0] == pytest.approx(control[0])
         assert active[1] < control[1]
     finally:

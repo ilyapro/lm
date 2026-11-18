@@ -430,7 +430,7 @@ def _apply_attestation(
     store: MemoryStore, event: RecallEvent, items: Sequence[str], digest: str,
     trace_node: Node | None, graded: Sequence[_Graded],
     context: Mapping[str, Any] | None,
-    preparation: Mapping[tuple[str, str], tuple[float, ...]],
+    preparation: Mapping[tuple[str, str], Sequence[float]],
 ) -> dict[str, Any]:
     """Apply a new verdict inside the caller's required transaction."""
 

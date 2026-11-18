@@ -12,6 +12,7 @@ import os
 from types import MappingProxyType, SimpleNamespace
 from typing import Any
 
+from living_memory.embeddings import copy_vector
 from living_memory import grounding
 from living_memory.grounding import DEFAULT_MIN_CONTAINMENT
 from living_memory.irrelevance import cancel_query_irrelevance, record_query_irrelevance
@@ -455,7 +456,7 @@ def apply_pending_recall_feedback(
     *,
     limit: int = _DEFAULT_PENDING_RECALL_LIMIT,
     reinforce_results: bool = True,
-    preparation: Mapping[tuple[str, str], tuple[float, ...]] | None = None,
+    preparation: Mapping[tuple[str, str], Sequence[float]] | None = None,
 ) -> ImplicitRecallFeedback:
     """Attach recalls from compatible work and reinforce what the trace used.
 
@@ -641,7 +642,7 @@ def apply_lookup_credit(
     transport_session_id: str | None,
     occurred_at: str | datetime,
     *,
-    preparation: Mapping[tuple[str, str], tuple[float, ...]] | None = None,
+    preparation: Mapping[tuple[str, str], Sequence[float]] | None = None,
 ) -> LookupCredit:
     """Credit a same-session id-fetch of delivered nodes as usage. Never raises.
 
@@ -912,7 +913,7 @@ def apply_explicit_marks(
     agent: str | None = None,
     context: Mapping[str, Any] | None = None,
     resolved: list[ExplicitMark] | None = None,
-    preparation: Mapping[tuple[str, str], tuple[float, ...]] | None = None,
+    preparation: Mapping[tuple[str, str], Sequence[float]] | None = None,
 ) -> ExplicitMarks:
     """Record, and under ``credit`` apply, one call's explicit marks. Never raises.
 
@@ -1113,10 +1114,10 @@ def prepared_feedback(
     trace_context: Mapping[str, Any] | None = None,
     context: Mapping[str, Any] | None = None,
     query_source: Callable[[], Mapping[tuple[str, str], str]] | None = None,
-) -> Iterator[Mapping[tuple[str, str], tuple[float, ...]]]:
+) -> Iterator[Mapping[tuple[str, str], Sequence[float]]]:
     """Enter authoritative feedback work with current inputs already prepared.
 
-    Only immutable query vectors cross the unlocked boundary. Every pass reads
+    Only operation-owned query vectors cross the unlocked boundary. Every pass reads
     current delivery, grounding and claim eligibility; callers resolve them
     again while holding the yielded guard and their required transaction.
     Existing anchors need no inference. One further preparation handles new
@@ -1126,7 +1127,7 @@ def prepared_feedback(
     A query_source supplies operation-specific candidates under the same guard;
     its authoritative eligibility must still be resolved in the transaction.
     """
-    vectors: dict[tuple[str, str], tuple[float, ...]] = {}
+    vectors: dict[tuple[str, str], Sequence[float]] = {}
     for attempt in range(3):
         with guard():
             if store.connection.in_transaction:
@@ -1145,7 +1146,7 @@ def prepared_feedback(
             if attempt == 2:
                 raise RuntimeError("feedback inputs changed during preparation; retry the operation")
         prepared = _encode_missing_feedback_queries(store, missing)
-        vectors.update((key, tuple(prepared.get(key, ()))) for key in missing)
+        vectors.update((key, prepared.get(key, ())) for key in missing)
 
 
 @contextmanager
@@ -1153,7 +1154,7 @@ def prepared_lookup_credit(
     store: MemoryStore, *, guard: Callable[[], AbstractContextManager[Any]],
     lookup_ids: Sequence[str] | None,
     transport_session_id: str | None, occurred_at: str | datetime,
-) -> Iterator[Mapping[tuple[str, str], tuple[float, ...]] | None]:
+) -> Iterator[Mapping[tuple[str, str], Sequence[float]] | None]:
     """Hold the read guard even when optional credit preparation fails.
 
     None means skip credit entirely. Only entering preparation is caught;
@@ -1180,7 +1181,7 @@ def _apply_query_feedback(
     work: Sequence[tuple[RecallEventHeader, tuple[str, ...], tuple[str, ...]]],
     *,
     irrelevant_work: Sequence[tuple[RecallEventHeader, Sequence[str]]] = (),
-    preparation: Mapping[tuple[str, str], tuple[float, ...]] | None = None,
+    preparation: Mapping[tuple[str, str], Sequence[float]] | None = None,
 ) -> list[str]:
     """Share query preparation across independent feedback effects. Never raises.
 
@@ -1291,17 +1292,17 @@ def _apply_query_feedback(
 
 def _encode_missing_feedback_queries(
     store: MemoryStore, queries: dict[tuple[str, str], str],
-) -> dict[tuple[str, str], tuple[float, ...]]:
+) -> dict[tuple[str, str], Sequence[float]]:
     """Prepare absent identities without suppressing existing-anchor effects."""
 
-    vectors: dict[tuple[str, str], tuple[float, ...]] = {}
+    vectors: dict[tuple[str, str], Sequence[float]] = {}
     if not queries:
         return vectors
     try:
         embedder = _anchor_embedder(store)
         if embedder is not None:
             for key, vector in zip(queries, embedder(list(queries.values())), strict=True):
-                vectors[key] = tuple(vector)
+                vectors[key] = copy_vector(vector)
     except Exception as error:
         _LOG.warning(
             "query feedback preparation failed (%s; %d missing anchor(s))",

@@ -172,9 +172,10 @@ _QUERY_ANCHOR_CORPUS_TRIGGERS = (
     END
     """.strip(),
     """CREATE TRIGGER query_anchor_corpus_update
-    AFTER UPDATE OF id, scope, dimensions, embedding, decayed ON query_anchors
+    AFTER UPDATE OF id, scope, query, dimensions, embedding, encoder_id, decayed ON query_anchors
     WHEN (OLD.decayed = 0 OR NEW.decayed = 0) AND (
         OLD.id IS NOT NEW.id OR OLD.scope IS NOT NEW.scope
+        OR OLD.query IS NOT NEW.query OR OLD.encoder_id IS NOT NEW.encoder_id
         OR OLD.dimensions IS NOT NEW.dimensions
         OR OLD.embedding IS NOT NEW.embedding
         OR OLD.decayed IS NOT NEW.decayed
@@ -184,14 +185,6 @@ _QUERY_ANCHOR_CORPUS_TRIGGERS = (
     END
     """.strip(),
 )
-
-_QUERY_ANCHOR_REVISION_SQL = """
-    INSERT OR IGNORE INTO metadata (key, value) VALUES ('query_anchor_revision', '0');
-""" + "\n".join(
-    sql.replace("CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ", 1) + ";"
-    for sql in _QUERY_ANCHOR_CORPUS_TRIGGERS
-)
-
 
 def install_derived_only_authorizer(
     conn: sqlite3.Connection, *, corpus: Literal["chunks", "anchors"]
@@ -316,6 +309,7 @@ _QUERY_ANCHOR_SCHEMA_SQL = """
         last_matched_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
+        encoder_id TEXT,
         UNIQUE(scope, fingerprint)
     );
 
@@ -962,6 +956,7 @@ class QueryAnchor:
     last_matched_at: str | None
     created_at: str
     updated_at: str
+    encoder_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -5126,11 +5121,11 @@ class MemoryStore:
             self._conn.execute(
                 f"""
                 INSERT INTO {QUERY_ANCHOR_TABLE} (
-                    id, scope, query, fingerprint, dimensions, embedding,
+                    id, scope, query, fingerprint, dimensions, embedding, encoder_id,
                     reinforcement_count, usefulness_score, decayed, decay_reason,
                     first_seen, last_matched_at, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, NULL, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 0, NULL, ?, ?, ?, ?)
                 """,
                 (
                     new_id,
@@ -5139,6 +5134,7 @@ class MemoryStore:
                     str(fingerprint),
                     len(vector),
                     pack_chunk_embedding(vector),
+                    embedding.encoder_id if isinstance(embedding, EncodedVector) else None,
                     float(usefulness_score),
                     stamp,
                     stamp,
@@ -5234,17 +5230,42 @@ class MemoryStore:
         ).fetchall()
         return [_query_anchor_from_row(row) for row in rows]
 
-    def query_anchor_vector_layout(self, dimensions: int) -> list[tuple[str, str]]:
+    def _anchor_has_encoder(self) -> bool:
+        return any(row[1] == "encoder_id" for row in self._conn.execute("PRAGMA table_info(query_anchors)"))
+
+    def _anchor_space_filter(self, space: tuple[str, bool] | None) -> tuple[str, tuple[str, ...]]:
+        if space is None:
+            return "", ()
+        encoder, compatible = space
+        if not self._anchor_has_encoder():
+            return (" AND 0" if compatible else ""), ()
+        operator = "IS" if compatible else "IS NOT"
+        return f" AND encoder_id {operator} ?", (encoder,)
+
+    def iter_foreign_anchor_queries(self, encoder_id: str, scopes: Sequence[str] | None):
+        """Source questions available for bounded cross-space candidate discovery."""
+        if not self._anchor_tables_present():
+            return
+        condition, params = self._anchor_space_filter((encoder_id, False))
+        if scopes is not None:
+            condition += f" AND scope IN ({','.join('?' for _ in scopes)})"
+        yield from self._conn.execute(
+            "SELECT id, query FROM query_anchors WHERE decayed = 0" + condition,
+            (*params, *(scopes or ())),
+        )
+
+    def query_anchor_vector_layout(self, dimensions: int, *, space: tuple[str, bool] | None = None) -> list[tuple[str, str]]:
         """Live ids and scopes in vector scan order, without reading BLOBs."""
 
         if not self._anchor_tables_present():
             return []
+        condition, params = self._anchor_space_filter(space)
         return [
             (str(row[0]), str(row[1]))
             for row in self._conn.execute(
                 f"SELECT id, scope FROM {QUERY_ANCHOR_TABLE} "
-                "WHERE decayed = 0 AND dimensions = ?",
-                (int(dimensions),),
+                "WHERE decayed = 0 AND dimensions = ?" + condition,
+                (int(dimensions), *params),
             )
         ]
 
@@ -5253,6 +5274,7 @@ class MemoryStore:
         scopes: Sequence[str] | None = None,
         *,
         dimensions: int | None = None,
+        space: tuple[str, bool] | None = None,
         include_decayed: bool = False,
         limit: int | None = None,
     ) -> Iterator[tuple[str, str, int, memoryview]]:
@@ -5287,6 +5309,9 @@ class MemoryStore:
             clauses.append(f"scope IN ({placeholders})")
             params.extend(scope_list)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        condition, encoder_params = self._anchor_space_filter(space)
+        where = (where or "WHERE 1") + condition
+        params.extend(encoder_params)
         suffix = ""
         if limit is not None:
             suffix = " LIMIT ?"
@@ -5887,7 +5912,15 @@ class MemoryStore:
             # Query anchors (v7). Same script the pre-v7 migration runs, so a
             # fresh database and a migrated one end up with identical objects.
             self._conn.executescript(_QUERY_ANCHOR_SCHEMA_SQL)
-            self._conn.executescript(_QUERY_ANCHOR_REVISION_SQL)
+            with self.transaction(immediate=True):
+                if not self._anchor_has_encoder():
+                    self._conn.execute("ALTER TABLE query_anchors ADD COLUMN encoder_id TEXT")
+                    self._conn.execute("DROP TRIGGER IF EXISTS query_anchor_corpus_update")
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO metadata (key, value) VALUES ('query_anchor_revision', '0')"
+                )
+                for trigger in _QUERY_ANCHOR_CORPUS_TRIGGERS:
+                    self._conn.execute(trigger.replace("CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ", 1))
             self._anchor_tables_cache = None
             # Attestation ledger (v8). Runs after the main script because its
             # foreign keys name recall_events and nodes, and unconditionally on
@@ -6783,6 +6816,7 @@ def _query_anchor_from_row(row: sqlite3.Row) -> QueryAnchor:
         fingerprint=str(row["fingerprint"]),
         dimensions=dimensions,
         embedding=tuple(unpack_chunk_embedding(row["embedding"], dimensions)),
+        encoder_id=_row_value(row, "encoder_id"),
         reinforcement_count=int(row["reinforcement_count"]),
         usefulness_score=float(row["usefulness_score"]),
         decayed=bool(row["decayed"]),
