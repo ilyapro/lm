@@ -222,3 +222,26 @@ def test_in_memory_shaping_retains_source_encoding_error(view):
             [RecallResult(node=node, score=1)], delivery_history=delivery.DeliveryHistory(),
             session_dedup=True, snippet_max_chars=0, context_value_max_chars=160, view=view,
         )
+
+
+@pytest.mark.parametrize("view", ["full", "knowledge"])
+def test_whole_body_proof_skips_excerpt_without_spending_a_ladder_slot(monkeypatch, view):
+    rows = [
+        RecallResult(node=Node(id=str(i), level="trace", content=(f"Detail {i}. " * 220)[:1984]), score=1)
+        for i in range(6)
+    ]
+    history = delivery.DeliveryHistory(evidence(row.node) for row in rows[1:5])
+    calls = []
+    select = delivery._relevant_excerpt
+
+    def excerpt(content, budget, query, passage):
+        calls.append((content, budget))
+        return select(content, budget, query, passage)
+
+    monkeypatch.setattr(delivery, "_relevant_excerpt", excerpt)
+    shaped = delivery.shape_recall_results(
+        rows, delivery_history=history, session_dedup=True, snippet_max_chars=1000,
+        context_value_max_chars=160, query="detail", view=view,
+    )
+    assert [entry["delivery"] for entry in shaped] == ["full", *(["session_duplicate"] * 4), "snippet"]
+    assert calls == [(rows[5].node.content, 1000)]

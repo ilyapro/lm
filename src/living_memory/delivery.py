@@ -101,7 +101,7 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from .resources import node_to_dict
@@ -294,7 +294,7 @@ class DeliveryHistory:
             return False
         return (node.id, _content_digest(node.content)) in self._versions
 
-    def _excerpt_digests(self, node: Node) -> set[str] | tuple[()] | None:
+    def _excerpt_digests(self, node: Node) -> Collection[str] | None:
         """None means the full current body was delivered, otherwise match excerpts."""
         if not self._versions:
             node.content.encode("utf-8")
