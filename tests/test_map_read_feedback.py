@@ -78,7 +78,8 @@ def test_returned_reference_selects_query_despite_competing_map(runtime):
             teach = await call(client, "memory_teach", trace_id=target["node"]["id"],
                                correction="Corrected observation.", context={"scope": SCOPE}, used=[ref])
             assert teach["feedback_marks"]["accepted"] == 1
-            assert not list_query_irrelevance(store)
+            negative, = list_query_irrelevance(store)
+            assert negative["marks"] == negative["cancels"] == 1
             marked = await recall(client, "amber", used=[ref])
             assert marked["feedback_marks"]["accepted"] == 1
             rows = store.connection.execute(
