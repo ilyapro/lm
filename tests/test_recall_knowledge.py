@@ -145,6 +145,8 @@ def test_mcp_read_lookup_feedback_and_diagnostic_access(tmp_path: Path) -> None:
     async def scenario() -> None:
         async with Client(mcp) as client:
             recall_tool = next(t for t in await client.list_tools() if t.name == "memory_recall")
+            guidance = recall_tool.inputSchema["properties"]["query"]["description"]
+            assert "current role or stage" in guidance and "fact sought" in guidance
             assert recall_tool.inputSchema["properties"]["view"]["default"] == "knowledge"
             assert recall_tool.inputSchema["properties"]["view"]["enum"] == ["knowledge", "full"]
             recall = _structured(await client.call_tool("memory_recall", {

@@ -644,7 +644,7 @@ _RECALL_DESCRIPTION = (
     "searches/measurements, design choices, new tasks/messages. You MUST "
     "recall MID-WORK for nearby knowledge; stuck or surprised means overdue, "
     "'if only I knew' means recall NOW. When uncertain, recall. Query "
-    "identifiers; omit both scope and ambient_context.scope for cross-project "
+    "by intent; omit both scope and ambient_context.scope for cross-project "
     "knowledge. Depth 'causal' "
     "when debugging. "
     + MEMORY_GUIDANCE
@@ -1236,7 +1236,11 @@ def _register_tools(
     @mark_fields
     @_track_latency("memory_recall")
     def memory_recall(
-        query: str,
+        query: Annotated[str, Field(description=(
+            "Include relevant identifiers. For an action, keep the user's wording "
+            "and describe the procedure sought for your current role or stage. "
+            "For a question, name the fact sought."
+        ))],
         scope: str | None = None,
         depth: int | str | None = 1,
         max_results: int = 5,
