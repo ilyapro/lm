@@ -74,36 +74,59 @@ def _outcome(service, depth):
 
 
 @pytest.mark.parametrize("depth", [0, 1, 2, 3, "causal", "decision"])
-def test_full_ordered_recall_matches_materialized_admission(tmp_path, monkeypatch, depth):
+def test_full_ordered_recall_and_reads_match_source_oracle(tmp_path, monkeypatch, depth):
     monkeypatch.setattr(retrieval, "GRAPH_SEED_LIMIT", 1)
     monkeypatch.setenv("LM_RECALL_MIN_SCORE", "0.35")
     with MemoryStore(tmp_path / "recall.sqlite3") as store:
         _source_fixture(store)
         anchor(store, "later")
-        identity_reader = store.get_recall_node_ids
-        requests = []
+        if depth in (2, 3):
+            # A previously unseen identity reached only on the final source level.
+            node(store, "leaf")
+            parent = "strong" if depth == 2 else "target"
+            store.create_connection(parent, "leaf", "requires")
 
-        def identities(ids, plan):
-            ids = tuple(ids)
-            requests.append(ids)
-            return identity_reader(ids, plan)
+        reads = []
 
-        monkeypatch.setattr(store, "get_recall_node_ids", identities)
+        def record(name, reader):
+            def read(ids, *args, **kwargs):
+                ids = tuple(ids)
+                reads.append((name, set(ids), kwargs.get("source_only")))
+                return reader(ids, *args, **kwargs)
+            return read
+
+        for name in ("list_recall_connections", "get_recall_nodes", "get_recall_node_ids"):
+            monkeypatch.setattr(store, name, record(name, getattr(store, name)))
+
+        class SourceOracle(SeededService):
+            def _walk_graph(self, plan, candidates, roots, **kwargs):
+                if not kwargs.get("source_pass"):
+                    return super()._walk_graph(plan, candidates, roots, **kwargs)
+
+                # The fixture has a single source root. Spell out its reachable
+                # frontiers and strongest contributions independently of the BFS.
+                reads.append(("list_recall_connections", {"source"}, True))
+                if depth == "decision":
+                    candidates["target"].source_graph_score = 0.6
+                if depth in (2, 3, "causal"):
+                    middle = {"strong", "weak", "join", "later"}
+                    reads.append(("get_recall_node_ids", middle | {"dead", "foreign"}, None))
+                    reads.append(("list_recall_connections", middle, True))
+                    short_path = (0.1 * 0.45) * (0.7 * 0.85) * 0.72
+                    candidates["target"].source_graph_score = short_path
+                    if depth == 3:
+                        reads.append(("list_recall_connections", {"join", "target"}, True))
+                        via_strong = (0.8 * 0.85) * (0.9 * 0.85) * 0.72
+                        candidates["target"].source_graph_score = via_strong * (0.7 * 0.85) * 0.72**2
+                        candidates["history-b"].source_graph_score = short_path * 0.45 * 0.72**2
+
         actual = _outcome(SeededService(store, embedder=Encoder()), depth)
-        projected_requests = requests[:]
-        requests.clear()
-
-        def materialized(ids, plan):
-            ids = tuple(ids)
-            requests.append(ids)
-            return set(store.get_recall_nodes(ids, plan))
-
-        monkeypatch.setattr(store, "get_recall_node_ids", materialized)
-        expected = _outcome(SeededService(store, embedder=Encoder()), depth)
+        actual_reads = reads[:]
+        reads.clear()
+        expected = _outcome(SourceOracle(store, embedder=Encoder()), depth)
         assert actual == expected
-        assert requests == projected_requests
+        assert actual_reads == reads
         if depth in (1, 2, 3, "causal"):
-            assert any("strong" in ids for ids in requests)
             assert actual["candidates"]["later"]["source_graph_score"] == 0
         if depth == 3:
             target = actual["candidates"]["target"]
