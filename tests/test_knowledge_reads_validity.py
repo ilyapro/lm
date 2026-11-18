@@ -1,6 +1,7 @@
 """Knowledge reads preserve relation validity and their own scope/selection."""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import json
 
 import pytest
@@ -245,3 +246,57 @@ def test_prompt_projects_validity_for_schemas_and_decision_history(tmp_path, mon
         assert f'superseded=true superseded_by=["{correction.id}"]' in schema_line
         assert "superseded=false superseded_by=[]" in decision_line
         assert list(store.connection.iterdump()) == before
+
+
+@pytest.mark.parametrize("selectors", [{}, {"context_key": "task_pattern"}, {"view": "full"},
+                                      {"task_pattern": "amber-hatch"}])
+def test_lookup_keeps_one_snapshot_across_teach(tmp_path, monkeypatch, selectors):
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LIVING_MEMORY_CHUNK_TOKENIZER", "heuristic")
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
+    db = tmp_path / "memory.sqlite3"
+    reader, writer = create_mcp_server(db), create_mcp_server(db)
+    store = reader.memory_store
+    scope = "project:read-validity"
+    original = store.append_trace("Open the hatch first.", {
+        "scope": scope, "task_pattern": "amber-hatch",
+    })
+    args = {"scope": scope, **selectors}
+    if "task_pattern" not in selectors:
+        args["node_id"] = original.id
+
+    async def teach():
+        async with Client(writer) as client:
+            result = await client.call_tool("memory_teach", {
+                "trace_id": original.id, "correction": "Release pressure first.",
+            })
+            return result.data["corrective_trace"]["id"]
+
+    async def scenario():
+        async with Client(reader) as client:
+            before = (await client.call_tool("memory_lookup", args)).data
+            read_pairs = store.list_supersedes_pairs
+            with ThreadPoolExecutor(max_workers=1) as executor, monkeypatch.context() as patch:
+                corrections = []
+
+                def teach_then_read_pairs(ids):
+                    corrections.append(executor.submit(asyncio.run, teach()).result(timeout=30))
+                    return read_pairs(ids)
+
+                patch.setattr(store, "list_supersedes_pairs", teach_then_read_pairs)
+                during = (await client.call_tool("memory_lookup", args)).data
+            after = (await client.call_tool("memory_lookup", args)).data
+            assert during == before
+            correction, = corrections
+            for response, expected in [(before, []), (after, [correction])]:
+                row = next(row for row in response["results"] if row["id"] == original.id)
+                assert len(row["provenance"]["corrections"]) == len(expected)
+                assert row["superseded"] == bool(expected)
+                assert row["superseded_by"] == expected
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        for mcp in (reader, writer):
+            mcp.auto_consolidation.close()
+            mcp.memory_store.close()
