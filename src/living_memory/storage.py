@@ -1087,7 +1087,6 @@ class RecallWork:
         return f"({condition})", (self.scope, self.value) * len(branches)
 
 
-
 class MemoryStore:
     """Stable CRUD API over one SQLite file.
 
@@ -3407,6 +3406,21 @@ class MemoryStore:
             (_RECALL_DELIVERY_HISTORY_FORMAT, reason, _utc_now()),
         )
 
+    def _recent_recall_rows(
+        self, columns: str, where: str, params: Sequence[Any],
+        work: RecallWork | None, limit: int,
+    ) -> list[sqlite3.Row]:
+        # Merge ordered index ranges under one bound. This lets SQLite stop
+        # reading payloads even when both explicit and legacy work labels match.
+        select = f"SELECT {columns}, rowid AS event_rowid FROM recall_events WHERE {where}"
+        if work is not None:
+            branches = work.match_branches()
+            select = " UNION ALL ".join(f"{select} AND {branch}" for branch in branches)
+            params = (*params, work.scope, work.value) * len(branches)
+        return self._conn.execute(
+            select + " ORDER BY created_at DESC, event_rowid DESC LIMIT ?", (*params, limit),
+        ).fetchall()
+
     def recent_recall_map_history(
         self,
         scope: str | None = None,
@@ -3440,27 +3454,17 @@ class MemoryStore:
         if scope is not None:
             clauses.append("scope = ?")
             params.append(scope)
-        if work is not None:
-            predicate, values = work.predicate()
-            clauses.append(predicate)
-            params.extend(values)
-        elif task_pattern is not None:
-            clauses.append("(task_pattern = ? OR (task_pattern IS NULL AND task IS ?))")
-            params.extend([task_pattern, task])
-        elif task is not None:
-            clauses.append("task = ?")
-            params.append(task)
-        params.append(int(limit))
-        rows = self._conn.execute(
-            f"""
-            SELECT id, created_at, scope, task, query, transport_session_id, recall_map
-            FROM recall_events
-            WHERE {' AND '.join(clauses)}
-            ORDER BY created_at DESC, rowid DESC
-            LIMIT ?
-            """,
-            params,
-        ).fetchall()
+        if work is None:
+            if task_pattern is not None:
+                clauses.append("(task_pattern = ? OR (task_pattern IS NULL AND task IS ?))")
+                params.extend([task_pattern, task])
+            elif task is not None:
+                clauses.append("task = ?")
+                params.append(task)
+        rows = self._recent_recall_rows(
+            "id, created_at, scope, task, query, transport_session_id, recall_map",
+            " AND ".join(clauses), params, work, int(limit),
+        )
         return [
             {
                 "id": row["id"],
@@ -3487,18 +3491,9 @@ class MemoryStore:
         ``None`` means the observation exceeded its bound, not non-use.
         """
 
-        # Merge ordered index ranges so the limit can stop each probe before
-        # reading older payloads. The patternless ranges use the legacy task.
-        probes = [
-            f"SELECT id, created_at, query, results, rowid AS event_rowid "
-            f"FROM recall_events WHERE {branch} AND created_at >= ?"
-            for branch in work.match_branches()
-        ]
-        params = (work.scope, work.value, since) * len(probes)
-        recalls = self._conn.execute(
-            " UNION ALL ".join(probes) + " ORDER BY created_at DESC, event_rowid DESC LIMIT ?",
-            (*params, limit + 1),
-        ).fetchall()
+        recalls = self._recent_recall_rows(
+            "id, created_at, query, results", "created_at >= ?", (since,), work, limit + 1,
+        )
         if len(recalls) > limit:
             return None
         evidence = [
