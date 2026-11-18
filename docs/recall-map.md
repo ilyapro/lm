@@ -73,7 +73,9 @@ The response fitter searches for the widest common excerpt after each change
 in displayed breadth. It drops tail clusters and optional journal names to
 preserve a useful gist. If this would leave no clusters, it retries at the
 minimum breadth with the shorter reminder wherever the label is the query or
-its width-limited form. If the minimum useful presentation cannot fit, it
+its width-limited form. If the pair still cannot fit, it tries the first
+actionable row with the same gist floor and counts the other group as
+dropped. If even that presentation cannot fit, it
 retains selection accounting without clusters in the stored map and diagnostic
 view. `memory_lookup` remains the full-content path. A fully skipped curtail
 decision omits `pool` and `sel`:

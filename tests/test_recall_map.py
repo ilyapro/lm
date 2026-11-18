@@ -1204,10 +1204,11 @@ def test_repeated_topic_and_query_fit_two_portable_reminders(store: MemoryStore)
         assert cluster.plan_item == f"on touching '{query}' - recall it (1)"
 
 
-def test_a_map_that_cannot_afford_the_gist_floor_is_journal_only(
-    store: MemoryStore,
+@pytest.mark.parametrize("budget", [MAX_RESPONSE_CHARS, 270])
+def test_unaffordable_pair_offers_one_useful_row_if_it_fits(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch, budget: int,
 ) -> None:
-    """Long proven hints do not buy breadth by shipping sub-floor gists."""
+    monkeypatch.setattr(recall_map, "MAX_RESPONSE_CHARS", budget)
 
     nodes = [
         make_node(
@@ -1238,6 +1239,20 @@ def test_a_map_that_cannot_afford_the_gist_floor_is_journal_only(
     built = builder.build(pool(nodes), scope=SCOPE, task="unaffordable-floor")
 
     assert built is not None
+    assert payload_chars(built) <= budget
+    if budget == MAX_RESPONSE_CHARS:
+        (cluster,) = built.clusters
+        assert cluster.medoid.node_id == nodes[0].id
+        assert len(cluster.medoid.example) >= MIN_MEDOID_EXAMPLE_CHARS
+        assert cluster.ask_hint.startswith("anchor0 production equivalence")
+        assert cluster.ask_hint in cluster.plan_item
+        assert built.to_dict()["covered"] == 1
+        assert built.to_dict()["more"] == 1
+        assert built.to_dict()["filtered"] == {
+            "withheld": 0, "dropped": 1, "names": [["d", "anchor1 production equi…", 1]]
+        }
+        assert built.render_compact()
+        return
     assert built.clusters == ()
     assert built.dropped == 2
     assert built.withheld == 0

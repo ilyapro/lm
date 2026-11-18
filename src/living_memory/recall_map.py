@@ -98,7 +98,7 @@ MEDOID_EXAMPLE_CHARS = 120
 #: is exactly forty or more characters in every delivered row.
 MIN_MEDOID_EXAMPLE_CHARS = 40
 
-#: Breadth that gist fitting may not cross.  Two clusters preserved 64 of 67
+#: Target breadth before considering a last-resort single offer.  Two clusters preserved 64 of 67
 #: historically followed deliveries; one preserved only 57.  The value is
 #: clamped to the number of clusters the configured builder actually kept, so
 #: a one-cluster pool (or ``max_clusters=1``) still yields a map.
@@ -2746,16 +2746,29 @@ class RecallMapBuilder:
                     journal.name_limit = initial_name_limit
                     continue
 
-            # Long pre-existing anchor/structural hints can make even two
-            # clusters cost more than the ordinary worst-case model.  A gist
-            # below the floor is not an invitation, so fail closed: move the
-            # surviving breadth into the dropped journal and let `_finish`
-            # persist a journal-only map. With no delivered rows competing for
-            # the budget, restore the normal forensic name allowance.
+            if len(full) > 1:
+                # Both presentations at the breadth floor failed. Fit the first
+                # actionable row with the updated journal and the same gist floor.
+                keep = next(
+                    (i for i, row in enumerate(full)
+                     if row.medoid.example and row.medoid.node_id and row.ask_hint),
+                    None,
+                )
+                if keep is not None:
+                    journal.dropped[0:0] = [
+                        _filtered_of(FILTER_TAG_DROPPED, group)
+                        for i, group in enumerate(active_groups) if i != keep
+                    ]
+                    active_groups = [active_groups[keep]]
+                    full = [full[keep]]
+                    journal.name_limit = initial_name_limit
+                    continue
+
+            # A journal-only map can spend its normal allowance on names.
             journal.dropped[0:0] = [
                 _filtered_of(FILTER_TAG_DROPPED, group) for group in active_groups
             ]
-            journal.name_limit = FILTER_JOURNAL_NAMES
+            journal.name_limit = initial_name_limit
             return [], 0
         return [], 0
 
