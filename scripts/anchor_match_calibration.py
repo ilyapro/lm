@@ -87,7 +87,6 @@ if str(REPO_ROOT / "src") not in sys.path:  # pragma: no cover - CLI convenience
 from living_memory import retrieval as retrieval_module
 from living_memory.config import MemoryConfig
 from living_memory.embeddings import cosine_similarity
-from living_memory.query_anchors import match_anchors
 from living_memory.retrieval import GRAPH_SEED_LIMIT, MemoryRecallService
 from living_memory.retrieval_harness import (
     GoldsetBuildConfig,
@@ -829,9 +828,12 @@ def _rank_all(service: MemoryRecallService, items: Sequence[GoldsetItem]) -> dic
             ambient_context=item.ambient_context,
             store=service.store,
         )
-        vector = service.embedder.embed(item.query)
-        matches = match_anchors(
-            source, vector, plan, limit=RANK_DEPTH, min_similarity=-1.0
+        prepared = service.prepare_anchor_history(
+            service.prepare_query(item.query), scope=item.scope, ambient_context=item.ambient_context,
+            for_annotation=True,
+        )
+        matches = service._match_query_anchors(
+            plan, prepared, limit=RANK_DEPTH, min_similarity=-1.0
         )
         ranked[item.query_id] = [
             RankedAnchor(match.anchor.id, float(match.similarity), tuple(match.targets))

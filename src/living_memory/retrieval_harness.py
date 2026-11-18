@@ -132,7 +132,6 @@ from living_memory.models import NODE_LEVELS
 from living_memory.query_anchors import (
     ANCHOR_MATCH_COSINE_THRESHOLD,
     ANCHOR_MATCH_LIMIT,
-    match_anchors,
 )
 from living_memory.replay import (
     HIT_KS,
@@ -995,7 +994,10 @@ def annotate_anchors(
         # return, and an exact repeat found there is still a lookup, not
         # generalization.
         scopes = tuple(dict.fromkeys([own_scope, *plan_scopes]))
-        embedding = service.embedder.embed(item.query)
+        prepared = service.prepare_anchor_history(
+            service.prepare_query(item.query), scope=item.scope, ambient_context=item.ambient_context,
+            for_annotation=True,
+        )
 
         fingerprint = recall_fingerprint(item.query, own_scope)
         fingerprint_anchor_id: str | None = None
@@ -1005,18 +1007,12 @@ def annotate_anchors(
                 fingerprint_anchor_id = found.id
                 break
 
-        matches = match_anchors(
-            store,
-            embedding,
-            plan,
-            limit=ANCHOR_MATCH_LIMIT,
-            min_similarity=ANCHOR_MATCH_COSINE_THRESHOLD,
-        )
+        matches = service._match_query_anchors(plan, prepared)
         # The unfloored nearest neighbour is the diagnostic that separates "no
         # anchor exists for this class of query" from "one exists and the floor
         # rejected it"; the eval cannot read a zero match rate without it.
-        nearest = match_anchors(
-            store, embedding, plan, limit=1, min_similarity=-1.0, include_targets=False
+        nearest = service._match_query_anchors(
+            plan, prepared, limit=1, min_similarity=-1.0, include_targets=False
         )
 
         target_ids: list[str] = []

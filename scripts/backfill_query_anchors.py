@@ -634,18 +634,8 @@ def build_query_embedder(
 ) -> tuple[QueryEmbedder, EmbedderInfo]:
     """Return a batch encoder for query texts, plus what it actually resolved to.
 
-    An anchor vector has to live in the same space as the node chunks it will
-    be compared against, so the model is loaded through the same resolver every
-    other caller uses (identical model, identical normalization) and its loaded
-    encoder is used directly when there is one — ``LocalEmbeddingModel.embed``
-    encodes one text per call, which wastes the batch dimension on a few
-    thousand queries.
-
-    Refuses to write hash-fallback vectors into a real database unless
-    ``allow_fallback`` says so: filling ``query_anchors`` with vectors from a
-    different embedding space would make every anchor unmatchable, and it is
-    invisible afterwards. The test suite runs with
-    ``LIVING_MEMORY_EMBEDDING_BACKEND=hash`` and opts in explicitly.
+    The sentence-transformer processes the requested batch size. Both it and
+    the opt-in hash fallback label every vector with its producing space.
 
     This function is the seam tests replace to inject a deterministic encoder.
     """
@@ -659,9 +649,7 @@ def build_query_embedder(
         if not allow_fallback:
             raise BackfillError(
                 f"the embedding model {model_name!r} did not load, so every "
-                "anchor vector would come from the hash fallback — a different "
-                "vector space from the one recall uses, in which no anchor would "
-                "ever match. Fix the model cache, or pass "
+                "anchor vector would come from the hash fallback. Fix the model cache, or pass "
                 "--allow-fallback-embeddings if that is genuinely what you want "
                 "(a test fixture, never production)."
             )
@@ -684,7 +672,7 @@ def build_query_embedder(
                 show_progress_bar=False,
                 convert_to_numpy=True,
             )
-            return vectors.tolist()
+            return [model._normalize_embedding(row) for row in vectors.tolist()]
 
         backend = "sentence-transformers"
 

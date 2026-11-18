@@ -643,8 +643,7 @@ class MemoryRecallService:
         # nothing for a seed to open. Vector scoring and anchor matching
         # reuse the same prepared query embedding.
         anchor_matches = (
-            self._match_query_anchors(plan, query_embedding, encoder_id=prepared.encoder_id,
-                                      historical_scores=prepared.historical_scores)
+            self._match_query_anchors(plan, prepared)
             if graph_depth > 0 and self.anchor_seeding else None
         )
         anchor_seeds = (
@@ -1302,23 +1301,23 @@ class MemoryRecallService:
     # ------------------------------------------------------------------
 
     def _match_query_anchors(
-        self, plan: ScopePlan, query_embedding: Sequence[float], *, encoder_id: str | None = None,
-        historical_scores: Mapping[str, tuple[str, float]] | None = None,
+        self, plan: ScopePlan, query: _PreparedQuery | Sequence[float], *,
+        limit: int | None = None, min_similarity: float = ANCHOR_MATCH_COSINE_THRESHOLD,
+        include_targets: bool = True,
     ) -> list[AnchorMatch]:
-        """Observe matches and graph targets for this recall only."""
-
-        if not query_embedding:
+        """Observe live matches and their current targets in this query's space."""
+        prepared = isinstance(query, _PreparedQuery)
+        vector = query.embedding if prepared else query
+        if not vector:
             return []
         source = self._anchor_vector_source()
         if source is None:
             return []
         return match_anchors(
-            source,
-            query_embedding,
-            plan,
-            limit=ANCHOR_MATCH_LIMIT,
-            min_similarity=ANCHOR_MATCH_COSINE_THRESHOLD,
-            encoder_id=encoder_id, historical_scores=historical_scores,
+            source, vector, plan, limit=ANCHOR_MATCH_LIMIT if limit is None else limit,
+            min_similarity=min_similarity, include_targets=include_targets,
+            encoder_id=query.encoder_id if prepared else None,
+            historical_scores=query.historical_scores if prepared else None,
         )
 
     def _collect_anchor_seeds(

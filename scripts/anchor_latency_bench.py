@@ -69,7 +69,6 @@ from living_memory.config import MemoryConfig  # noqa: E402
 from living_memory.query_anchors import (  # noqa: E402
     ANCHOR_MATCH_COSINE_THRESHOLD,
     ANCHOR_MATCH_LIMIT,
-    match_anchors,
 )
 from living_memory.retrieval import MemoryRecallService  # noqa: E402
 from living_memory.retrieval_harness import (  # noqa: E402
@@ -223,16 +222,18 @@ def _match_rate(
     cleared = 0
     # The same cached matrix the read path uses, so the probe is a scan and
     # not 384 re-reads of every anchor BLOB.
-    source = service._anchor_vector_source() or service.store
     for event in events:
         plan = service.scope_resolver.resolve(
             scope=event["scope"], store=service.store
         )
-        embedding = service.embedder.embed(event["query"])
-        if not embedding:
+        prepared = service.prepare_anchor_history(
+            service.prepare_query(event["query"]), scope=event["scope"], ambient_context=None,
+            for_annotation=True,
+        )
+        if not prepared.embedding:
             continue
-        matches = match_anchors(
-            source, embedding, plan, limit=1, min_similarity=0.0,
+        matches = service._match_query_anchors(
+            plan, prepared, limit=1, min_similarity=0.0,
             include_targets=False,
         )
         similarity = matches[0].similarity if matches else 0.0
