@@ -1,10 +1,11 @@
 """Learned graph and negative evidence follow the encoder that produced a query."""
 
+import sqlite3
 from threading import RLock
 
 import pytest
 
-from living_memory import embeddings, server
+from living_memory import embeddings, retrieval, server
 from living_memory.embeddings import EncodedVector, LocalEmbeddingModel, cosine_similarity
 from living_memory.health_audit import ReadOnlyAuditStore
 from living_memory.query_anchors import match_anchors
@@ -125,6 +126,15 @@ def test_first_historical_match_rescores_text_and_reuses_encoder_work(tmp_path, 
         assert old_text in calls[0]
         assert list(store.connection.iterdump()) == snapshot
         assert store.get_query_anchor(historical.id) == historical
+        if reader == "old-read-only":
+            # Its remaining revision triggers cannot see a query-only edit.
+            revision = store.query_anchor_revision()
+            with sqlite3.connect(path) as writer:
+                writer.execute("UPDATE query_anchors SET query='unrelated text' WHERE id=?", (historical.id,))
+            assert store.query_anchor_revision() == revision
+            results = service.memory_recall(query, scope="global", repair_pending=False,
+                                            log_event=False, log_access=False)
+            assert "historical" not in {r.node_id for r in results}
 
 
 def test_verification_admits_only_rows_from_the_prepared_space(tmp_path):
@@ -184,8 +194,6 @@ def test_known_foreign_collisions_cannot_displace_unlabelled_semantic_nominee(tm
 
 
 def test_historical_index_reads_and_nominees_match_full_scan(tmp_path, monkeypatch):
-    from living_memory import retrieval
-
     class Model:
         encoder = "active"
 
@@ -276,7 +284,7 @@ def test_historical_index_reads_and_nominees_match_full_scan(tmp_path, monkeypat
             writer.connection.execute("UPDATE query_anchors SET query='archived pattern changed' WHERE id='2'")
         check(None, 8, 8)
 
-        # The incoming encoder can displace another space through either unique key.
+        # A fingerprint conflict can displace an anchor in a different space.
         with writer.transaction():
             writer.connection.execute("PRAGMA recursive_triggers=OFF")
             writer.connection.execute("DELETE FROM query_anchor_edges WHERE anchor_id='2'")

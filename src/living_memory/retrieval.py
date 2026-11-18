@@ -503,7 +503,10 @@ class MemoryRecallService:
             revision = self.store.foreign_anchor_text_revision(encoder)
             if revision is None:
                 # Older read-only schemas may also lack a trigger for query edits.
-                revision = (source.revision, self.store.connection.execute("PRAGMA data_version").fetchone()[0])
+                data_version = 0 if self.store._anchor_has_encoder() else self.store.connection.execute(
+                    "PRAGMA data_version"
+                ).fetchone()[0]
+                revision = (source.revision, data_version)
         cached = self._anchor_text_index
         if revision is not None and cached is not None and cached[:3] == (encoder, scopes, revision):
             index = cached[3]
