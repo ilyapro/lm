@@ -1461,6 +1461,23 @@ def test_empty_multipart_response_does_not_claim_cleanup(backup):
     assert backup.old in backup.objects.values()
 
 
+def test_early_local_unlink_failure_preserves_verified_replacement(backup, monkeypatch):
+    original_unlink = Path.unlink
+
+    def failed_unlink(path, *args, **kwargs):
+        if path.name == "final.sqlite3" and path.exists():
+            raise OSError("fixture unlink failure")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", failed_unlink)
+    assert backup.invoke() == 0
+    backup.fresh_bytes()
+    assert backup.status()["result"] == "verified"
+    assert backup.status()["cleanup"] == "complete"
+    assert not list(backup.state.glob("work-*"))
+    assert sum(op == "cp" and args[-1] == FINAL for op, args in backup.calls) == 1
+
+
 def test_local_cleanup_failure_cannot_rollback_success(backup, monkeypatch):
     original_cleanup = tempfile.TemporaryDirectory.cleanup
 
