@@ -599,13 +599,14 @@ class MemoryRecallService:
         log_access: bool = True,
         log_event: bool | None = None,
         repair_pending: bool = True,
+        include_passages: bool = True,
         select_results: _ResultSelector | None = None,
     ) -> list[RecallResult]:
         """Retrieve and commit a complete direct response."""
         with self.recall_response(
             query, scope=scope, ambient_context=ambient_context, depth=depth,
             max_results=max_results, log_access=log_access, log_event=log_event,
-            repair_pending=repair_pending, select_results=select_results,
+            repair_pending=repair_pending, select_results=select_results, include_passages=include_passages,
         ) as results:
             return results
 
@@ -621,6 +622,7 @@ class MemoryRecallService:
         log_access: bool = True,
         log_event: bool | None = None,
         repair_pending: bool = True,
+        include_passages: bool = True,
         repeatable_selection: bool = False,
         select_results: _ResultSelector | None = None,
     ) -> Iterator[list[RecallResult]]:
@@ -654,7 +656,7 @@ class MemoryRecallService:
             plan, limited = self._select_recall(
                 prepared, scope=scope, ambient_context=ambient_context, depth=depth,
                 max_results=max_results, select_results=select_results,
-                repeatable_selection=repeatable_selection,
+                repeatable_selection=repeatable_selection, include_passages=include_passages,
             )
 
         if log_event is None:
@@ -690,7 +692,7 @@ class MemoryRecallService:
     def _select_recall(
         self, prepared: _PreparedQuery, *, scope: str | None,
         ambient_context: dict[str, Any] | None, depth: int | str | None, max_results: int,
-        select_results: _ResultSelector | None, repeatable_selection: bool,
+        select_results: _ResultSelector | None, repeatable_selection: bool, include_passages: bool,
     ) -> tuple[ScopePlan, list[RecallResult]]:
         query, query_embedding = prepared.text, prepared.embedding
         plan = self.scope_resolver.resolve(
@@ -791,6 +793,9 @@ class MemoryRecallService:
             limited, self.last_residual = select_results(
                 limited, self.last_residual, max_results, self.last_query_relevance
             )
+        if not include_passages:
+            return plan, limited
+
         chunk_ids = {
             result.node_id: candidates[result.node_id].chunk_id
             for result in limited
