@@ -121,7 +121,8 @@ def test_short_instruction_and_cross_project_fact_survive_public_read_chain(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, topic: str, tail: str,
 ) -> None:
     fastmcp = pytest.importorskip("fastmcp")
-    monkeypatch.setenv(MIN_SCORE_ENV, "0.25")
+    threshold = 0.25
+    monkeypatch.setenv(MIN_SCORE_ENV, str(threshold))
     mcp = create_mcp_server(tmp_path / "public.sqlite3")
     store = mcp.memory_store
     # Give the source actual evidence for the requested step. A matching
@@ -158,8 +159,16 @@ def test_short_instruction_and_cross_project_fact_survive_public_read_chain(
     assert target.lexical_score == pytest.approx(5 / (11 if tail else 7))
     assert target.withheld is None
     assert service.last_query_relevance.passes(target)
-    assert all(not service.last_query_relevance.passes(result)
-               for result in service.last_residual if result.node.id in {node.id for node in carriers})
+    carrier_ids = {node.id for node in carriers}
+    history = [result for result in service.last_residual if result.node.id in carrier_ids]
+    if tail:
+        assert {result.node.id for result in history} == carrier_ids
+    for result in history:
+        # These unlinked concepts match one trigger in full. At this lexical
+        # coverage only the content cosine can lift its floor above the gate.
+        assert result.trigger_score == 1
+        assert result.lexical_score == pytest.approx(3 / 11 if tail else 0)
+        assert service.last_query_relevance.passes(result) == (result.vector_score >= threshold)
 
     async def read():
         async with fastmcp.Client(mcp) as client:
@@ -172,8 +181,8 @@ def test_short_instruction_and_cross_project_fact_survive_public_read_chain(
             assert instruction.id in ids and source.id in ids
             assert all(node.id in ids for node in supporting)
             assert not any(carrier.id in ids for carrier in carriers)
+            assert all(item["delivery"] != "below_threshold" for item in recall["results"])
             entry = next(item for item in recall["results"] if item["id"] == instruction.id)
-            assert entry["delivery"] != "below_threshold"
             assert entry["content_ref"]["node_id"] == instruction.id
             lookup_response = await client.call_tool("memory_lookup", {"node_id": entry["content_ref"]["node_id"]})
             lookup = lookup_response.structured_content or json.loads(lookup_response.content[0].text)
