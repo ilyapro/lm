@@ -1,13 +1,15 @@
 """The registered stats resource reports one read-only population observation."""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import json
 from threading import RLock
 
 from fastmcp import Client, FastMCP
 import pytest
 
-from living_memory.server import _register_resources
+from living_memory import resources
+from living_memory.server import _register_resources, create_mcp_server
 from living_memory.storage import MemoryStore
 
 
@@ -106,3 +108,60 @@ def test_registered_stats_population(tmp_path, case, level_counts, scope_counts)
         assert len(population_queries) == 1
         assert store.connection.total_changes == changes
         assert list(store.connection.iterdump()) == before
+
+
+@pytest.mark.parametrize(("surface", "scope"), [
+    ("memory://stats", None), ("memory_status", None), ("memory_status", "project:alpha"),
+])
+def test_population_across_concurrent_remember(tmp_path, monkeypatch, surface, scope):
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LIVING_MEMORY_CHUNK_TOKENIZER", "heuristic")
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
+    db = tmp_path / "stats.sqlite3"
+    reader, writer = create_mcp_server(db), create_mcp_server(db)
+    conn = reader.memory_store.connection
+    confidence = resources.confidence_summary
+
+    async def remember(scope):
+        async with Client(writer) as client:
+            await client.call_tool("memory_remember", {
+                "content": f"Inventory for {scope}.", "context": {"scope": scope},
+            })
+
+    async def scenario():
+        if scope:
+            await remember("project:other")
+        conn.execute("PRAGMA query_only=ON")
+        changes = conn.total_changes
+        async with Client(reader) as client:
+            async def read():
+                if surface == "memory_status":
+                    return (await client.call_tool(surface, {"scope": scope})).data
+                response, = await client.read_resource(surface)
+                return json.loads(response.text)
+
+            with ThreadPoolExecutor(max_workers=1) as pool, monkeypatch.context() as patch:
+                def write_then_read_confidence(*args, **kwargs):
+                    pool.submit(asyncio.run, remember("project:alpha")).result(timeout=30)
+                    return confidence(*args, **kwargs)
+
+                patch.setattr(resources, "confidence_summary", write_then_read_confidence)
+                during = await read()
+            after = await read()
+
+        for report, expected in ((during, 0), (after, 1)):
+            assert report["counts"]["active"] == report["confidence"]["count"] == expected
+            if surface == "memory_status":
+                coverage = report["coverage"]["scopes"]
+                assert sum(sum(levels.values()) for levels in coverage.values()) == expected
+            else:
+                assert sum(row["active"] for row in report["scopes"]) == expected
+        assert conn.total_changes == changes
+        assert not conn.in_transaction
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        for server in (reader, writer):
+            server.auto_consolidation.close()
+            server.memory_store.close()
