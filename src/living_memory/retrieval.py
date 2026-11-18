@@ -384,8 +384,6 @@ class _AnchorVectorCache:
     layouts: dict[_AnchorBlockKey, list[tuple[str, str]]] = field(default_factory=dict)
     pending: dict[_AnchorBlockKey, set[str]] = field(default_factory=dict)
 
-    text_indexes: dict[tuple[str, tuple[str, ...] | None, int | None], _AnchorTextIndex] = field(default_factory=dict)
-
     def query_anchor_corpus(
         self, width: int, scopes: Sequence[str] | None = None, *, space: tuple[str | None, bool] | None = None,
     ) -> _PreparedAnchorVectors:
@@ -474,6 +472,7 @@ class MemoryRecallService:
         self._chunk_index: dict[str, _ScopeChunkIndex] = {}
         self._chunk_gathers: dict[int, _ChunkGatherPlan] = {}
         self._anchor_vectors: _AnchorVectorCache | None = None
+        self._anchor_text_index: tuple[str, tuple[str, ...] | None, int, _AnchorTextIndex] | None = None
         self._anchor_encodings: OrderedDict[tuple[str, str], Sequence[float]] = OrderedDict()
         self._store_embedder_shared = False
         self._unavailable_legacy_chunks: set[str] = set()
@@ -497,17 +496,14 @@ class MemoryRecallService:
         encoder = query.encoder_id
         assert encoder is not None
         scopes = plan.scopes if plan.restricted else None
-        cache = source.text_indexes if isinstance(source, _AnchorVectorCache) else {}
-        # Pre-column read-only snapshots can track vectors but their old trigger
-        # did not track query text edits by another connection.
-        version = None if self.store._anchor_has_encoder() else self.store.connection.execute(
-            "PRAGMA data_version"
-        ).fetchone()[0]
-        key = (encoder, scopes, version)
-        if key not in cache:
-            cache.clear()
-            cache[key] = _AnchorTextIndex(self.store.iter_foreign_anchor_queries(encoder, scopes))
-        index = cache[key]
+        revision = self.store.foreign_anchor_text_revision(encoder) if isinstance(source, _AnchorVectorCache) else None
+        cached = self._anchor_text_index
+        if revision is not None and cached is not None and cached[:3] == (encoder, scopes, revision):
+            index = cached[3]
+        else:
+            index = _AnchorTextIndex(self.store.iter_foreign_anchor_queries(encoder, scopes))
+            if revision is not None:
+                self._anchor_text_index = (encoder, scopes, revision, index)
         if len(index.texts) <= ANCHOR_MATCH_LIMIT:
             return index.texts
 
@@ -538,11 +534,12 @@ class MemoryRecallService:
             ):
                 return replace(query, historical_scores={})
             try:
-                source = self._anchor_vector_source(encoder)
-                if source is None:
-                    return replace(query, historical_scores={})
-                plan = self.scope_resolver.resolve(scope=scope, ambient_context=ambient_context, store=self.store)
-                texts = self._historical_anchor_queries(source, query, plan)
+                with self.store.read_snapshot():
+                    source = self._anchor_vector_source(encoder)
+                    if source is None:
+                        return replace(query, historical_scores={})
+                    plan = self.scope_resolver.resolve(scope=scope, ambient_context=ambient_context, store=self.store)
+                    texts = self._historical_anchor_queries(source, query, plan)
             except Exception:
                 if graph or for_annotation:
                     raise

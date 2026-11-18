@@ -93,6 +93,10 @@ def test_first_historical_match_rescores_text_and_reuses_encoder_work(tmp_path, 
         learn(old_text, list(model.embed(query)), "other", 1, "project:outside")
         if reader != "current":
             store.connection.executescript("""
+                DROP TRIGGER anchor_text_insert;
+                DROP TRIGGER anchor_text_update;
+                DROP TRIGGER anchor_text_delete;
+                DELETE FROM metadata WHERE key LIKE 'anchor_text_revision:%';
                 DROP TRIGGER query_anchor_corpus_update;
                 ALTER TABLE query_anchors DROP COLUMN encoder_id;
             """)

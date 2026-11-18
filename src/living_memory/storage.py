@@ -189,6 +189,41 @@ _QUERY_ANCHOR_CORPUS_TRIGGERS = (
 )
 
 
+# One counter per changed encoder. The prefix itself counts unlabelled rows.
+# BEFORE observes rows displaced by REPLACE even without recursive triggers.
+_ANCHOR_TEXT_PREFIX = "anchor_text_revision:"
+_DISPLACED_ANCHOR_ENCODERS = """
+    SELECT encoder_id FROM query_anchors WHERE decayed = 0 AND
+        (id = NEW.id OR rowid = NEW.rowid OR (scope = NEW.scope AND fingerprint = NEW.fingerprint))
+"""
+
+
+def _anchor_text_revision_write(encoders: str) -> str:
+    return f"""INSERT INTO metadata (key, value)
+        SELECT DISTINCT '{_ANCHOR_TEXT_PREFIX}' || IFNULL(':' || encoder_id, ''), 1
+        FROM ({encoders}) WHERE true
+        ON CONFLICT(key) DO UPDATE SET value = value + 1;"""
+
+
+_LIVE_NEW_ENCODER = "SELECT NEW.encoder_id AS encoder_id WHERE NEW.decayed = 0"
+_LIVE_OLD_ENCODER = "SELECT OLD.encoder_id AS encoder_id WHERE OLD.decayed = 0"
+_ANCHOR_TEXT_TRIGGERS = (
+    f"""CREATE TRIGGER anchor_text_insert BEFORE INSERT ON query_anchors BEGIN
+        {_anchor_text_revision_write(f"{_LIVE_NEW_ENCODER} UNION ALL {_DISPLACED_ANCHOR_ENCODERS}")}
+    END""",
+    f"""CREATE TRIGGER anchor_text_delete BEFORE DELETE ON query_anchors BEGIN
+        {_anchor_text_revision_write(_LIVE_OLD_ENCODER)}
+    END""",
+    f"""CREATE TRIGGER anchor_text_update BEFORE UPDATE ON query_anchors
+    WHEN OLD.id IS NOT NEW.id OR OLD.rowid IS NOT NEW.rowid OR OLD.scope IS NOT NEW.scope
+        OR OLD.fingerprint IS NOT NEW.fingerprint OR OLD.query IS NOT NEW.query
+        OR OLD.encoder_id IS NOT NEW.encoder_id OR OLD.decayed IS NOT NEW.decayed
+    BEGIN
+        {_anchor_text_revision_write(f"{_LIVE_NEW_ENCODER} UNION ALL {_LIVE_OLD_ENCODER} UNION ALL {_DISPLACED_ANCHOR_ENCODERS}")}
+    END""",
+)
+
+
 def install_derived_only_authorizer(
     conn: sqlite3.Connection, *, corpus: Literal["chunks", "anchors"]
 ) -> None:
@@ -207,7 +242,7 @@ def install_derived_only_authorizer(
         revision_key = _CHUNK_SCOPE_REVISION_FORMAT
     elif corpus == "anchors":
         tables = {QUERY_ANCHOR_TABLE, QUERY_ANCHOR_EDGE_TABLE}
-        triggers = _QUERY_ANCHOR_CORPUS_TRIGGERS
+        triggers = (*_QUERY_ANCHOR_CORPUS_TRIGGERS, *_ANCHOR_TEXT_TRIGGERS)
         revision_key = "query_anchor_revision"
     else:
         raise ValueError(f"unknown derived corpus: {corpus!r}")
@@ -259,7 +294,7 @@ def install_derived_only_authorizer(
                     table == "metadata" and source in expected
                     and (
                         (action == sqlite3.SQLITE_UPDATE and column == "value")
-                        or (corpus == "chunks" and action == sqlite3.SQLITE_INSERT)
+                        or (action == sqlite3.SQLITE_INSERT and (corpus == "chunks" or source.startswith("anchor_text_")))
                     )
                 ):
                     return sqlite3.SQLITE_OK
@@ -5452,6 +5487,13 @@ class MemoryStore:
         operator = "IS" if compatible else "IS NOT"
         return f" AND encoder_id {operator} ?", (encoder,)
 
+    def foreign_anchor_text_revision(self, encoder: str) -> int | None:
+        """Sum monotonic counters for all other spaces, including unlabelled rows."""
+        return self._conn.execute(
+            "SELECT SUM(value) FROM metadata WHERE key >= ? AND key < ? AND key != ?",
+            (_ANCHOR_TEXT_PREFIX, "anchor_text_revision;", _ANCHOR_TEXT_PREFIX + ":" + encoder),
+        ).fetchone()[0]
+
     def iter_foreign_anchor_queries(
         self, encoder_id: str, scopes: Sequence[str] | None,
     ) -> Iterator[tuple[str, str]]:
@@ -6146,7 +6188,10 @@ class MemoryStore:
                 self._conn.execute(
                     "INSERT OR IGNORE INTO metadata (key, value) VALUES ('query_anchor_revision', '0')"
                 )
-                for trigger in _QUERY_ANCHOR_CORPUS_TRIGGERS:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO metadata (key, value) VALUES (?, '0')", (_ANCHOR_TEXT_PREFIX,)
+                )
+                for trigger in (*_QUERY_ANCHOR_CORPUS_TRIGGERS, *_ANCHOR_TEXT_TRIGGERS):
                     self._conn.execute(trigger.replace("CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ", 1))
             self._anchor_tables_cache = None
             # Attestation ledger (v8). Runs after the main script because its
