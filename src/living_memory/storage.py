@@ -1059,7 +1059,7 @@ class RecallWork:
     def key(self) -> str:
         return json.dumps((self.scope, self.kind, self.value), separators=(",", ":"))
 
-    def _match_branches(self, alias: str = "") -> tuple[str, ...]:
+    def match_branches(self, alias: str = "") -> tuple[str, ...]:
         """Disjoint predicates, each using the same (scope, value) bindings."""
 
         prefix = f"{alias}." if alias else ""
@@ -1067,7 +1067,10 @@ class RecallWork:
         task = f"{prefix}task"
         scope = f"{prefix}scope = ?"
         if self.kind == "work":
-            branches = (f"{scope} AND {pattern} = ?", f"{scope} AND {pattern} IS NULL AND {task} = ?")
+            branches = (
+                f"{scope} AND {pattern} = ?",
+                f"{scope} AND {pattern} IS NULL AND {task} = ?",
+            )
             if self.value:
                 branches += (f"{scope} AND {pattern} = '' AND {task} = ?",)
             return branches
@@ -1079,8 +1082,9 @@ class RecallWork:
     def predicate(self, alias: str = "") -> tuple[str, tuple[str, ...]]:
         """SQL over recall_events, with the same precedence as resolution."""
 
-        branches = self._match_branches(alias)
-        return "(" + " OR ".join(f"({sql})" for sql in branches) + ")", (self.scope, self.value) * len(branches)
+        branches = self.match_branches(alias)
+        condition = " OR ".join(f"({sql})" for sql in branches)
+        return f"({condition})", (self.scope, self.value) * len(branches)
 
 
 
@@ -3488,11 +3492,12 @@ class MemoryStore:
         probes = [
             f"SELECT id, created_at, query, results, rowid AS event_rowid "
             f"FROM recall_events WHERE {branch} AND created_at >= ?"
-            for branch in work._match_branches()
+            for branch in work.match_branches()
         ]
+        params = (work.scope, work.value, since) * len(probes)
         recalls = self._conn.execute(
             " UNION ALL ".join(probes) + " ORDER BY created_at DESC, event_rowid DESC LIMIT ?",
-            (*((work.scope, work.value, since) * len(probes)), limit + 1),
+            (*params, limit + 1),
         ).fetchall()
         if len(recalls) > limit:
             return None
