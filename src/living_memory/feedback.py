@@ -759,6 +759,7 @@ class ExplicitMark:
     event: RecallEventHeader | None = None
     #: 0-based position in the delivering event's results.
     rank: int | None = None
+    map_lookup_id: str | None = None
     result: dict[str, Any] = field(default_factory=dict)
 
 
@@ -825,10 +826,7 @@ def resolve_explicit_marks(
     if _explicit_feedback_policy() == "off":
         return []
     marks = _explicit_mark_requests(used, irrelevant, transport_session_id)
-    hits = _current_deliveries(
-        store, [mark.node_id for mark in marks if mark.reject_reason is None],
-        transport_session_id, occurred_at, context=context, include_credit=False,
-    )
+    hits = _mark_deliveries(store, marks, transport_session_id, occurred_at, context=context)
     events: dict[str, RecallEventHeader] = {}
     for mark in marks:
         if mark.reject_reason is not None:
@@ -858,13 +856,20 @@ def _explicit_mark_requests(
     texts: list[tuple[str, str]] = [
         (kind, item.strip() if isinstance(item, str) else "") for kind, item in raw
     ]
-    used_ids = {text for kind, text in texts if kind == "used" and text}
-    irrelevant_ids = {text for kind, text in texts if kind == "irrelevant" and text}
+    requests = []
+    for kind, text in texts:
+        parts = text.split(":", 2)
+        if len(parts) == 3 and parts[0] == "map-read" and parts[1] and parts[2]:
+            requests.append((kind, parts[2], parts[1]))
+        else:
+            requests.append((kind, text, None))
+    used_ids = {text for kind, text, _ in requests if kind == "used" and text}
+    irrelevant_ids = {text for kind, text, _ in requests if kind == "irrelevant" and text}
     conflicts = used_ids & irrelevant_ids
 
     marks: list[ExplicitMark] = []
     seen: set[tuple[str, str]] = set()
-    for kind, text in texts:
+    for kind, text, lookup_id in requests:
         reason: str | None = None
         if not text:
             reason = "empty"
@@ -877,10 +882,40 @@ def _explicit_mark_requests(
         if text:
             seen.add((kind, text))
         marks.append(
-            ExplicitMark(node_id=text, mark=kind, accepted=False, reject_reason=reason)
+            ExplicitMark(node_id=text, mark=kind, accepted=False, reject_reason=reason, map_lookup_id=lookup_id)
         )
 
     return marks
+
+
+def map_feedback_refs(
+    store: MemoryStore, event_id: str, lookup_id: str, entries: Sequence[Mapping[str, Any]],
+    transport: str | None, occurred_at: str,
+) -> dict[str, str]:
+    instant = _lookup_instant(occurred_at)
+    if not transport or instant is None or _explicit_feedback_policy() == "off":
+        return {}
+    return store.record_map_reads(event_id, lookup_id, entries, transport,
+                                  instant - _lookup_credit_window(), instant, _LOOKUP_CREDIT_EVENT_LIMIT)
+
+
+def _mark_deliveries(
+    store: MemoryStore, marks: Sequence[ExplicitMark], transport: str | None,
+    occurred_at: str | datetime | None, *, context: Mapping[str, Any] | None,
+    query_inputs_only: bool = False,
+) -> dict[str, dict[str, Any]]:
+    eligible = [mark for mark in marks if mark.reject_reason is None]
+    reads = {mark.node_id: mark.map_lookup_id for mark in eligible if mark.map_lookup_id}
+    hits = _current_deliveries(
+        store, [mark.node_id for mark in eligible if not mark.map_lookup_id],
+        transport, occurred_at, context=context, query_inputs_only=query_inputs_only, include_credit=False,
+    )
+    if reads and transport:
+        instant = _lookup_instant(storage_module._utc_now() if occurred_at is None else occurred_at)
+        if instant is not None:
+            hits.update(store.map_read_deliveries(reads, transport, context,
+                        instant - _lookup_credit_window(), instant, _LOOKUP_CREDIT_EVENT_LIMIT))
+    return hits
 
 
 def _current_deliveries(
@@ -997,8 +1032,12 @@ def apply_explicit_marks(
                         event.id, mark.node_id, basis="explicit", source_id=f"mark:{mark_id}"
                     ):
                         continue
-                    rank = int(mark.rank or 0)
-                    signal = max(0.2, 1.0 / (rank + 1)) * weight
+                    if mark.rank is None:
+                        # Map reads have no retrieval rank or component scores.
+                        if weight > 0:
+                            entry[1].append(mark.node_id)
+                        continue
+                    signal = max(0.2, 1.0 / (mark.rank + 1)) * weight
                     if signal > 0.0:
                         apply_retrieval_feedback(
                             store,
@@ -1070,22 +1109,20 @@ def _feedback_queries(
 
     if ((_lookup_credit_policy() != "off" and lookup_ids is not None)
             or (_explicit_feedback_policy() == "credit" and has_explicit_marks(used, irrelevant))):
-        marks = _explicit_mark_requests(
-            lookup_ids if lookup_ids is not None else used,
-            None if lookup_ids is not None else irrelevant, transport_session_id,
-        )
-        hits = _current_deliveries(
-            store, [mark.node_id for mark in marks if mark.reject_reason is None],
-            transport_session_id, occurred_at,
-            context=context if lookup_ids is None else None,
-            query_inputs_only=True, include_credit=lookup_ids is not None,
-        )
-        for mark in marks:
-            if mark.reject_reason is not None:
-                continue
-            hit = hits.get(mark.node_id)
-            if hit is not None and not (lookup_ids is not None and hit["credited"]):
-                add(hit["query"], hit["scope"], negative=mark.mark == "irrelevant")
+        if lookup_ids is not None:
+            hits = _current_deliveries(store, lookup_ids, transport_session_id, occurred_at,
+                                       query_inputs_only=True)
+            for hit in hits.values():
+                if not hit["credited"]:
+                    add(hit["query"], hit["scope"])
+        else:
+            marks = _explicit_mark_requests(used, irrelevant, transport_session_id)
+            hits = _mark_deliveries(store, marks, transport_session_id, occurred_at,
+                                    context=context, query_inputs_only=True)
+            for mark in marks:
+                hit = hits.get(mark.node_id)
+                if mark.reject_reason is None and hit is not None:
+                    add(hit["query"], hit["scope"], negative=mark.mark == "irrelevant")
 
     if trace_content is not None and _recall_credit_policy() != "all":
         context = dict(trace_context or {})
