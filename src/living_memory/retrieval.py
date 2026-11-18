@@ -705,7 +705,7 @@ class MemoryRecallService:
             self.last_recall_event_id = None
             raise
 
-    def prepare_prompt_discovery(
+    def _prepare_prompt_discovery(
         self, query: _PreparedQuery, plan: ScopePlan, limits: Sequence[int],
     ) -> _PreparedQuery:
         """Prepare bounded seeds for the active selectors within their shared snapshot."""
@@ -718,8 +718,12 @@ class MemoryRecallService:
             discovery, lexical = self._vector_winners(
                 query.embedding, plan, query.encoder_id, _vector_keep_n(plan, max(limits)), lexical_ids,
             )
+            if len(groups) > 1:
+                discovery.sort(reverse=True)
             for limit, candidates in groups.items():
-                self._admit_vector(plan, candidates, discovery[:_vector_keep_n(plan, limit)], lexical)
+                keep = _vector_keep_n(plan, limit)
+                winners = discovery[:keep] if keep < len(discovery) else discovery
+                self._admit_vector(plan, candidates, winners, lexical)
         return replace(query, prompt_discovery=_PromptDiscovery(plan, groups))
 
     def _select_recall(
@@ -1299,7 +1303,6 @@ class MemoryRecallService:
                 elif item > discovery[0]:
                     heapreplace(discovery, item)
 
-        discovery.sort(reverse=True)
         return discovery, lexical
 
     def _admit_vector(

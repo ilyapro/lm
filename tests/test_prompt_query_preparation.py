@@ -566,6 +566,41 @@ def test_prompt_shares_chunk_and_anchor_preparation(runtime, monkeypatch, native
     assert list(r.store.connection.iterdump()) == before
 
 
+@pytest.mark.parametrize("concepts,schemas,fts_limits", [
+    (5, 3, [240, 96]), (2, 5, [160]), (1, 12, [160, 384]),
+    (0, 3, [96]), (5, 0, [240]), (0, 0, []),
+])
+def test_native_prompt_discovery_passes(runtime, monkeypatch, concepts, schemas, fts_limits):
+    r = runtime
+    expected = standalone_context(r.store, max_concepts=concepts, max_schemas=schemas).encode()
+    blocks, searches = [], []
+    pool = retrieval._pooled_chunk_similarities
+    search = r.store.search_content_ids
+
+    def count_pool(block, *args):
+        blocks.append(block.node_ids)
+        return pool(block, *args)
+
+    def count_search(query, **kwargs):
+        searches.append((kwargs["scope"], kwargs["limit"]))
+        return search(query, **kwargs)
+
+    monkeypatch.setattr(retrieval, "_pooled_chunk_similarities", count_pool)
+    monkeypatch.setattr(r.store, "search_content_ids", count_search)
+
+    async def scenario():
+        async with Client(r.mcp) as client:
+            for _ in range(2):
+                actual = await get_prompt(client, max_concepts=concepts, max_schemas=schemas)
+                assert actual.encode() == expected
+                assert [len(ids) for ids in blocks] == ([6] if fts_limits else [])
+                assert searches == [(scope, limit) for limit in fts_limits for scope in (SCOPE, "global")]
+                blocks.clear()
+                searches.clear()
+
+    asyncio.run(scenario())
+
+
 def test_shared_service_keeps_scope_query_and_selector_parameters_live(runtime):
     r = runtime
     service = MemoryRecallService(r.store)

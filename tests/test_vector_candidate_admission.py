@@ -99,7 +99,10 @@ def measure_vector_state(call):
     are outside this measurement. Tuples, floats and order integers are counted
     once by identity, even when both the lexical list and heap reference them.
     """
-    codes = {retrieval._pooled_chunk_similarities.__code__, MemoryRecallService._collect_vector.__code__}
+    codes = {
+        retrieval._pooled_chunk_similarities.__code__, MemoryRecallService._collect_vector.__code__,
+        MemoryRecallService._vector_winners.__code__, MemoryRecallService._admit_vector.__code__,
+    }
     peak = {"container_entries": 0, "records": 0, "bytes": 0, "observations": 0}
 
     def observe(frame, event, arg):
@@ -265,6 +268,28 @@ def test_healthy_candidates_keep_scores_order_chunks_limits_and_existing_bodies(
         assert len(actual) == 50 * len(plan.scopes) + 2
         assert actual[tail.id].chunk_id != "previous"
         assert actual[strongest.id].chunk_id == "retained"
+
+
+def test_prompt_seed_limits_preserve_ties_and_distinct_lexical_tails(tmp_path):
+    plan = ScopePlan(SCOPE, (SCOPE,))
+    with MemoryStore(tmp_path / "prompt-seeds.sqlite3") as store:
+        with store.transaction():
+            for number in range(120):
+                put(store, f"source-{number:03}")
+            for number in range(60):
+                put(store, f"tail-{number:03}", vector=[0.8, 0.6, 0.0])
+        service = MemoryRecallService(store, embedder=Encoder())
+        query = service.prepare_query("tail")
+        with store.read_snapshot():
+            blocks = service._chunk_blocks(plan, len(query.embedding), query.encoder_id)
+            shared = service._prepare_prompt_discovery(query, plan, [2, 8])
+            for limit in (2, 8):
+                initial = {}
+                service._collect_bm25(query.text, plan, initial, max_results=limit)
+                assert len(initial) == min(60, max(25, limit * 8))
+                expected = selection_oracle(store, blocks, VECTOR, plan, initial, max_results=limit)
+                actual = shared.prompt_discovery.by_limit[limit]
+                assert list(actual.items()) == list(expected.items())
 
 
 @pytest.mark.parametrize("scope", [None, SCOPE])

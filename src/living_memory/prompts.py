@@ -101,7 +101,7 @@ def retrieval_context_prompt(
             limits = [_concept_recall_limit(int(max_concepts))]
             if int(max_schemas) > 0:
                 limits.append(_schema_recall_limit(int(max_schemas)))
-            task = service.prepare_prompt_discovery(task, plan, limits)
+            task = service._prepare_prompt_discovery(task, plan, limits)
         concepts = select_context_concepts(
             store,
             task=task,
