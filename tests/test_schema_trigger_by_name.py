@@ -206,3 +206,71 @@ def test_name_mode_orders_on_the_gate_blend_not_scope_weights(
         assert order()[0] == vector_only.id
         monkeypatch.setenv(SCHEMA_TRIGGER_ENV, "name")
         assert order()[0] == procedure.id
+
+
+@pytest.mark.parametrize("repeatable", [False, True])
+def test_ranked_trigger_read_observes_selection_boundary(tmp_path, monkeypatch, repeatable):
+    query = "rotate vault keys"
+    monkeypatch.setenv(SCHEMA_TRIGGER_ENV, "name")
+    path = tmp_path / "memory.sqlite3"
+    with MemoryStore(path) as store, MemoryStore(path) as writer:
+        ids = ["promoted", "renamed", "moved", "demoted", "decayed", "deleted"]
+        for node_id in ids:
+            store.create_node(
+                node_id=node_id, level="trace" if node_id == "promoted" else "schema",
+                content=query, context={"scope": SCOPE, "trigger": query},
+            )
+        service = MemoryRecallService(store)
+        rank = service.rank_candidates
+
+        def rank_then_edit(*args, **kwargs):
+            ranked = rank(*args, **kwargs)
+            assert {r.node.id for r in ranked} == set(ids)
+            with writer.transaction():
+                writer.connection.execute("UPDATE nodes SET level='concept' WHERE id='promoted'")
+                writer.connection.execute("UPDATE nodes SET context='{}' WHERE id='renamed'")
+                writer.connection.execute("UPDATE nodes SET scope='elsewhere' WHERE id='moved'")
+                writer.connection.execute("UPDATE nodes SET level='trace' WHERE id='demoted'")
+                writer.connection.execute("UPDATE nodes SET decayed=1 WHERE id='decayed'")
+                writer.connection.execute("DELETE FROM nodes WHERE id='deleted'")
+                writer.create_node(
+                    node_id="unranked", level="schema", content=query,
+                    context={"scope": SCOPE, "trigger": query},
+                )
+            return ranked
+
+        monkeypatch.setattr(service, "rank_candidates", rank_then_edit)
+        read = store.schema_triggers
+        rows = []
+
+        def observe(*args, **kwargs):
+            selected = read(*args, **kwargs)
+            rows.extend(selected)
+            return selected
+
+        monkeypatch.setattr(store, "schema_triggers", observe)
+        with service.recall_response(
+            query, scope=SCOPE, depth=0, max_results=10, repeatable_selection=repeatable,
+            log_access=False, repair_pending=False,
+        ) as delivered:
+            expected = set(ids[1:]) if repeatable else {"promoted"}
+            assert sorted(rows) == sorted((node_id, query) for node_id in expected)
+            assert {r.node.id for r in delivered if "trigger" in r.methods} == expected
+
+
+@pytest.mark.parametrize("scope", [None, SCOPE])
+def test_ranked_trigger_projection_preserves_sqlite_values(tmp_path, scope):
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        contexts = [
+            '{"trigger":true}', '{"trigger":false}', '{"trigger":0}', '{"trigger":0.5}',
+            '{"trigger":99999999999999999999}', '{"trigger":[]}', '{"trigger":{"key": 1}}',
+            '{"trigger":""}', '{"trigger":null}', '{}', '{"trigger":"first","trigger":"last"}',
+        ]
+        for context in contexts:
+            node = store.create_node(level="concept", content="Stored procedure", context={"scope": SCOPE})
+            store.connection.execute("UPDATE nodes SET context=? WHERE id=?", (context, node.id))
+        unranked = _schema(store)
+        ranked = [row[0] for row in store.connection.execute("SELECT id FROM nodes WHERE id != ?", (unranked.id,))]
+        assert sorted(store.schema_triggers(scope, node_ids=ranked)) == sorted(
+            row for row in store.schema_triggers(scope) if row[0] != unranked.id
+        )

@@ -56,8 +56,10 @@ It changes no provider, model or threshold.
   the main gate is off. Named schemas retain their relative ranking order.
 - The name match is reported as `trigger_score=1.0` and `trigger` in diagnostic
   methods. This marker does not restore the separate trigger scale.
-- The trigger scan reads `id` and `context.trigger` after ranking. Search scope,
-  source identity, feedback attribution and exact lookup remain unchanged.
+- After ranking, SQLite projects triggers only for ranked identities that are
+  live schemas or concepts in the search scope. A repeatable selection can
+  exclude other levels using the ranked nodes. A direct recall checks current
+  levels at the trigger read, including changes committed since ranking.
 
 In both modes, a source that fails qualification can remain a bounded
 `below_threshold` reference. Rank or a matching label alone does not establish
