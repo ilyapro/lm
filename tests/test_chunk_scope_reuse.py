@@ -195,6 +195,7 @@ def test_rollback_does_not_cache_a_revision_that_another_write_can_reuse(tmp_pat
         add(store, "a")
         add(store, "b", vector=(0.0, 1.0, 0.0))
         warm = service(store)
+
         def select(current):
             with current.recall_response(
                 "orbital telemetry drift", scope=scope, depth=0, max_results=100,

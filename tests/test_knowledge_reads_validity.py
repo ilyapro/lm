@@ -2,6 +2,7 @@
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import Mock
 import json
 
 import pytest
@@ -406,6 +407,7 @@ def test_broad_recall_reuses_windows_across_lookup_and_scope_move(tmp_path, monk
     rows = store.iter_chunk_embedding_rows
     pairs = store.list_supersedes_pairs
     record = store.record_recall
+    delivery = Mock(wraps=store.record_recall_delivery)
 
     def counted_rows(**kwargs):
         for row in rows(**kwargs):
@@ -440,6 +442,7 @@ def test_broad_recall_reuses_windows_across_lookup_and_scope_move(tmp_path, monk
         monkeypatch.setattr(store, "list_supersedes_pairs", validity)
         monkeypatch.setattr(store, "iter_chunk_embedding_rows", counted_rows)
         monkeypatch.setattr(store, "record_recall", checkpoint_then_record)
+        monkeypatch.setattr(store, "record_recall_delivery", delivery)
         peer.connection.execute("PRAGMA busy_timeout = 0")
         async with Client(reader) as client:
             async def recall():
@@ -450,7 +453,10 @@ def test_broad_recall_reuses_windows_across_lookup_and_scope_move(tmp_path, monk
                 entry, = result["results"]
                 assert (entry["id"], entry["content"], entry["delivery"]) == (target, query, "full")
                 assert not entry["superseded"]
-                assert store.get_recall_event(result["recall_event_id"]).result_ids == [target]
+                event = store.get_recall_event(result["recall_event_id"])
+                assert event.result_ids == [target]
+                assert event.results[0]["delivery"]["kind"] == entry["delivery"]
+                assert delivery.call_count == len(counts)
                 assert store.get_node(target).access_count == len(counts)
                 assert len(store.list_recall_events()) == len(counts)
                 return entry["scope"]
