@@ -68,7 +68,6 @@ from living_memory.edge_derivation import (
     ULID_RE,
     DerivedEdge,
     commit_prefix,
-    node_files,
     rule_r4a_same_commit,
     rule_r4b_shared_files,
     rule_r5a_derived_from_annotations,
@@ -76,6 +75,7 @@ from living_memory.edge_derivation import (
 )
 from living_memory.models import Connection, Node
 from living_memory.health_audit import open_read_only_store
+from living_memory.file_evidence import file_citations
 from living_memory.relations import is_semantic_relation, semantic_relation_sql
 from living_memory.storage import (
     MemoryStore,
@@ -177,29 +177,13 @@ def _commit_prefix_groups(nodes: Iterable[Node]) -> dict[str, list[Node]]:
 
 
 def _file_postings(
-    store: MemoryStore, active_nodes: Mapping[str, Node]
+    active_nodes: Mapping[str, Node],
 ) -> dict[str, list[Node]]:
-    """file entry -> citing active nodes, one entry per occurrence.
-
-    Single ``json_each`` scan reproducing ``_file_citation_candidates``'s
-    per-occurrence fanout (a node listing a file twice is posted twice), over
-    the same active files-present subset the write path probes.
-    """
-
+    """Index active citations by source identity, counting repeated entries."""
     postings: dict[str, list[Node]] = defaultdict(list)
-    rows = store.connection.execute(
-        """
-        SELECT n.id AS nid, entry.value AS fname
-        FROM nodes AS n, json_each(n.context, '$.files') AS entry
-        WHERE json_extract(n.context, '$.files') IS NOT NULL
-          AND n.decayed = 0
-          AND json_type(n.context, '$.files') = 'array'
-        """
-    ).fetchall()
-    for row in rows:
-        node = active_nodes.get(str(row["nid"]))
-        if node is not None:
-            postings[str(row["fname"])].append(node)
+    for node in active_nodes.values():
+        for key, _ in file_citations(node.scope, node.context):
+            postings[key].append(node)
     return postings
 
 
@@ -235,10 +219,7 @@ def _derived_edges_for_trace(
         if others:
             edges.extend(rule_r4a_same_commit(node, others))
 
-    files = node_files(node)
-    if files:
-        citing = {fname: file_postings.get(fname, []) for fname in files}
-        edges.extend(rule_r4b_shared_files(node, citing))
+    edges.extend(rule_r4b_shared_files(node, file_postings))
 
     return edges
 
@@ -440,7 +421,7 @@ def backfill_edges(
 
     active_nodes = _load_active_nodes(store)
     prefix_groups = _commit_prefix_groups(active_nodes.values())
-    file_postings = _file_postings(store, active_nodes)
+    file_postings = _file_postings(active_nodes)
 
     active_traces = sorted(
         (node for node in active_nodes.values() if node.level == "trace"),

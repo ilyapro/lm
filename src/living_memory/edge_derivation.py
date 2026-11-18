@@ -22,6 +22,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
+from living_memory.file_evidence import file_citations, file_key, file_owner
 from living_memory.models import Connection, ConnectionType, Node
 from living_memory.relations import CONTENT_REFERENCE_WEIGHT, shared_files_weight
 from living_memory.storage import NodeEndpoint
@@ -97,15 +98,6 @@ def commit_prefix(node: Node | _RuleCandidate) -> str | None:
     if len(commit) < COMMIT_PREFIX_LENGTH:
         return None
     return commit[:COMMIT_PREFIX_LENGTH]
-
-
-def node_files(node: Node) -> list[str]:
-    """Distinct ``context.files`` entries in order; [] unless a real list."""
-
-    files = node.context.get("files")
-    if not isinstance(files, list):
-        return []
-    return list(dict.fromkeys(str(item) for item in files))
 
 
 # --- pure rule functions -------------------------------------------------------
@@ -200,7 +192,7 @@ def rule_r4b_shared_files(
 ) -> list[DerivedEdge]:
     """R4b: shared ``context.files`` entry ⇒ undirected ``related``.
 
-    ``citing_by_file`` maps each of the node's file entries to every citing
+    ``citing_by_file`` maps each source-qualified file identity to every citing
     occurrence row (one entry per occurrence, the new node's own occurrences
     included — the fanout cap counts occurrences exactly like the miner).
     Files cited more than ``max_fanout`` times are topic-dilute and skipped
@@ -212,8 +204,8 @@ def rule_r4b_shared_files(
         return []
     shared_by_other: dict[str, list[str]] = {}
     node_is_ra = is_rejected_alternative(node)
-    for fname in node_files(node):
-        rows = citing_by_file.get(fname) or ()
+    for key, fname in dict(file_citations(node.scope, node.context)).items():
+        rows = citing_by_file.get(key) or ()
         if not 2 <= len(rows) <= max_fanout:
             continue
         seen_ids: set[str] = set()
@@ -323,7 +315,7 @@ def derive_edges_for_new_trace(store: "MemoryStore", node: Node) -> list[Connect
         if others:
             edges.extend(rule_r4a_same_commit(node, others))
 
-    files = node_files(node)
+    files = dict(file_citations(node.scope, node.context))
     if files:
         citing = _file_citation_candidates(store, files)
         edges.extend(rule_r4b_shared_files(node, citing))
@@ -359,76 +351,46 @@ def _commit_group_candidates(
 
 
 def _file_citation_candidates(
-    store: "MemoryStore", files: Sequence[str]
+    store: "MemoryStore", files: Iterable[str]
 ) -> dict[str, list[_RuleCandidate]]:
-    """Citing occurrence rows per file entry (the new node's own included).
+    """Cap postings per source-qualified file, including repeated occurrences."""
+    citing: dict[str, list[_RuleCandidate]] = {key: [] for key in files}
+    keys = list(citing)
+    for start in range(0, len(keys), _FILE_CITATION_BATCH_SIZE):
+        batch = keys[start:start + _FILE_CITATION_BATCH_SIZE]
+        remaining = dict.fromkeys(batch, MAX_FILE_FANOUT + 1)
 
-    ``json_each`` yields one row per array element, so a node listing a file
-    twice counts twice — identical to the miner's occurrence-based fanout.
-    Fetching ``MAX_FILE_FANOUT + 1`` rows is enough for the rule to detect
-    and skip an over-fanout file. Membership uses SQLite's JSON value equality
-    against the string identities from :func:`node_files`.
+        def admit(name, scope, repo, worktree, project):
+            key = file_key(file_owner(scope, repo, worktree, project), name)
+            if remaining.get(key, 0):
+                remaining[key] -= 1
+                return key
+            return None
 
-    A request-local predicate caps admission before selected JSON is read.
-    Each batch scans the files-present subset once, returning at most 21 rows
-    per file; the SQL LIMIT also stops before any lookahead past a fully
-    saturated batch. No candidate bodies, sorting or match materialization
-    are needed. Single-file requests retain the direct LIMIT probe.
-    """
-
-    citing: dict[str, list[_RuleCandidate]] = {}
-    names = list(dict.fromkeys(files)) if len(files) > 1 else files
-    if len(names) > 1:
-        for start in range(0, len(names), _FILE_CITATION_BATCH_SIZE):
-            batch = names[start:start + _FILE_CITATION_BATCH_SIZE]
-            remaining = dict.fromkeys(batch, MAX_FILE_FANOUT + 1)
-            citing.update((fname, []) for fname in batch)
-
-            def admit(fname: str) -> bool:
-                left = remaining.get(fname, 0)
-                if left:
-                    remaining[fname] = left - 1
-                return bool(left)
-
-            store.connection.create_function("_lm_file_citation_admit", 1, admit)
+        # MATERIALIZED would scan the whole corpus even after saturation.
+        # Keep admission in WHERE and project only the accepted source facts.
+        facts = """entry.value, n.scope, json_extract(n.context, '$.repo'),
+                   json_extract(n.context, '$.worktree'), json_extract(n.context, '$.project')"""
+        store.connection.create_function("_lm_file_citation_admit", 5, admit)
+        try:
+            rows = store.connection.execute(
+                f"""
+                SELECT n.id, n.decayed, {facts},
+                       n.context -> '$.is_rejected_alternative' AS is_rejected_alternative
+                FROM nodes AS n, json_each(n.context, '$.files') AS entry
+                WHERE json_extract(n.context, '$.files') IS NOT NULL
+                  AND n.decayed = 0 AND json_type(n.context, '$.files') = 'array'
+                  AND entry.type = 'text' AND _lm_file_citation_admit({facts}) IS NOT NULL
+                LIMIT ?
+                """,
+                (len(batch) * (MAX_FILE_FANOUT + 1),),
+            )
             try:
-                placeholders = ",".join("?" for _ in batch)
-                cursor = store.connection.execute(
-                    f"""
-                    SELECT n.id, n.decayed, entry.value AS file,
-                           n.context -> '$.is_rejected_alternative' AS is_rejected_alternative
-                    FROM nodes AS n, json_each(n.context, '$.files') AS entry
-                    WHERE json_extract(n.context, '$.files') IS NOT NULL
-                      AND n.decayed = 0
-                      AND json_type(n.context, '$.files') = 'array'
-                      AND entry.value IN ({placeholders})
-                      AND _lm_file_citation_admit(entry.value)
-                    LIMIT ?
-                    """,
-                    (*batch, len(batch) * (MAX_FILE_FANOUT + 1)),
-                )
-                try:
-                    for row in cursor:
-                        citing[row["file"]].append(_candidate_from_row(row))
-                finally:
-                    cursor.close()
+                for row in rows:
+                    key = file_key(file_owner(*row[3:7]), row[2])
+                    citing[key].append(_candidate_from_row(row))
             finally:
-                store.connection.create_function("_lm_file_citation_admit", 1, None)
-        return citing
-
-    for fname in names:
-        rows = store.connection.execute(
-            """
-            SELECT n.id, n.decayed,
-                   n.context -> '$.is_rejected_alternative' AS is_rejected_alternative
-            FROM nodes AS n, json_each(n.context, '$.files') AS entry
-            WHERE json_extract(n.context, '$.files') IS NOT NULL
-              AND n.decayed = 0
-              AND json_type(n.context, '$.files') = 'array'
-              AND entry.value = ?
-            LIMIT ?
-            """,
-            (fname, MAX_FILE_FANOUT + 1),
-        ).fetchall()
-        citing[fname] = [_candidate_from_row(row) for row in rows]
+                rows.close()
+        finally:
+            store.connection.create_function("_lm_file_citation_admit", 5, None)
     return citing

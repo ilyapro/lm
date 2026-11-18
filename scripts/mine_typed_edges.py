@@ -41,6 +41,7 @@ from typing import Any, Iterable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from living_memory.file_evidence import file_citations  # noqa: E402
 from living_memory.relations import is_correction, semantic_relation_sql  # noqa: E402
 
 DEFAULT_DB = str(Path.home() / ".local/share/living-memory/global.sqlite3")
@@ -342,10 +343,8 @@ def rule_shared_files(nodes: dict[str, NodeRow], max_fanout: int = 20) -> list[C
     for node in nodes.values():
         if node.decayed:
             continue
-        files = node.context.get("files")
-        if isinstance(files, list):
-            for f in files:
-                postings[str(f)].append(node.id)
+        for key, _ in file_citations(node.scope, node.context):
+            postings[key].append(node.id)
     pair_files: dict[tuple[str, str], list[str]] = defaultdict(list)
     for fname, ids in sorted(postings.items()):
         if not 2 <= len(ids) <= max_fanout:
@@ -353,7 +352,7 @@ def rule_shared_files(nodes: dict[str, NodeRow], max_fanout: int = 20) -> list[C
         for a, b in combinations(sorted(set(ids)), 2):
             if is_rejected_alternative(nodes[a]) and is_rejected_alternative(nodes[b]):
                 continue
-            pair_files[(a, b)].append(fname)
+            pair_files[(a, b)].append(fname.split("\0")[-1])
     out: list[Candidate] = []
     for (a, b), files in sorted(pair_files.items()):
         out.append(
