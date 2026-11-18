@@ -477,3 +477,49 @@ def test_broad_recall_reuses_windows_across_lookup_and_scope_move(tmp_path, monk
         for mcp in (reader, writer):
             mcp.auto_consolidation.close()
             mcp.memory_store.close()
+
+
+def test_mcp_selection_does_not_cache_rolled_back_windows(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LIVING_MEMORY_CHUNK_TOKENIZER", "heuristic")
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
+    monkeypatch.setenv("LM_DELIVERY_SESSION_DEDUP", "0")
+    db = tmp_path / "memory.sqlite3"
+    reader, writer = create_mcp_server(db), create_mcp_server(db)
+    store = reader.memory_store
+    scope = "project:inside"
+    outside = {"scope": "project:outside"}
+    query = "amber hatch pressure release"
+    vector = LocalEmbeddingModel().embed(query)
+    try:
+        for name in ("first", "second"):
+            store.create_node(node_id=name, level="trace", content=f"Inventory {name}",
+                              context={"scope": scope}, embedding=vector)
+
+        async def scenario():
+            async with Client(reader) as client:
+                async def recall():
+                    response = await client.call_tool("memory_recall", {
+                        "query": query, "depth": 0, "scope": scope,
+                    })
+                    return {row["id"] for row in response.data["results"]}
+
+                assert await recall() == {"first", "second"}
+                store.connection.execute("BEGIN")
+                try:
+                    store.update_node("first", context=outside)
+                    uncommitted = store.chunk_corpus_revisions()
+                    assert await recall() == {"second"}
+                    assert store.connection.in_transaction
+                finally:
+                    store.connection.rollback()
+                writer.memory_store.update_node("second", context=outside)
+                assert store.chunk_corpus_revisions() == uncommitted
+                assert await recall() == {"first"}
+                assert len(store.list_recall_events()) == 2
+
+        asyncio.run(scenario())
+    finally:
+        for mcp in (reader, writer):
+            mcp.auto_consolidation.close()
+            mcp.memory_store.close()
