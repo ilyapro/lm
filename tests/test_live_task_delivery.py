@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import modulefinder
 import os
 from pathlib import Path
 import signal
@@ -208,20 +209,16 @@ def test_native_projection_binds_process_published_code_and_fresh_public_respons
     assert observation == json.loads(output.read_text())
     assert observation["behavior_passed"] is True
     loaded = observation["loaded_bytes"]
-    assert {
-        "pyproject.toml",
-        "src/living_memory/__init__.py",
-        "src/living_memory/server.py",
-        "src/living_memory/config.py",
-        "src/living_memory/storage.py",
-        "src/living_memory/retrieval.py",
-        "src/living_memory/embeddings.py",
-        "src/living_memory/feedback.py",
-        "src/living_memory/delivery.py",
-    } <= set(loaded)
+    # Discover the consumer's imports independently from the observer's AST
+    # traversal. Limiting the search path excludes third-party dependencies.
+    finder = modulefinder.ModuleFinder(path=[str(ROOT / "src")])
+    for module in ("living_memory.server", "living_memory.storage", "living_memory.retrieval"):
+        finder.import_hook(module)
+    paths = {Path(module.__file__) for module in finder.modules.values() if module.__file__}
+    paths.add(ROOT / "pyproject.toml")
     assert loaded == {
-        path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
-        for path in loaded
+        str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in paths
     }
     process = json.loads(observation["start_identity"])
     assert process["pid"] == observation["pid"]
@@ -270,26 +267,8 @@ def test_native_projection_rejects_foreign_loaded_code(
     assert "CANNOT CHECK" in result.stderr
 
 
-def test_consumer_inventory_includes_transitive_lazy_imports_and_excludes_tools(monkeypatch):
-    monkeypatch.syspath_prepend(str(SCRIPT.parent))
-    from observe_live_task_recall import _product_sources
-
-    package = "src/living_memory/"
-    modules = {
-        "__init__": "", "server": "import living_memory.runtime", "storage": "",
-        "retrieval": "", "runtime": "def run():\n    from .detail import work",
-        "detail": "from living_memory import storage", "unrelated": "",
-    }
-    sources = {package + name + ".py": body.encode() for name, body in modules.items()}
-    expected = {"pyproject.toml"} | {
-        package + name + ".py"
-        for name in ("__init__", "server", "storage", "retrieval", "runtime", "detail")
-    }
-    assert set(_product_sources(sources, [package + "detail.py"])) == expected
-
-
-def _compare(reader, installed_root, *, port=None, commit=None):
-    revision = commit or subprocess.check_output(
+def _compare(reader, installed_root, *, port=None):
+    revision = subprocess.check_output(
         ["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True,
     ).strip()
     result = subprocess.run(
