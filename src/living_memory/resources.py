@@ -83,11 +83,13 @@ def concepts_for_scope(
 def memory_stats(store: MemoryStore) -> dict[str, Any]:
     """Return current counts, confidence, promotions and retrieval weights."""
 
-    counts, scopes = _stats_population(store)
+    with store.read_snapshot():
+        counts, scopes = _stats_population(store)
+        confidence = confidence_summary(store)
     return {
         "uri": "memory://stats",
         "counts": counts,
-        "confidence": confidence_summary(store),
+        "confidence": confidence,
         "promotions": promotion_summary(store),
         "scopes": scopes,
         "retrieval_weights": retrieval_weights_summary(store),
@@ -117,11 +119,15 @@ def memory_status(store: MemoryStore, scope: str | None = None) -> dict[str, Any
     """Return the reflective status used by the MCP status tool."""
 
     normalized_scope = normalize_scope(scope) if scope else None
+    with store.read_snapshot():
+        counts = count_nodes(store, scope=normalized_scope)
+        confidence = confidence_summary(store, scope=normalized_scope)
+        coverage = coverage_summary(store, scope=normalized_scope)
     return {
         "scope": normalized_scope or "all",
-        "counts": count_nodes(store, scope=normalized_scope),
-        "confidence": confidence_summary(store, scope=normalized_scope),
-        "coverage": coverage_summary(store, scope=normalized_scope),
+        "counts": counts,
+        "confidence": confidence,
+        "coverage": coverage,
         "promotions": promotion_summary(store, scope=normalized_scope),
         "retrieval_policy": retrieval_policy_for_scope(store, normalized_scope or "global"),
     }
