@@ -648,10 +648,16 @@ def _relevant_excerpt(
     paragraph_members: dict[tuple[int, int], set[int]] = {}
     for index, paragraph in enumerate(paragraphs):
         paragraph_members.setdefault(paragraph, set()).add(index)
+    rejected: set[tuple[int, int]] = set()
     for index in scored:
-        if index not in picked:
-            # Keep optional matches with the rest of their source paragraph.
-            include(paragraph_members[paragraphs[index]])
+        paragraph = paragraphs[index]
+        if index in picked or paragraph in rejected:
+            continue
+        if include(paragraph_members[paragraph]):
+            # Joining source runs can make a previously rejected paragraph fit.
+            rejected.clear()
+        else:
+            rejected.add(paragraph)
     return render(picked)
 
 

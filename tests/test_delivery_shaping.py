@@ -840,6 +840,21 @@ def test_query_selects_buried_evidence_with_exact_source_and_keeps_case_label() 
     assert [item["node"]["id"] for item in shaped] == ["carrier"]
 
 
+def test_scored_paragraph_fits_after_picking_bridge() -> None:
+    # The first attempt at "Alpha beta. Later." would repeat the source label.
+    # Picking "Beta." joins the runs before "Later." gets its scored turn.
+    prefix = "Evidence: sample\n- 01SYNTHETICSOURCE0000000001: Alpha beta gamma.\n\nBeta."
+    joined = prefix + "\n\nAlpha beta. Later."
+    result = make_result(make_node("bridge", joined + "\n\n" + "Background. " * 30))
+    omission = "\n[Context omitted]"
+    budget = len(joined + omission)
+    for limit, expected in [(budget - 1, prefix), (budget, joined)]:
+        entry = shape_default(
+            [result], query="alpha beta gamma", snippet_max_chars=limit, snippet_ladder=None,
+        )[0]
+        assert entry["node"]["content"] == expected + omission
+
+
 def test_query_finds_relevant_passage_inside_one_long_record() -> None:
     source = "01M" + "7" * 23
     content = (
