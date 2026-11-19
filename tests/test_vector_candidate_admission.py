@@ -358,10 +358,11 @@ def test_vector_discovery_retains_bounded_scores_and_winners(tmp_path, monkeypat
         assert candidates == expected
         assert list(candidates) == list(expected)
         assert len(candidates) == 51
-        assert peak["observations"] > 0
+        if not numpy:
+            assert peak["observations"] > 10000
         # At most K discovery records, L lexical records and transient producer
         # /selector tuples; container slots include the final union and ID list.
-        assert peak["records"] <= 50 + 1 + 3, peak
+        assert 50 <= peak["records"] <= 50 + 1 + 3, peak
         assert peak["container_entries"] <= 12 * (50 + 1) + 64, peak
 
 

@@ -2654,10 +2654,12 @@ def _pooled_contenders(
     pooled: Any, node_ids: tuple[str, ...], keep_n: int, lexical_ids: Collection[str], order: int,
 ) -> tuple[dict[int, int], int]:
     """Return block winners and lexical positions with their original qualifying ranks."""
-    lexical = sorted(
-        index for node_id in lexical_ids
-        if (index := bisect_left(node_ids, node_id)) < len(node_ids) and node_ids[index] == node_id
-    )
+    lexical = []
+    for node_id in lexical_ids:
+        index = bisect_left(node_ids, node_id)
+        if index < len(node_ids) and node_ids[index] == node_id:
+            lexical.append(index)
+    lexical.sort()
     ranks: dict[int, int] = {}
     winners = _np.empty(0, dtype=_np.intp)
     winner_ranks = _np.empty(0, dtype=_np.intp)
