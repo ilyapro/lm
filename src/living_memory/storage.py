@@ -4089,30 +4089,22 @@ class MemoryStore:
     ) -> Iterator[tuple[str, float]]:
         """Yield each lexical top-K in plan order inside the caller's snapshot."""
 
-        for _, rows in self._recall_content_groups(query, plan, limit):
+        for _, rows in self._iter_recall_content_groups(query, plan, (limit,)):
             yield from rows
 
     def recall_content_ids_by_limit(
         self, query: str, plan: ScopePlan, limits: Sequence[int],
     ) -> dict[int, list[tuple[str, float]]]:
         """Read positive selector limits together inside the prompt snapshot."""
-        largest = max(limits)
         by_limit: dict[int, list[tuple[str, float]]] = {limit: [] for limit in limits}
-        for scope, rows in self._recall_content_groups(query, plan, largest):
-            for limit, result in by_limit.items():
-                if limit == largest:
-                    result.extend(rows)
-                elif any(left[1] == right[1] for left, right in pairwise(rows[:limit + 1])):
-                    # Include the first excluded row. SQLite may visit tied
-                    # rows in a different order with the smaller LIMIT.
-                    result.extend(self.search_content_ids(query, scope=scope, limit=limit))
-                else:
-                    result.extend(rows[:limit])
+        for limit, rows in self._iter_recall_content_groups(query, plan, tuple(by_limit)):
+            by_limit[limit].extend(rows)
         return by_limit
 
-    def _recall_content_groups(
-        self, query: str, plan: ScopePlan, limit: int,
-    ) -> Iterator[tuple[str | None, list[tuple[str, float]]]]:
+    def _iter_recall_content_groups(
+        self, query: str, plan: ScopePlan, limits: tuple[int, ...],
+    ) -> Iterator[tuple[int, list[tuple[str, float]]]]:
+        limit = max(limits)
         named = plan.named_scopes
         scopes = plan.search_scopes if plan.restricted else (*named, None)
         winners = {}
@@ -4136,10 +4128,20 @@ class MemoryStore:
             else:
                 scopes = (None,)
         for scope in scopes:
-            if scope in winners:
-                yield scope, winners[scope]
-            else:
-                yield scope, self.search_content_ids(query, scope=scope, limit=limit)
+            rows = winners.get(scope)
+            if rows is None:
+                rows = self.search_content_ids(query, scope=scope, limit=limit)
+            for size in limits:
+                if size == limit:
+                    yield size, rows
+                elif scope not in winners and any(
+                    left[1] == right[1] for left, right in pairwise(rows[:size + 1])
+                ):
+                    # Include the first excluded row. Without the heap's full
+                    # ordering keys, let SQLite resolve every equal BM25 score.
+                    yield size, self.search_content_ids(query, scope=scope, limit=size)
+                else:
+                    yield size, rows[:size]
 
     def _broad_content_winners(
         self, match: str, named: tuple[str, ...], limit: int,
