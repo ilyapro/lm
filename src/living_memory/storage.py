@@ -4449,9 +4449,9 @@ class MemoryStore:
     ) -> dict[str, int] | None:
         """Transactional revisions for the requested scopes, or every scope.
 
-        Membership and vector changes advance only the affected scopes. A
-        missing scope is empty at revision zero; retained empty-scope revisions
-        prevent delete/reinsert aliasing. Read-only snapshots without this
+        Only stored scope identities appear, including those at revision zero.
+        Membership and vector changes advance only the affected scopes. Retained
+        empty-scope revisions prevent delete/reinsert aliasing. Snapshots without this
         format return None, requiring uncached reads. This is one SQL snapshot,
         not a transaction around the caller's subsequent reads.
         """
@@ -4473,12 +4473,8 @@ class MemoryStore:
         values = dict(rows)
         if values.pop(_CHUNK_SCOPE_REVISION_FORMAT, None) != _CHUNK_SCOPE_REVISION_VERSION:
             return None
-        revisions = {key[len(_CHUNK_SCOPE_REVISION_PREFIX):]: int(value)
-                     for key, value in values.items()}
-        if scopes is not None:
-            for scope in scopes:
-                revisions.setdefault(scope, 0)
-        return revisions
+        return {key[len(_CHUNK_SCOPE_REVISION_PREFIX):]: int(value)
+                for key, value in values.items()}
 
     def chunk_embedding_dimensions(
         self,

@@ -71,6 +71,33 @@ def reads_from(store, monkeypatch):
     return reads
 
 
+def test_absent_scopes_share_only_the_global_index(stores, monkeypatch):
+    reader, writer = stores
+    add(writer, "shared", "global")
+    warm = service(reader)
+    scans = Counter()
+    original = reader.iter_chunk_embedding_rows
+
+    def counted(**kwargs):
+        scans[kwargs["scope"]] += 1
+        return original(**kwargs)
+
+    expected = recall(service(reader), "session:missing")
+    assert [r.node.id for r in expected] == ["shared"]
+    monkeypatch.setattr(reader, "iter_chunk_embedding_rows", counted)
+    for number in range(50):
+        assert recall(warm, f"session:{number}") == expected
+    assert scans == {"global": 1}
+    assert set(warm._chunk_index) == {"global"}
+
+    add(writer, "local", "session:0")
+    actual = recall(warm, "session:0")
+    assert scans == {"global": 1, "session:0": 1}
+    assert [r.node.id for r in actual] == ["local", "shared"]
+    assert actual == recall(service(reader), "session:0")
+    assert recall(warm, "session:1") == expected
+
+
 @pytest.mark.parametrize("scope", [None, "project:alpha"])
 @pytest.mark.parametrize("numpy", [True, False], ids=["numpy", "python"])
 def test_independent_move_reuses_rows_in_ordinary_recall(stores, monkeypatch, scope, numpy):
@@ -269,7 +296,7 @@ def test_read_only_legacy_snapshot_does_not_cache_vectors(tmp_path, monkeypatch)
     with ReadOnlyAuditStore.open_path(path) as reader, sqlite3.connect(path) as writer:
         warm = service(reader)
         assert reader.chunk_corpus_revisions() is None
-        assert [r.node.id for r in recall(warm)] == ["a"]
+        assert [r.node.id for r in recall(warm, "project:alpha")] == ["a"]
         with writer:
             writer.execute("UPDATE node_chunk_embeddings SET embedding=?", (pack_chunk_embedding([0.0, 1.0, 0.0]),))
         assert recall(warm) == recall(warm, "project:alpha") == []
@@ -277,7 +304,11 @@ def test_read_only_legacy_snapshot_does_not_cache_vectors(tmp_path, monkeypatch)
         original = reader.get_node("a")
     with MemoryStore(path) as migrated:
         assert migrated.get_node("a") == original
-        assert migrated.chunk_corpus_revisions() == {"project:alpha": 0}
+        assert migrated.chunk_corpus_revisions(["project:alpha", "global"]) == {"project:alpha": 0}
+        warm = service(migrated)
+        recall(warm, "project:alpha")
+        assert warm._chunk_index["project:alpha"].row_count == 1
+        assert "global" not in warm._chunk_index
         assert migrated.connection.execute("SELECT 1 FROM metadata WHERE key='chunk_corpus_revision'").fetchone() is None
 
 

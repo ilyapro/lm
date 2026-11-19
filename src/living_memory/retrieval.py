@@ -1354,7 +1354,7 @@ class MemoryRecallService:
                 scopes = plan.scopes if plan.restricted else revisions
                 indexes = [
                     self._scope_chunk_index(scope, revisions[scope], cacheable=cacheable)
-                    for scope in scopes
+                    for scope in scopes if scope in revisions
                 ]
         blocks = tuple(block for index in indexes for block in index.blocks
                        if block.dimension == dimension and block.encoder_id == encoder_id)
