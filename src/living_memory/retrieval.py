@@ -2667,7 +2667,7 @@ def _pooled_contenders(
     for start in range(0, len(pooled), tile_size):
         tile = pooled[start:start + tile_size]
         # A Python threshold can lie between two adjacent float32 scores.
-        eligible = _np.flatnonzero(tile >= _np.float64(VECTOR_MATCH_THRESHOLD))
+        eligible = _np.flatnonzero(tile.astype(_np.float64) >= VECTOR_MATCH_THRESHOLD)
         first = bisect_left(lexical, start)
         stop = bisect_left(lexical, start + len(tile), first)
         for index in lexical[first:stop]:
