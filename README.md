@@ -84,7 +84,9 @@ npm run server -- ./living_memory.sqlite3
 
 `npm run check` installs the Python test/runtime dependencies into the ignored
 `.cache/python-deps` directory and runs the Python test suite through
-`scripts/check.sh`. The suite includes a real FastMCP integration smoke test
+`scripts/check.sh`. The standard check uses hash embeddings and their default
+heuristic tokenizer. Use `npm test` to select a backend or tokenizer through
+the environment. The suite includes a real FastMCP integration smoke test
 that instantiates the server, verifies the four-tool default discovery surface,
 and exercises all nine registered core tools locally.
 

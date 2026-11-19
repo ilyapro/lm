@@ -22,6 +22,8 @@ if __name__ == '__main__':
     import fastmcp, json, os, pathlib, sys
     with open(os.environ['SETUP_TEST_LOG'], 'a') as log:
         log.write(json.dumps({'consumer': __file__, 'deps': fastmcp.__file__,
+                              'backend': os.environ.get('LIVING_MEMORY_EMBEDDING_BACKEND'),
+                              'tokenizer': os.environ.get('LIVING_MEMORY_CHUNK_TOKENIZER'),
                               'args': sys.argv[1:]}) + '\\n')
 """
 
@@ -34,7 +36,7 @@ class Setup:
         self.log = root / "calls.jsonl"
         scripts = self.root / "scripts"
         scripts.mkdir(parents=True)
-        for name in ("setup-python.sh", "test.sh", "server.sh"):
+        for name in ("setup-python.sh", "check.sh", "test.sh", "server.sh"):
             shutil.copy2(ROOT / "scripts" / name, scripts / name)
         spec = b'[project]\nname = "setup-fixture"\nversion = "0.0.0"\n'
         (self.root / "pyproject.toml").write_bytes(spec)
@@ -276,6 +278,23 @@ def test_consumers_use_installed_directory(setup: Setup, script: str, override: 
     assert consumer["deps"] == str(selected / "fastmcp.py")
     assert consumer["args"] == ["consumer-argument"]
     assert snapshot(setup.main) == before
+
+
+@pytest.mark.parametrize("script,backend,tokenizer", [
+    ("check.sh", "hash", None),
+    ("test.sh", "offline", "model"),
+])
+def test_test_profile_reaches_pytest(setup: Setup, script, backend, tokenizer) -> None:
+    setup.env.update(LIVING_MEMORY_EMBEDDING_BACKEND="offline", LIVING_MEMORY_CHUNK_TOKENIZER="model")
+    selected = setup.root / "selected"
+    setup.cache(selected)
+    setup.env["LIVING_MEMORY_DEPS_DIR"] = str(selected)
+
+    setup.run(script)
+
+    consumer, = setup.calls()
+    assert (consumer["backend"], consumer["tokenizer"]) == (backend, tokenizer)
+    assert consumer["deps"] == str(selected / "fastmcp.py")
 
 
 @pytest.mark.parametrize("failure", ["pip", "imports", "encoder"])

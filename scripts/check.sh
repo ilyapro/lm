@@ -3,4 +3,5 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-"${SCRIPT_DIR}/test.sh"
+unset LIVING_MEMORY_EMBEDDING_BACKEND LIVING_MEMORY_CHUNK_TOKENIZER
+exec "${SCRIPT_DIR}/test.sh"
