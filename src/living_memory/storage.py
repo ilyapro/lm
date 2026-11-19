@@ -5913,7 +5913,6 @@ class MemoryStore:
                     "INSERT INTO metadata (key, value) VALUES ('pending_chunk_revision', '0') "
                     "ON CONFLICT(key) DO UPDATE SET value = value + 1"
                 )
-                self._conn.execute(sql)
                 self._conn.execute(
                     "INSERT OR IGNORE INTO metadata (key, value) "
                     "SELECT DISTINCT ? || scope, '0' FROM nodes "
@@ -5924,7 +5923,8 @@ class MemoryStore:
             for sql in (*_CHUNK_CORPUS_TRIGGERS, *_CHUNK_MEMBERSHIP_TRIGGERS):
                 name = sql.split()[2]
                 self._conn.execute(f"DROP TRIGGER IF EXISTS {name}")
-                self._conn.execute(
+                self._conn.execute(sql)
+            self._conn.execute(
                 "INSERT OR REPLACE INTO metadata (key, value) "
                 "SELECT 'map_chunk_revision', COALESCE(SUM(1 + value), 0) FROM metadata "
                 "WHERE key >= ? AND key < ?",
