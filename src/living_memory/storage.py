@@ -4090,21 +4090,36 @@ class MemoryStore:
         """Yield each lexical top-K in plan order inside the caller's snapshot."""
 
         named = plan.named_scopes
-        if plan.restricted or not named or not isinstance(limit, int) or not 0 < limit <= sys.maxsize:
-            scopes = plan.search_scopes if plan.restricted else (*named, None)
-            for scope in scopes:
+        scopes = plan.search_scopes if plan.restricted else (*named, None)
+        winners = {}
+        if not plan.restricted and named and isinstance(limit, int) and 0 < limit <= sys.maxsize:
+            match = _fts_query(query)
+            if not match:
+                return
+            if any(self._conn.execute(
+                "SELECT 1 FROM nodes WHERE scope = ? AND decayed = 0 LIMIT 1", (scope,),
+            ).fetchone() for scope in named):
+                try:
+                    winners = self._broad_content_winners(match, named, limit)
+                except TypeError:
+                    # SQLite can order mixed storage classes in legacy rows.
+                    pass
+                except sqlite3.OperationalError as exc:
+                    # An unselected text column can fail Python UTF-8 decoding.
+                    # Propagate errors from the SQLite engine itself.
+                    if hasattr(exc, "sqlite_errorcode"):
+                        raise
+            else:
+                scopes = (None,)
+        for scope in scopes:
+            if scope in winners:
+                yield from winners[scope]
+            else:
                 yield from self.search_content_ids(query, scope=scope, limit=limit)
-            return
 
-        match = _fts_query(query)
-        if not match:
-            return
-        if not any(self._conn.execute(
-            "SELECT 1 FROM nodes WHERE scope = ? AND decayed = 0 LIMIT 1", (scope,),
-        ).fetchone() for scope in named):
-            yield from self.search_content_ids(query, limit=limit)
-            return
-
+    def _broad_content_winners(
+        self, match: str, named: tuple[str, ...], limit: int,
+    ) -> dict[str | None, list[tuple[str, float]]]:
         groups: dict[str | None, list[tuple[float, float, float, str]]] = {
             scope: [] for scope in (*named, None)
         }
@@ -4129,15 +4144,15 @@ class MemoryStore:
 
         # Every whole-store winner is also a winner in its partition.
         whole = nlargest(limit + 1, chain.from_iterable(groups.values()))
-        for scope in (*named, None):
-            group = sorted(groups[scope], reverse=True) if scope is not None else whole
+        groups[None] = whole
+        winners = {}
+        for scope, group in groups.items():
+            group.sort(reverse=True)
             # SQLite's original plan decides complete ties. Include one extra
             # contender to catch ties across the cutoff as well as within it.
-            if any(left[:3] == right[:3] for left, right in pairwise(group)):
-                yield from self.search_content_ids(query, scope=scope, limit=limit)
-            else:
-                for score, _, _, node_id in group[:limit]:
-                    yield node_id, -score
+            if not any(left[:3] == right[:3] for left, right in pairwise(group)):
+                winners[scope] = [(str(node_id), -score) for score, _, _, node_id in group[:limit]]
+        return winners
 
     def _search_content_rows(
         self,
