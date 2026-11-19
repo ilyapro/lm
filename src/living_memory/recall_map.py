@@ -768,7 +768,7 @@ class _ClusterTemplate:
 class _CachedStructure:
     """One cache entry: templates plus the corpus revision that validates them."""
 
-    revision: tuple[Any, ...]
+    revision: int
     templates: tuple[_ClusterTemplate, ...]
 
 
@@ -1349,7 +1349,7 @@ class RecallMapBuilder:
         #: Whether the last :meth:`build` paid for a history read, or answered
         #: the curtail question from what it had already delivered itself.
         self.last_curtail_read: bool = False
-        self._cache: dict[str, _CachedStructure | tuple[int, int]] = {}
+        self._cache: dict[str, _CachedStructure | int] = {}
         self._curtail_memo: dict[str, _CurtailMemo] = {}
         #: Corpus statistics for the build in flight, reset by :meth:`build`.
         #: Label enrichment asks the document-frequency index once per bucket
@@ -1437,7 +1437,7 @@ class RecallMapBuilder:
         if not pool:
             if key:
                 # Filtered keys compete for FIFO capacity with positive maps.
-                marker = self.store.filtered_map_revision()
+                marker = self.store.recall_map_revision()
                 if marker is not None and self._cache.get(key) != marker:
                     self._put_cache_entry(key, marker)
             self.last_curtailment = _Curtailment(streak=0, offers=0)
@@ -1467,7 +1467,7 @@ class RecallMapBuilder:
                 pool_digest=pool_digest,
             )
 
-        revision = self._corpus_revision()
+        revision = self.store.recall_map_revision() if key else None
         cached = self._cache.get(key)
         groups: list[_Group] | None = None
         if (
@@ -2326,26 +2326,8 @@ class RecallMapBuilder:
 
     # -- cache ---------------------------------------------------------
 
-    def _corpus_revision(self) -> tuple[Any, ...] | None:
-        """Identity of everything the cached *structure* was derived from.
-
-        Storage owns transactional chunk membership/vector and anchor revisions.
-        The residual can span scopes, so all chunk scopes contribute. Bookkeeping
-        leaves this identity unchanged. Unsupported read-only formats and open
-        transactions cannot supply a reusable identity: rollback may reuse a
-        revision for different inputs. Selection and recount still run fresh.
-        """
-
-        if self.store.connection.in_transaction:
-            return None
-        chunk_revisions = self.store.chunk_corpus_revisions()
-        anchor_revision = self.store.query_anchor_revision()
-        if chunk_revisions is None or anchor_revision is None:
-            return None
-        return (tuple(sorted(chunk_revisions.items())), anchor_revision)
-
     def _remember(
-        self, key: str, revision: tuple[Any, ...] | None, groups: list[_Group]
+        self, key: str, revision: int | None, groups: list[_Group]
     ) -> None:
         if not key or revision is None:
             return
@@ -2361,7 +2343,7 @@ class RecallMapBuilder:
         )
         self._put_cache_entry(key, _CachedStructure(revision=revision, templates=templates))
 
-    def _put_cache_entry(self, key: str, entry: _CachedStructure | tuple[int, int]) -> None:
+    def _put_cache_entry(self, key: str, entry: _CachedStructure | int) -> None:
         self._cache.pop(key, None)
         self._cache[key] = entry
         while len(self._cache) > MAX_CACHE_ENTRIES:

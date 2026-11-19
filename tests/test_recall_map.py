@@ -853,10 +853,10 @@ def test_warm_embedding_map_skips_new_labels_but_refreshes_vectors_and_gate(
 
     # FTS-only corpus changes leave the template revision alone. The retained
     # labels must still pass the current corpus gate on every warm build.
-    revision = builder._corpus_revision()
+    revision = store.recall_map_revision()
     for _ in range(CORPUS_DOCUMENTS):
         make_node(store, " ".join(labels))
-    assert builder._corpus_revision() == revision
+    assert store.recall_map_revision() == revision
     vector_reads.clear()
     df_requests.clear()
     gated = builder.build(candidates, scope=SCOPE, task="warm-labels")
@@ -1372,13 +1372,13 @@ def test_cached_topics_follow_current_context(store, before, after, cache_hit):
     first = builder.build(candidates, scope=SCOPE, task="current-context")
     assert builder.build(candidates, scope=SCOPE, task="current-context") == first
     assert builder.last_cache_hit
-    revision = builder._corpus_revision()
+    revision = store.recall_map_revision()
 
     changed.context = {"scope": SCOPE, **after}
     original = deepcopy(candidates)
     current = builder.build(candidates, scope=SCOPE, task="current-context")
     assert builder.last_cache_hit is cache_hit
-    assert builder._corpus_revision() == revision
+    assert store.recall_map_revision() == revision
     cold = RecallMapBuilder(store).build(candidates, scope=SCOPE, task="current-context")
     assert current.to_dict() == cold.to_dict()
     assert builder.build(candidates, scope=SCOPE, task="current-context").to_dict() == current.to_dict()
@@ -2043,14 +2043,14 @@ def test_normalize_key_mirrors_consolidation_normalize_trigger() -> None:
 def test_chunk_revision_tracks_insert_and_delete(store: MemoryStore) -> None:
     node = make_node(store, "content that will gain a chunk")
     builder = RecallMapBuilder(store)
-    empty = builder._corpus_revision()
+    empty = store.recall_map_revision()
 
     embed(store, node, [1.0, 0.0, 0.0])
-    populated = builder._corpus_revision()
+    populated = store.recall_map_revision()
     assert populated != empty
-    assert builder._corpus_revision() == populated
+    assert store.recall_map_revision() == populated
     assert store.delete_node_chunks(node.id) == 1
-    assert builder._corpus_revision() not in (empty, populated)
+    assert store.recall_map_revision() not in (empty, populated)
 
 
 @pytest.fixture(params=[False, True], ids=["same-connection", "second-connection"])
@@ -2081,7 +2081,7 @@ def test_map_revision_follows_committed_chunks_and_membership(store, revision_wr
     original = build(builder)
     assert original and len(original.clusters) == 2
     assert build(builder) == original and builder.last_cache_hit
-    before = builder._corpus_revision()
+    before = store.recall_map_revision()
     writer = revision_writer
     target = nodes[-1]
     with writer.connection:
@@ -2103,7 +2103,7 @@ def test_map_revision_follows_committed_chunks_and_membership(store, revision_wr
         else:
             writer.connection.execute("UPDATE nodes SET decayed = 1 WHERE id = ?", (target.id,))
 
-    assert builder._corpus_revision() != before
+    assert store.recall_map_revision() != before
     changed = build(builder)
     assert changed and not builder.last_cache_hit
     assert changed == build(RecallMapBuilder(store))
@@ -2126,12 +2126,12 @@ def test_bookkeeping_preserves_map_identity_without_scanning_chunks(store, revis
     builder = RecallMapBuilder(store)
     candidates = pool([node])
     original = builder.build(candidates, scope=SCOPE, task="bookkeeping")
-    before = builder._corpus_revision()
+    before = store.recall_map_revision()
     revision_writer.record_access(node.id)
     statements = []
     store.connection.set_trace_callback(statements.append)
     try:
-        after = builder._corpus_revision()
+        after = store.recall_map_revision()
         warm = builder.build(candidates, scope=SCOPE, task="bookkeeping")
     finally:
         store.connection.set_trace_callback(None)
@@ -2208,10 +2208,10 @@ def test_map_never_retains_transactional_structure(store, filtered):
     assert original is not None
     assert build(builder) == original
     assert builder.last_cache_hit is (not filtered)
-    committed = builder._corpus_revision()
+    committed = store.recall_map_revision()
     cached = dict(builder._cache)
     store.connection.execute("BEGIN")
-    assert builder._corpus_revision() is None
+    assert store.recall_map_revision() is None
     assert build(builder) == original and not builder.last_cache_hit
     store.connection.execute(
         "UPDATE node_chunk_embeddings SET embedding = ? WHERE node_id = ?",
@@ -2223,7 +2223,7 @@ def test_map_never_retains_transactional_structure(store, filtered):
     assert build(builder) == transient and not builder.last_cache_hit
     assert builder._cache == cached
     store.connection.rollback()
-    assert builder._corpus_revision() == committed
+    assert store.recall_map_revision() == committed
     assert build(builder) == original == build(RecallMapBuilder(store))
     assert builder.last_cache_hit is (not filtered)
 
@@ -2254,7 +2254,7 @@ def test_legacy_read_only_map_rebuilds_without_reusable_identity(store, missing,
     candidates = [RecallResult(node=node, score=0.0)] if filtered else pool([node])
     with ReadOnlyAuditStore.open_path(store.db_path) as reader:
         builder = RecallMapBuilder(reader)
-        assert builder._corpus_revision() is None
+        assert reader.recall_map_revision() is None
         for _ in range(2):
             warm = builder.build(candidates, scope=SCOPE, task="legacy")
             fresh = RecallMapBuilder(reader).build(candidates, scope=SCOPE, task="legacy")

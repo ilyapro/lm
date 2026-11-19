@@ -12,7 +12,6 @@ from fixture_vectors import fixture_vector
 from living_memory import query_anchors as qa
 from living_memory.health_audit import ReadOnlyAuditStore
 from living_memory.irrelevance import QUERY_IRRELEVANCE_SCHEMA_SQL
-from living_memory.recall_map import RecallMapBuilder
 from living_memory.retrieval import MemoryRecallService
 from living_memory.scope import ScopePlan
 from living_memory.storage import MemoryStore, pack_chunk_embedding
@@ -214,13 +213,12 @@ def test_recall_map_tracks_the_anchor_revision(stores):
     a = anchor(writer, "a", [1.0, 0.0])
     b = anchor(writer, "b", [0.0, 1.0])
     writer.decay_query_anchor(b.id, "inactive")
-    builder = RecallMapBuilder(reader)
-    before = builder._corpus_revision()
+    before = reader.recall_map_revision()
     writer.reinforce_query_anchor(a.id)
-    assert builder._corpus_revision() == before
+    assert reader.recall_map_revision() == before
     writer.decay_query_anchor(a.id, "inactive")
     writer.reinforce_query_anchor(b.id)
-    assert builder._corpus_revision() != before
+    assert reader.recall_map_revision() != before
 
 
 def test_warm_recall_finds_the_revived_anchors_target(stores):
@@ -302,13 +300,12 @@ def test_existing_database_and_read_only_reader(tmp_path):
     with ReadOnlyAuditStore.open_path(path) as reader, sqlite3.connect(path) as writer:
         assert reader.query_anchor_revision() is None
         warm = service(reader)
-        builder = RecallMapBuilder(reader)
-        assert builder._corpus_revision() is None
+        assert reader.recall_map_revision() is None
         assert_parity(warm, [1.0, 0.0], [a.id])
         with writer:
             writer.execute("UPDATE query_anchors SET embedding=?", (pack_chunk_embedding([0.0, 1.0]),))
         assert_parity(warm, [0.0, 1.0], [a.id])
-        assert builder._corpus_revision() is None
+        assert reader.recall_map_revision() is None
         original = reader.get_query_anchor(a.id)
     with MemoryStore(path) as store:
         assert store.get_query_anchor(a.id) == original

@@ -102,7 +102,7 @@ _SQL_WHITESPACE = "' ' || CHAR(9) || CHAR(10) || CHAR(11) || CHAR(12) || CHAR(13
 # their revision so deleting and repopulating a scope cannot reuse an identity.
 _CHUNK_SCOPE_REVISION_PREFIX = "chunk_scope_revision:"
 _CHUNK_SCOPE_REVISION_FORMAT = "chunk_scope_revision_format"
-_CHUNK_SCOPE_REVISION_VERSION = "4"
+_CHUNK_SCOPE_REVISION_VERSION = "5"
 
 
 def _chunk_revision_write(scopes: str, *, chunked_ids: str | None = None) -> str:
@@ -116,7 +116,9 @@ def _chunk_revision_write(scopes: str, *, chunked_ids: str | None = None) -> str
         INSERT INTO metadata (key, value)
         SELECT '{_CHUNK_SCOPE_REVISION_PREFIX}' || scope, 1 FROM ({scopes})
         WHERE scope IS NOT NULL {has_chunks} GROUP BY scope
-        ON CONFLICT(key) DO UPDATE SET value = value + 1;"""
+        ON CONFLICT(key) DO UPDATE SET value = value + 1;
+        UPDATE metadata SET value = value + 1
+        WHERE changes() > 0 AND key = 'map_chunk_revision';"""
 
 
 # BEFORE INSERT also observes a row displaced by REPLACE: SQLite need not run
@@ -1136,7 +1138,6 @@ class MemoryStore:
     """
 
     _owns_read_snapshot = False
-    _filtered_map_chunks: tuple[int, int] | None = None
 
     def __init__(
         self,
@@ -4411,38 +4412,33 @@ class MemoryStore:
         """Revision of repair inputs, if the database tracks chunkless sources."""
         row = self._conn.execute(
             "SELECT pending.value FROM metadata pending JOIN metadata format "
-            "ON format.key = ? AND format.value = ? WHERE pending.key = 'pending_chunk_revision'",
+            "ON format.key = ? AND format.value IN ('4', ?) WHERE pending.key = 'pending_chunk_revision'",
             (_CHUNK_SCOPE_REVISION_FORMAT, _CHUNK_SCOPE_REVISION_VERSION),
         ).fetchone()
         return int(row[0]) if row is not None else None
 
-    def filtered_map_revision(self) -> tuple[int, int] | None:
-        """Compact committed corpus stamp for ordering filtered map keys."""
+    def recall_map_revision(self) -> int | None:
+        """Committed identity for map templates and filtered-key FIFO ordering.
+
+        Both clocks only advance. Read their sum from one snapshot. Format 4
+        stores only the per-scope clocks, including retained empty scopes.
+        Open transactions cannot publish an identity that rollback might reuse.
+        """
         if self._conn.in_transaction or not self._anchor_tables_present():
             return None
         row = self._conn.execute(
-            "SELECT (SELECT value FROM metadata WHERE key = 'pending_chunk_revision'), "
-            "anchor.value FROM metadata anchor JOIN metadata format "
-            "ON format.key = ? AND format.value = ? WHERE anchor.key = 'query_anchor_revision'",
-            (_CHUNK_SCOPE_REVISION_FORMAT, _CHUNK_SCOPE_REVISION_VERSION),
+            "SELECT anchor.value, CASE format.value "
+            "WHEN ? THEN (SELECT value FROM metadata WHERE key = 'map_chunk_revision') "
+            "WHEN '4' THEN (SELECT COALESCE(SUM(1 + value), 0) FROM metadata "
+            "WHERE key >= ? AND key < ?) END "
+            "FROM metadata anchor JOIN metadata format ON format.key = ? "
+            "WHERE anchor.key = 'query_anchor_revision'",
+            (_CHUNK_SCOPE_REVISION_VERSION, _CHUNK_SCOPE_REVISION_PREFIX,
+             "chunk_scope_revision;", _CHUNK_SCOPE_REVISION_FORMAT),
         ).fetchone()
-        if row is None:
+        if row is None or row[1] is None:
             return None
-        pending = int(row[0]) if row[0] is not None else None
-        previous = self._filtered_map_chunks
-        if previous is not None and previous[0] == pending:
-            return previous[1], int(row[1])
-
-        # Every chunk change advances pending, but chunkless writes can advance
-        # it too. Only the actual scope counters determine FIFO equivalence.
-        # They never decrease or disappear; a new scope at zero counts as one.
-        rows = self._conn.execute(
-            "SELECT value FROM metadata WHERE key >= ? AND key < ?",
-            (_CHUNK_SCOPE_REVISION_PREFIX, "chunk_scope_revision;"),
-        )
-        chunks = sum(1 + int(value) for (value,) in rows)
-        self._filtered_map_chunks = (pending, chunks) if pending is not None else None
-        return chunks, int(row[1])
+        return int(row[0]) + int(row[1])
 
     def chunk_corpus_revisions(
         self, scopes: Sequence[str] | None = None,
@@ -4471,7 +4467,7 @@ class MemoryStore:
                 keys,
             ).fetchall()
         values = dict(rows)
-        if values.pop(_CHUNK_SCOPE_REVISION_FORMAT, None) != _CHUNK_SCOPE_REVISION_VERSION:
+        if values.pop(_CHUNK_SCOPE_REVISION_FORMAT, None) not in ("4", _CHUNK_SCOPE_REVISION_VERSION):
             return None
         return {key[len(_CHUNK_SCOPE_REVISION_PREFIX):]: int(value)
                 for key, value in values.items()}
@@ -5908,25 +5904,32 @@ class MemoryStore:
             ).fetchone()
             if row is not None and row[0] == _CHUNK_SCOPE_REVISION_VERSION:
                 return
-            self._conn.execute(
-                "UPDATE metadata SET value = value + 1 WHERE key >= ? AND key < ?",
-                (_CHUNK_SCOPE_REVISION_PREFIX, "chunk_scope_revision;"),
-            )
-            self._conn.execute(
-                "INSERT INTO metadata (key, value) VALUES ('pending_chunk_revision', '0') "
-                "ON CONFLICT(key) DO UPDATE SET value = value + 1"
-            )
+            if row is None or row[0] != "4":
+                self._conn.execute(
+                    "UPDATE metadata SET value = value + 1 WHERE key >= ? AND key < ?",
+                    (_CHUNK_SCOPE_REVISION_PREFIX, "chunk_scope_revision;"),
+                )
+                self._conn.execute(
+                    "INSERT INTO metadata (key, value) VALUES ('pending_chunk_revision', '0') "
+                    "ON CONFLICT(key) DO UPDATE SET value = value + 1"
+                )
+                self._conn.execute(sql)
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO metadata (key, value) "
+                    "SELECT DISTINCT ? || scope, '0' FROM nodes "
+                    "WHERE EXISTS (SELECT 1 FROM node_chunk_embeddings WHERE node_id = nodes.id)",
+                    (_CHUNK_SCOPE_REVISION_PREFIX,),
+                )
+                self._conn.execute("DELETE FROM metadata WHERE key = 'chunk_corpus_revision'")
             for sql in (*_CHUNK_CORPUS_TRIGGERS, *_CHUNK_MEMBERSHIP_TRIGGERS):
                 name = sql.split()[2]
                 self._conn.execute(f"DROP TRIGGER IF EXISTS {name}")
-                self._conn.execute(sql)
-            self._conn.execute(
-                "INSERT OR IGNORE INTO metadata (key, value) "
-                "SELECT DISTINCT ? || scope, '0' FROM nodes "
-                "WHERE EXISTS (SELECT 1 FROM node_chunk_embeddings WHERE node_id = nodes.id)",
-                (_CHUNK_SCOPE_REVISION_PREFIX,),
+                self._conn.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) "
+                "SELECT 'map_chunk_revision', COALESCE(SUM(1 + value), 0) FROM metadata "
+                "WHERE key >= ? AND key < ?",
+                (_CHUNK_SCOPE_REVISION_PREFIX, "chunk_scope_revision;"),
             )
-            self._conn.execute("DELETE FROM metadata WHERE key = 'chunk_corpus_revision'")
             self._conn.execute(
                 "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
                 (_CHUNK_SCOPE_REVISION_FORMAT, _CHUNK_SCOPE_REVISION_VERSION),

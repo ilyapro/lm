@@ -643,7 +643,6 @@ def test_filtered_pool_reads_revisions_only_for_keyed_fifo_pressure(tmp_path):
             assert not statements and builder.cache_size == 0
             for key in ("A", "A", "B"):
                 assert builder.build(residual, scope=POOL_SCOPE, task=key).to_dict() == filtered.to_dict()
-            assert sum("chunk_scope_revision;" in sql for sql in statements) == 1
-            assert sum("pending_chunk_revision" in sql for sql in statements) == 3
+            assert sum("map_chunk_revision" in sql for sql in statements) == 3
         finally:
             store.connection.set_trace_callback(None)
