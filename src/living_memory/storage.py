@@ -4107,7 +4107,7 @@ class MemoryStore:
                 except sqlite3.OperationalError as exc:
                     # An unselected text column can fail Python UTF-8 decoding.
                     # Propagate errors from the SQLite engine itself.
-                    if hasattr(exc, "sqlite_errorcode"):
+                    if not str(exc).startswith("Could not decode to UTF-8 column "):
                         raise
             else:
                 scopes = (None,)
@@ -4143,8 +4143,7 @@ class MemoryStore:
                     heappushpop(group, item)
 
         # Every whole-store winner is also a winner in its partition.
-        whole = nlargest(limit + 1, chain.from_iterable(groups.values()))
-        groups[None] = whole
+        groups[None] = nlargest(limit + 1, chain.from_iterable(groups.values()))
         winners = {}
         for scope, group in groups.items():
             group.sort(reverse=True)

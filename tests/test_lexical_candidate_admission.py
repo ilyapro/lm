@@ -345,3 +345,18 @@ def test_broad_discovery_scans_distinct_winners_once(tmp_path):
         finally:
             store.connection.set_trace_callback(None)
         assert sum("nodes_fts MATCH" in sql for sql in statements) == 1
+
+
+def test_broad_discovery_preserves_storage_order_and_projection_errors(tmp_path):
+    with MemoryStore(tmp_path / "projection.sqlite3") as store:
+        plan = ScopePlan("global", (SCOPE, "global", "*"))
+        put(store, "low", stats={"confidence": 0.1})
+        put(store, "top", stats={"confidence": 0.9})
+        for assignment in ("confidence = 'invalid'", "usefulness_score = CAST(x'ff' AS TEXT)"):
+            store.connection.execute(f"UPDATE nodes SET {assignment} WHERE id = 'low'")
+            expected = [row for scope in (*plan.named_scopes, None)
+                        for row in store.search_content_ids(QUERY, scope=scope, limit=1)]
+            assert list(store.iter_recall_content_ids(QUERY, plan, limit=1)) == expected
+        store.connection.execute("DROP TABLE nodes_fts")
+        with pytest.raises(sqlite3.OperationalError, match="no such table: nodes_fts"):
+            list(store.iter_recall_content_ids(QUERY, plan, limit=1))
