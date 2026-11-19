@@ -1362,6 +1362,7 @@ def _register_tools(
                 )
                 return selected, residual
 
+            event_results: list[dict[str, Any]] = []
             with recall_service.recall_response(
                 prepared_query,
                 repair_pending=False,
@@ -1371,6 +1372,7 @@ def _register_tools(
                 max_results=max_results,
                 repeatable_selection=True,
                 select_results=select_delivery,
+                event_results=event_results,
             ) as results:
                 shaped = shape_recall_results(
                     results,
@@ -1439,11 +1441,12 @@ def _register_tools(
                         recall_service.last_recall_event_id,
                         exc_info=True,
                     )
-            if recall_service.last_recall_event_id is not None:
+            if event_results and recall_service.last_recall_event_id is not None:
                 try:
                     store.record_recall_delivery(
                         recall_service.last_recall_event_id,
                         recall_delivery_records(results, shaped),
+                        event_results=event_results,
                     )
                 except Exception:
                     logging.getLogger(__name__).warning(

@@ -3760,6 +3760,7 @@ class MemoryStore:
 
     def record_recall_delivery(
         self, event_id: str, deliveries: Mapping[str, Mapping[str, str]],
+        *, event_results: list[dict[str, Any]] | None = None,
     ) -> None:
         """Attach the shaper's final bodies without replacing selection history.
 
@@ -3768,20 +3769,23 @@ class MemoryStore:
         records a formed response, not acknowledgment by the network recipient.
         """
         with self.transaction():
-            row = self._conn.execute(
-                "SELECT results FROM recall_events WHERE id = ?", (event_id,)
-            ).fetchone()
-            if row is None:
-                raise KeyError(event_id)
-            results = _json_loads(row["results"], [])
-            for result in results:
-                result["delivery"] = dict(deliveries.get(
-                    str(result.get("node_id", "")), {"kind": "omitted"},
-                ))
-            self._conn.execute(
+            if event_results is None:
+                row = self._conn.execute(
+                    "SELECT results FROM recall_events WHERE id = ?", (event_id,)
+                ).fetchone()
+                if row is None:
+                    raise KeyError(event_id)
+                event_results = _json_loads(row["results"], [])
+            results = [
+                {**result, "delivery": dict(deliveries.get(str(result.get("node_id", "")), {"kind": "omitted"}))}
+                for result in event_results
+            ]
+            updated = self._conn.execute(
                 "UPDATE recall_events SET results = ? WHERE id = ?",
                 (_json_dumps(results), event_id),
             )
+            if updated.rowcount == 0:
+                raise KeyError(event_id)
 
     def pending_recall_events(
         self,
