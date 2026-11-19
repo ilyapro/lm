@@ -309,6 +309,28 @@ def test_prompt_seed_limits_preserve_ties_and_distinct_lexical_tails(tmp_path, m
                 assert list(actual.items()) == list(expected.items())
 
 
+def test_prompt_discovery_checks_winner_version_and_current_body(tmp_path, monkeypatch):
+    plan = ScopePlan(SCOPE, (SCOPE,))
+    with MemoryStore(tmp_path / "prompt-admission.sqlite3") as store:
+        node = put(store, "lexical")
+        service = MemoryRecallService(store, embedder=Encoder())
+        query = service.prepare_query("lexical")
+        stale = (1.0, 0, node.id, "old-chunk", "old-version")
+        missing = (1.0, -1, "missing", "missing-chunk", "missing-version")
+        monkeypatch.setattr(service, "_vector_winners", lambda *args: ([missing], [stale]))
+        with store.read_snapshot():
+            prepared = service._prepare_prompt_discovery(query, plan, [2, 8])
+            for candidates in prepared.prompt_discovery.by_limit.values():
+                assert list(candidates) == [node.id]
+                assert candidates[node.id].vector_score == 0
+                assert candidates[node.id].chunk_id is None
+
+        with store.transaction():
+            store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (node.id,))
+        with store.read_snapshot(), pytest.raises(TypeError):
+            service._prepare_prompt_discovery(query, plan, [2, 8])
+
+
 @pytest.mark.parametrize("scope", [None, SCOPE])
 def test_healthy_vector_only_recall_matches_full_body_reader(tmp_path, monkeypatch, scope):
     with MemoryStore(tmp_path / "recall.sqlite3") as store:
