@@ -1820,19 +1820,27 @@ def _partition_sources(
     return assigned, unowned
 
 
+_CLUSTER_OWNER_LIMIT = 100_000
+
+
 def _cluster_admission(
     store: MemoryStore, cluster: _TraceCluster,
 ) -> tuple[list[Node], dict[str, set[str]], dict[tuple[str, str | None], list[Node]], _SourceSelection]:
     """Select current recorded owners and compatible unowned evidence."""
 
     current = _current_sources(store, (member.id for member in cluster.traces))
+    return _partition_cluster(store, cluster.scope, current, _source_ancestors(store, current.live))
+
+
+def _partition_cluster(
+    store: MemoryStore, scope: str, current: _SourceSelection, ancestors: Mapping[str, set[str]],
+) -> tuple[list[Node], dict[str, set[str]], dict[tuple[str, str | None], list[Node]], _SourceSelection]:
     members = {member.id: member for member in current.live}
     if not members:
         return [], {}, {}, current
-    ancestors = _source_ancestors(store, current.live)
     owners = [
         node for node in store.list_nodes(
-            level="concept", scope=cluster.scope, source_ids=ancestors, limit=100_000,
+            level="concept", scope=scope, source_ids=ancestors, limit=_CLUSTER_OWNER_LIMIT,
         )
         if node.materializer == "cluster" and node.source_traces
         and not node.corrections and not _is_superseded(store, node.id)
@@ -1852,11 +1860,23 @@ def _cluster_admission(
     return owners, assigned, groups, current
 
 
-def _cluster_read_version(store: MemoryStore) -> tuple[int, int]:
-    # Called inside the owner transaction. SQLite tracks other connections'
-    # commits separately from this connection's own writes.
-    connection = store.connection
-    return connection.total_changes, connection.execute("PRAGMA main.data_version").fetchone()[0]
+def _cluster_owner_inputs(
+    store: MemoryStore, cluster: _TraceCluster, owner: Node, other_id: str | None,
+) -> set[str]:
+    current = _current_sources(store, (member.id for member in cluster.traces))
+    ancestors = _source_ancestors(store, current.live)
+    # Two current owners establish ambiguity. Only this owner's recorded
+    # overlap can join it, regardless of how many further owners match.
+    if other_id is not None:
+        other = store.get_node(other_id)
+        if (other is not None and not other.decayed and not other.corrections
+                and other.scope == owner.scope and other.materializer == "cluster"
+                and any(source in ancestors for source in other.source_traces)
+                and not _is_superseded(store, other_id)
+                and not store.list_nodes(level="concept", scope=owner.scope, limit=1, offset=_CLUSTER_OWNER_LIMIT)):
+            return {member for source in owner.source_traces for member in ancestors.get(source, ())}
+    _, assigned, _, _ = _partition_cluster(store, cluster.scope, current, ancestors)
+    return assigned.get(owner.id, set())
 
 
 def _materialize_cluster(
@@ -1881,7 +1901,6 @@ def _materialize_cluster(
             with step():
                 nested = store.connection.in_transaction
                 with store.transaction():
-                    admission_version = _cluster_read_version(store)
                     owners, assigned, groups, fresh = _cluster_admission(store, cluster)
                     updates = [owner.id for owner in owners if owner.id in assigned]
                     # New owners and their admission share the same observation. No other
@@ -1911,8 +1930,8 @@ def _materialize_cluster(
             needed.prepare(store, preparation)
 
     result: list[tuple[Node, bool]] = []
-    for owner_id in updates:
-        assessment_version = None
+    for index, owner_id in enumerate(updates):
+        other_id = updates[index - 1] if len(updates) > 1 else None
         while True:
             try:
                 with step():
@@ -1923,22 +1942,14 @@ def _materialize_cluster(
                                 or owner.scope != cluster.scope or owner.level != "concept"
                                 or owner.materializer != "cluster" or _is_superseded(store, owner_id)):
                             break
-                        version = _cluster_read_version(store)
-                        # Detached preparation can yield to writers. Reuse reads
-                        # only across unchanged committed snapshots; caller-owned
-                        # transactions can roll back without advancing either count.
-                        if nested or version != admission_version:
-                            _, assigned, _, _ = _cluster_admission(store, cluster)
-                            admission_version = version
-                        if nested or version != assessment_version:
-                            assessment = _current_derivation(
-                                store, owner, additional=store.get_nodes(sorted(assigned.get(owner_id, ()))).values(),
-                            )
-                            assessment_version = version
+                        inputs = _cluster_owner_inputs(store, cluster, owner, other_id)
+                        assessment = _current_derivation(
+                            store, owner, additional=store.get_nodes(sorted(inputs)).values(),
+                        )
                         if not assessment.live:
                             store.soft_delete_node(owner_id, "derivation: no current sources")
                             break
-                        if owner_id not in assigned:
+                        if not inputs:
                             break
                         result.append((_write_cluster_concept(
                             store, owner.scope, assessment, existing=owner, strategy=cluster.strategy,
