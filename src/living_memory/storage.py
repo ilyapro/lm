@@ -4114,6 +4114,12 @@ class MemoryStore:
                   AND c.encoder_id IS NOT ?
             )""")
             params.append(pending_encoder)
+        limit_sql = "?"
+        if scope is not None:
+            # LIMIT 0 bypasses the FTS cursor. The active scope index answers
+            # EXISTS in this same snapshot, including for nodes without chunks.
+            limit_sql = "CASE WHEN EXISTS (SELECT 1 FROM nodes WHERE scope = ? AND decayed = 0) THEN ? ELSE 0 END"
+            params.append(scope)
         params.append(int(limit))
         return self._conn.execute(
             f"""
@@ -4122,7 +4128,7 @@ class MemoryStore:
             JOIN nodes n ON n.rowid = nodes_fts.rowid
             WHERE {' AND '.join(clauses)}
             ORDER BY score ASC, n.confidence DESC, n.usefulness_score DESC
-            LIMIT ?
+            LIMIT {limit_sql}
             """,
             params,
         ).fetchall()
