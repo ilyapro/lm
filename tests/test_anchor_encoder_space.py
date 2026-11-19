@@ -11,7 +11,7 @@ from living_memory.health_audit import ReadOnlyAuditStore
 from living_memory.query_anchors import match_anchors
 from living_memory.retrieval import MemoryRecallService
 from living_memory.server import create_mcp_server
-from living_memory.storage import MemoryStore, recall_fingerprint
+from living_memory.storage import MemoryStore, pack_chunk_embedding, recall_fingerprint
 from test_mcp_server import FakeMCP
 
 
@@ -299,3 +299,64 @@ def test_historical_index_reads_and_nominees_match_full_scan(tmp_path, monkeypat
                 "UPDATE query_anchors SET encoder_id='previous' WHERE id='4'"
             )
         check(None, 6, 6)
+
+
+def test_unlabelled_nomination_matrix_follows_committed_rows(tmp_path, monkeypatch):
+    class Model:
+        def embed(self, text):
+            return EncodedVector([1., 0.], "current")
+
+    path = tmp_path / "anchors.db"
+    with MemoryStore(path) as reader, MemoryStore(path) as writer:
+        target = writer.create_node(level="trace", content="opaque artifact")
+        for i in range(12):
+            writer.insert_query_anchor(anchor_id=str(i), query=f"archive {i}", fingerprint=str(i),
+                                       scope="global", embedding=[float(i == 0), float(i != 0)])
+        writer.upsert_query_anchor_edge("0", target.id, weight=0.7)
+        service = MemoryRecallService(reader, embedder=Model())
+        reads = []
+        scan = reader.iter_query_anchor_vectors
+
+        def counted(*args, space=None, **kwargs):
+            for row in scan(*args, space=space, **kwargs):
+                if space == (None, True):
+                    reads.append(row[0])
+                yield row
+
+        monkeypatch.setattr(reader, "iter_query_anchor_vectors", counted)
+
+        def check(expected_weight, rows):
+            reads.clear()
+            results = service.memory_recall("needle", log_access=False, log_event=False, repair_pending=False)
+            assert [(hit.node_id, hit.graph_score) for hit in results] == (
+                [(target.id, pytest.approx(expected_weight))] if expected_weight else [])
+            assert len(reads) == rows
+
+        check(0.7, 12)
+        writer.insert_query_anchor(scope="global", query="current", fingerprint="new", embedding=Model().embed(""))
+        check(0.7, 0)
+        writer.upsert_query_anchor_edge("0", target.id, weight=0.1)
+        check(0.8, 0)
+        edit = "UPDATE query_anchors SET embedding=? WHERE id='0'"
+        away = (pack_chunk_embedding([0., 1.]),)
+        reader.connection.execute(edit, away)
+        check(0, 12)
+        reader.connection.rollback()
+        check(0.8, 0)
+        with reader.read_snapshot():
+            check(0.8, 0)
+            with writer.transaction():
+                writer.connection.execute(edit, away)
+            check(0.8, 0)
+        check(0, 12)
+        with writer.transaction():
+            writer.connection.execute(edit, (pack_chunk_embedding([1., 0.]),))
+        check(0.8, 12)
+        for assignment, weight, rows in [
+            ("dimensions=3", 0, 11), ("dimensions=2", 0.8, 12),
+            ("encoder_id='foreign'", 0, 11), ("encoder_id=NULL", 0.8, 12),
+            ("decayed=1", 0, 11), ("decayed=0", 0.8, 12),
+        ]:
+            with writer.transaction():
+                writer.connection.execute(f"UPDATE query_anchors SET {assignment} WHERE id='0'")
+            check(weight, rows)
