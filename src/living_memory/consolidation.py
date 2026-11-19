@@ -58,6 +58,7 @@ except ImportError:  # pragma: no cover - numpy is a normal runtime dep
 DEFAULT_MIN_CLUSTER_SIZE = 100
 _ENCODE_BATCH = 8
 _CACHE_READ_BATCH = 500
+_CLUSTER_OWNER_LIMIT = 100_000
 MERGE_FLOOR_ENV = "LM_CONSOLIDATE_MERGE_FLOOR"
 # (active traces below, floor to apply). Falls through to
 # DEFAULT_MIN_CLUSTER_SIZE once the corpus is mature.
@@ -1820,30 +1821,31 @@ def _partition_sources(
     return assigned, unowned
 
 
-_CLUSTER_OWNER_LIMIT = 100_000
+def _cluster_sources(
+    store: MemoryStore, cluster: _TraceCluster,
+) -> tuple[_SourceSelection, dict[str, set[str]]]:
+    current = _current_sources(store, (member.id for member in cluster.traces))
+    return current, _source_ancestors(store, current.live)
+
+
+def _active_cluster_owner(store: MemoryStore, node: Node | None, scope: str) -> bool:
+    return (node is not None and node.scope == scope and node.materializer == "cluster"
+            and not node.decayed and not node.corrections and not _is_superseded(store, node.id))
 
 
 def _cluster_admission(
-    store: MemoryStore, cluster: _TraceCluster,
-) -> tuple[list[Node], dict[str, set[str]], dict[tuple[str, str | None], list[Node]], _SourceSelection]:
+    store: MemoryStore, scope: str, current: _SourceSelection, ancestors: Mapping[str, set[str]],
+) -> tuple[list[Node], dict[str, set[str]], dict[tuple[str, str | None], list[Node]]]:
     """Select current recorded owners and compatible unowned evidence."""
 
-    current = _current_sources(store, (member.id for member in cluster.traces))
-    return _partition_cluster(store, cluster.scope, current, _source_ancestors(store, current.live))
-
-
-def _partition_cluster(
-    store: MemoryStore, scope: str, current: _SourceSelection, ancestors: Mapping[str, set[str]],
-) -> tuple[list[Node], dict[str, set[str]], dict[tuple[str, str | None], list[Node]], _SourceSelection]:
     members = {member.id: member for member in current.live}
     if not members:
-        return [], {}, {}, current
+        return [], {}, {}
     owners = [
         node for node in store.list_nodes(
             level="concept", scope=scope, source_ids=ancestors, limit=_CLUSTER_OWNER_LIMIT,
         )
-        if node.materializer == "cluster" and node.source_traces
-        and not node.corrections and not _is_superseded(store, node.id)
+        if node.source_traces and _active_cluster_owner(store, node, scope)
     ]
     assigned, unowned = _partition_sources(owners, current.live, ancestors)
 
@@ -1857,25 +1859,22 @@ def _partition_cluster(
     for source in sorted(unowned):
         member = members[source]
         groups.setdefault(_cluster_group(member), []).append(member)
-    return owners, assigned, groups, current
+    return owners, assigned, groups
 
 
 def _cluster_owner_inputs(
     store: MemoryStore, cluster: _TraceCluster, owner: Node, other_id: str | None,
 ) -> set[str]:
-    current = _current_sources(store, (member.id for member in cluster.traces))
-    ancestors = _source_ancestors(store, current.live)
+    current, ancestors = _cluster_sources(store, cluster)
     # Two current owners establish ambiguity. Only this owner's recorded
     # overlap can join it, regardless of how many further owners match.
     if other_id is not None:
         other = store.get_node(other_id)
-        if (other is not None and not other.decayed and not other.corrections
-                and other.scope == owner.scope and other.materializer == "cluster"
+        if (other is not None and _active_cluster_owner(store, other, owner.scope)
                 and any(source in ancestors for source in other.source_traces)
-                and not _is_superseded(store, other_id)
                 and not store.active_concepts_exceed(owner.scope, _CLUSTER_OWNER_LIMIT)):
             return {member for source in owner.source_traces for member in ancestors.get(source, ())}
-    _, assigned, _, _ = _partition_cluster(store, cluster.scope, current, ancestors)
+    _, assigned, _ = _cluster_admission(store, cluster.scope, current, ancestors)
     return assigned.get(owner.id, set())
 
 
@@ -1901,7 +1900,8 @@ def _materialize_cluster(
             with step():
                 nested = store.connection.in_transaction
                 with store.transaction():
-                    owners, assigned, groups, fresh = _cluster_admission(store, cluster)
+                    fresh, ancestors = _cluster_sources(store, cluster)
+                    owners, assigned, groups = _cluster_admission(store, cluster.scope, fresh, ancestors)
                     updates = [owner.id for owner in owners if owner.id in assigned]
                     # New owners and their admission share the same observation. No other
                     # materializer can claim these sources between selection and creation.
@@ -1938,9 +1938,7 @@ def _materialize_cluster(
                     nested = store.connection.in_transaction
                     with store.transaction():
                         owner = store.get_node(owner_id)
-                        if (owner is None or owner.decayed or owner.corrections
-                                or owner.scope != cluster.scope or owner.level != "concept"
-                                or owner.materializer != "cluster" or _is_superseded(store, owner_id)):
+                        if owner is None or not _active_cluster_owner(store, owner, cluster.scope):
                             break
                         inputs = _cluster_owner_inputs(store, cluster, owner, other_id)
                         assessment = _current_derivation(
