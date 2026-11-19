@@ -134,8 +134,8 @@ def test_overlapping_passes_keep_candidates_order_limits_and_load_new_bodies_onc
         assert list(actual) == list(expected)
         assert actual[existing.node.id].node is existing.node
         assert decoded == Counter({key: 1 for key in expected.keys() - initial.keys()})
-        scopes = plan.search_scopes if plan.restricted else (*plan.named_scopes, None)
-        assert passes == [(scope, 25) for scope in scopes]
+        if plan.restricted:
+            assert passes == [(scope, 25) for scope in plan.search_scopes]
         assert not store.connection.in_transaction
 
 
@@ -305,3 +305,38 @@ def test_empty_named_scope_skips_fts_until_first_live_source(tmp_path):
             writer.create_node(node_id="first", level="trace", content=QUERY, context={"scope": scope})
             assert collect() == ([], False)
         assert collect() == (["first"], True)
+
+@pytest.mark.parametrize("analyzed", [False, True])
+def test_broad_discovery_matches_each_top_k_before_deduplication(tmp_path, analyzed):
+    with MemoryStore(tmp_path / "broad.sqlite3") as store:
+        for scope in (SCOPE, "global", "project:foreign"):
+            for index in range(8):
+                put(store, f"{scope}-{8-index}", scope=scope,
+                    stats={"confidence": (8 - index // 2) / 10})
+        if analyzed:
+            store.connection.execute("ANALYZE")
+        plan = ScopePlan("global", ("session:empty", SCOPE, "global", "*"))
+        for query in (QUERY, "nonmatching", ""):
+            for limit in (1, 3, 4, 25):
+                expected = [row for scope in (*plan.named_scopes, None)
+                            for row in store.search_content_ids(query, scope=scope, limit=limit)]
+                with store.transaction():
+                    assert list(store.iter_recall_content_ids(query, plan, limit=limit)) == expected
+
+
+def test_broad_discovery_scans_distinct_winners_once(tmp_path):
+    with MemoryStore(tmp_path / "distinct.sqlite3") as store:
+        for index in range(30):
+            put(store, f"item-{index:02}", scope=(SCOPE, "global", "project:foreign")[index % 3],
+                stats={"confidence": index / 30})
+        plan = ScopePlan("global", ("session:empty", SCOPE, "global", "*"))
+        expected = [row for scope in (*plan.named_scopes, None)
+                    for row in store.search_content_ids(QUERY, scope=scope, limit=3)]
+        statements = []
+        store.connection.set_trace_callback(statements.append)
+        try:
+            with store.transaction():
+                assert list(store.iter_recall_content_ids(QUERY, plan, limit=3)) == expected
+        finally:
+            store.connection.set_trace_callback(None)
+        assert sum("nodes_fts MATCH" in sql for sql in statements) == 1
