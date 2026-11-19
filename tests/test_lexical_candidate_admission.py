@@ -376,7 +376,7 @@ def test_scoped_prefix_checks_score_ties_inside_and_across_limit(tmp_path, monke
     with MemoryStore(tmp_path / "scoped.sqlite3") as store:
         # Increasing document lengths give distinct scores, except this pair.
         for i, words in enumerate((1, 2, 3, 3, 4, 5)):
-            store.create_node(node_id=str(i), level="trace", content="amber" + " mineral" * words,
+            store.create_node(node_id=str(i), level="trace", content=f"amber item{i}" + " mineral" * words,
                               context={"scope": SCOPE})
         limits = (1, 2, 3, 4, 6)
         expected = {k: store.search_content_ids("amber", scope=SCOPE, limit=k) for k in limits}

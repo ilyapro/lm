@@ -1254,7 +1254,9 @@ class MemoryRecallService:
         # carry membership only; the current scoped/live reader admits bodies.
         with self.store.transaction():
             if rows is None:
-                rows = self.store.iter_recall_content_ids(_expanded_query(query), plan, limit=_bm25_scope_limit(max_results))
+                rows = self.store.iter_recall_content_ids(
+                    _expanded_query(query), plan, limit=_bm25_scope_limit(max_results),
+                )
             discovered = dict.fromkeys(node_id for node_id, _raw_score in rows)
             fetched = self.store.get_recall_nodes(
                 (node_id for node_id in discovered if node_id not in candidates), plan,
