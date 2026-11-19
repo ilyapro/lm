@@ -3767,6 +3767,7 @@ class MemoryStore:
         This atomic optional write occurs after response construction. A missing
         receipt permits re-delivery; it must not make memory unavailable. It
         records a formed response, not acknowledgment by the network recipient.
+        The forming caller can supply the same selection summaries it inserted.
         """
         with self.transaction():
             if event_results is None:
@@ -3776,10 +3777,10 @@ class MemoryStore:
                 if row is None:
                     raise KeyError(event_id)
                 event_results = _json_loads(row["results"], [])
-            results = [
-                {**result, "delivery": dict(deliveries.get(str(result.get("node_id", "")), {"kind": "omitted"}))}
-                for result in event_results
-            ]
+            results = []
+            for result in event_results:
+                receipt = deliveries.get(str(result.get("node_id", "")), {"kind": "omitted"})
+                results.append({**result, "delivery": dict(receipt)})
             updated = self._conn.execute(
                 "UPDATE recall_events SET results = ? WHERE id = ?",
                 (_json_dumps(results), event_id),

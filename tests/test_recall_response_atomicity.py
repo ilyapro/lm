@@ -204,6 +204,26 @@ def test_failed_call_preserves_prior_explicit_eligibility_and_mark_source(
     assert claim["source_id"] == f"mark:{mark['id']}"
 
 
+@pytest.mark.parametrize("empty", [False, True])
+def test_receipt_uses_current_selection_without_reading_it_back(runtime, empty):
+    store, node, _, call = runtime
+    if empty:
+        store.soft_delete_node(node.id)
+    statements = []
+    store.connection.set_trace_callback(statements.append)
+    try:
+        response = call()
+    finally:
+        store.connection.set_trace_callback(None)
+    sql = [" ".join(statement.upper().split()) for statement in statements]
+    assert not any(s.startswith("SELECT RESULTS FROM RECALL_EVENTS WHERE ID") for s in sql)
+    assert sum(s.startswith("UPDATE RECALL_EVENTS SET RESULTS") for s in sql) == int(not empty)
+    event = store.get_recall_event(response["recall_event_id"])
+    assert event.result_ids == ([] if empty else [node.id])
+    if event.results:
+        assert event.results[0]["delivery"]["kind"] == response["results"][0]["delivery"]
+
+
 def test_optional_receipt_failure_keeps_formed_answer_eligible(runtime):
     store, node, correction, call = runtime
     store.connection.execute("""CREATE TEMP TRIGGER reject_receipt

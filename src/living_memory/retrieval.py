@@ -696,7 +696,8 @@ class MemoryRecallService:
         try:
             with self.store.transaction() if log_access or log_event else nullcontext():
                 if log_access or log_event:
-                    summaries = [_recall_result_summary(i, result) for i, result in enumerate(limited)]
+                    summaries = event_results if event_results is not None and log_event else []
+                    summaries.extend(_recall_result_summary(i, result) for i, result in enumerate(limited))
                     nodes, event_id = self.store.record_recall(
                         nodes=[result.node for result in limited],
                         log_access=log_access,
@@ -718,9 +719,9 @@ class MemoryRecallService:
                         for result, node in zip(limited, nodes, strict=True)
                     ]
                 yield limited
-            if event_results is not None and self.last_recall_event_id is not None:
-                event_results.extend(summaries)
         except BaseException:
+            if event_results is not None:
+                event_results.clear()
             self.last_recall_event_id = None
             raise
 
