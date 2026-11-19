@@ -1871,6 +1871,12 @@ class MemoryStore:
         )) as rows:
             return [decode(row) for row in rows]
 
+    def active_concepts_exceed(self, scope: str, limit: int) -> bool:
+        return self._conn.execute(
+            "SELECT 1 FROM nodes WHERE level = 'concept' AND scope = ? AND decayed = 0 LIMIT 1 OFFSET ?",
+            (scope, limit),
+        ).fetchone() is not None
+
     def list_concept_browse_fields(self, *, scope: str, limit: int) -> list[ConceptBrowseFields]:
         """Read the newest active concept prefix before consumer filtering."""
         rows = self._conn.execute(

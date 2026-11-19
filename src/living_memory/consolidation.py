@@ -1873,7 +1873,7 @@ def _cluster_owner_inputs(
                 and other.scope == owner.scope and other.materializer == "cluster"
                 and any(source in ancestors for source in other.source_traces)
                 and not _is_superseded(store, other_id)
-                and not store.list_nodes(level="concept", scope=owner.scope, limit=1, offset=_CLUSTER_OWNER_LIMIT)):
+                and not store.active_concepts_exceed(owner.scope, _CLUSTER_OWNER_LIMIT)):
             return {member for source in owner.source_traces for member in ancestors.get(source, ())}
     _, assigned, _, _ = _partition_cluster(store, cluster.scope, current, ancestors)
     return assigned.get(owner.id, set())
