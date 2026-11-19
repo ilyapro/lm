@@ -596,7 +596,11 @@ def test_native_prompt_discovery_passes(runtime, monkeypatch, concepts, schemas,
                 actual = await get_prompt(client, max_concepts=concepts, max_schemas=schemas)
                 assert actual.encode() == expected
                 assert [len(ids) for ids in blocks] == ([6] if fts_limits else [])
-                assert searches == [(scope, limit) for limit in fts_limits for scope in (SCOPE, "global")]
+                # The project has tied scores; the empty global partition
+                # supplies every selector from its largest read.
+                project_reads = [(SCOPE, limit) for limit in sorted(fts_limits, reverse=True)]
+                global_reads = [("global", max(fts_limits))] if fts_limits else []
+                assert searches == project_reads + global_reads
                 blocks.clear()
                 searches.clear()
 
