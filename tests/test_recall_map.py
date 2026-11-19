@@ -1112,6 +1112,34 @@ def test_every_delivered_cluster_carries_an_informative_example(
     assert all(cluster.medoid.example.endswith("…") for cluster in built.clusters)
 
 
+def test_example_width_uses_the_serialized_shortened_text(store, monkeypatch):
+    candidates = pool([
+        make_node(store, topic + (' 雪  "\\\x01 tail…' * 15), {"topic": topic})
+        for topic in ("sqlite backup", "dns authority")
+    ])
+    monkeypatch.setattr(recall_map, "MAX_RESPONSE_CHARS", 10_000)
+    builder = RecallMapBuilder(store)
+    full = builder.build(candidates, scope=SCOPE).to_dict()
+    assert len(full["clusters"]) == 2
+    examples = [cluster["medoid"]["example"] for cluster in full["clusters"]]
+
+    # Compare adjacent budgets with the actual wire payload at every cap.
+    forms = []
+    for width in range(MIN_MEDOID_EXAMPLE_CHARS, MEDOID_EXAMPLE_CHARS + 1):
+        payload = {**full, "clusters": []}
+        for row, text in zip(full["clusters"], examples, strict=True):
+            example = recall_map._shorten(text, width)
+            payload["clusters"].append({**row, "medoid": {**row["medoid"], "example": example}})
+        size = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+        forms.append((size, payload))
+
+    for size, _ in forms[2:]:
+        for budget in (size - 1, size):
+            expected = next(form for cost, form in reversed(forms) if cost <= budget)
+            monkeypatch.setattr(recall_map, "MAX_RESPONSE_CHARS", budget)
+            assert builder.build(candidates, scope=SCOPE).to_dict() == expected
+
+
 def test_example_budget_reflows_from_scratch_after_cluster_drops(
     store: MemoryStore,
 ) -> None:
