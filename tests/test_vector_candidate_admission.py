@@ -273,7 +273,7 @@ def test_healthy_candidates_keep_scores_order_chunks_limits_and_existing_bodies(
         assert actual[strongest.id].chunk_id == "retained"
 
 
-def test_prompt_seed_limits_preserve_ties_and_distinct_lexical_tails(tmp_path):
+def test_prompt_seed_limits_preserve_ties_and_distinct_lexical_tails(tmp_path, monkeypatch):
     plan = ScopePlan(SCOPE, (SCOPE,))
     with MemoryStore(tmp_path / "prompt-seeds.sqlite3") as store:
         with store.transaction():
@@ -285,7 +285,21 @@ def test_prompt_seed_limits_preserve_ties_and_distinct_lexical_tails(tmp_path):
         query = service.prepare_query("tail")
         with store.read_snapshot():
             blocks = service._chunk_blocks(plan, len(query.embedding), query.encoder_id)
-            shared = service._prepare_prompt_discovery(query, plan, [2, 8])
+            decoded = []
+            decode = storage._node_from_row
+
+            def count(row):
+                decoded.append(row["id"])
+                return decode(row)
+
+            with monkeypatch.context() as patch:
+                patch.setattr(storage, "_node_from_row", count)
+                shared = service._prepare_prompt_discovery(query, plan, [2, 8])
+            small, large = (shared.prompt_discovery.by_limit[k] for k in (2, 8))
+            assert set(decoded) == small.keys() | large.keys()
+            assert len(decoded) == len(set(decoded))
+            overlap = small.keys() & large.keys()
+            assert overlap and all(small[key] is not large[key] for key in overlap)
             for limit in (2, 8):
                 initial = {}
                 service._collect_bm25(query.text, plan, initial, max_results=limit)
@@ -293,6 +307,28 @@ def test_prompt_seed_limits_preserve_ties_and_distinct_lexical_tails(tmp_path):
                 expected = selection_oracle(store, blocks, VECTOR, plan, initial, max_results=limit)
                 actual = shared.prompt_discovery.by_limit[limit]
                 assert list(actual.items()) == list(expected.items())
+
+
+def test_prompt_discovery_checks_winner_version_and_current_body(tmp_path, monkeypatch):
+    plan = ScopePlan(SCOPE, (SCOPE,))
+    with MemoryStore(tmp_path / "prompt-admission.sqlite3") as store:
+        node = put(store, "lexical")
+        service = MemoryRecallService(store, embedder=Encoder())
+        query = service.prepare_query("lexical")
+        stale = (1.0, 0, node.id, "old-chunk", "old-version")
+        missing = (1.0, -1, "missing", "missing-chunk", "missing-version")
+        monkeypatch.setattr(service, "_vector_winners", lambda *args: ([missing], [stale]))
+        with store.read_snapshot():
+            prepared = service._prepare_prompt_discovery(query, plan, [2, 8])
+            for candidates in prepared.prompt_discovery.by_limit.values():
+                assert list(candidates) == [node.id]
+                assert candidates[node.id].vector_score == 0
+                assert candidates[node.id].chunk_id is None
+
+        with store.transaction():
+            store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (node.id,))
+        with store.read_snapshot(), pytest.raises(TypeError):
+            service._prepare_prompt_discovery(query, plan, [2, 8])
 
 
 @pytest.mark.parametrize("scope", [None, SCOPE])
