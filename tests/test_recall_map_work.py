@@ -125,16 +125,18 @@ def test_explicit_work_continues_on_new_transport_and_cold_server(tmp_path, isol
     asyncio.run(run())
 
 
-def test_no_context_is_not_a_shared_work_and_cache_tracks_the_same_identity(tmp_path):
+def test_no_context_is_not_a_shared_work_and_cache_tracks_the_same_identity(tmp_path, monkeypatch):
     with MemoryStore(tmp_path / "cache.sqlite3") as store:
         seed(store)
         pool = residual(store)
         builder = RecallMapBuilder(store)
-        for _ in range(5):
-            built = builder.build(pool, scope=SCOPE)
-            assert built and built.clusters and not built.curtailed
-            store.record_recall_event(query="idle", scope=SCOPE, recall_map=built.to_dict())
-            assert not builder.last_cache_hit
+        with monkeypatch.context() as patch:
+            patch.setattr(store, "recall_map_revision", lambda: pytest.fail("unkeyed revision read"))
+            for _ in range(5):
+                built = builder.build(pool, scope=SCOPE)
+                assert built and built.clusters and not built.curtailed
+                store.record_recall_event(query="idle", scope=SCOPE, recall_map=built.to_dict())
+                assert not builder.last_cache_hit
         assert builder.cache_size == 0 and not builder._curtail_memo
         for transport, hit in (("A", False), ("A", True), ("B", False)):
             assert builder.build(pool, scope=SCOPE, transport_session_id=transport)

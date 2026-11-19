@@ -2237,6 +2237,30 @@ def test_map_never_retains_transactional_structure(store, filtered):
     assert build(builder) == build(RecallMapBuilder(store)) and not builder.last_cache_hit
 
 
+def test_scope_only_format_keeps_map_identity_across_writable_upgrade(store):
+    node = make_node(store, "orbital telemetry calibration")
+    embed(store, node, [1.0, 0.0])
+    with store.connection:
+        store.connection.execute("UPDATE metadata SET value = '4' WHERE key = 'chunk_scope_revision_format'")
+        store.connection.execute("DELETE FROM metadata WHERE key = 'map_chunk_revision'")
+    with ReadOnlyAuditStore.open_path(store.db_path) as reader:
+        before = reader.recall_map_revision()
+        assert before is not None
+        make_node(store, "pending repair")
+        assert reader.recall_map_revision() == before
+        embed(store, node, [0.0, 1.0])
+        changed = reader.recall_map_revision()
+        assert changed > before
+        scopes = reader.chunk_corpus_revisions()
+        pending = reader.pending_chunk_revision()
+        with MemoryStore(store.db_path) as upgraded:
+            assert reader.recall_map_revision() == changed
+            assert reader.chunk_corpus_revisions() == scopes
+            assert reader.pending_chunk_revision() == pending
+            embed(upgraded, node, [1.0, 0.0])
+            assert reader.recall_map_revision() > changed
+
+
 @pytest.mark.parametrize("missing", ["chunks", "chunk-format", "anchors"])
 @pytest.mark.parametrize("filtered", [False, True], ids=["clusters", "empty-selection"])
 def test_legacy_read_only_map_rebuilds_without_reusable_identity(store, missing, filtered):
