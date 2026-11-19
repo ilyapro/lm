@@ -2695,7 +2695,7 @@ def _select_block_matches(
         # A dense lexical set or discovery budget already needs most of the
         # block. Stream it directly without building positions or sorting.
         if len(scores) > max(2 * keep_n, 8 * len(lexical_ids)):
-            ranks, next_order = _pooled_contenders(scores, block.node_ids, keep_n, lexical_ids, order)
+            ranks, order = _pooled_contenders(scores, block.node_ids, keep_n, lexical_ids, order)
             rows = ((i, (float(scores[i]), i)) for i in sorted(ranks))
         else:
             rows = enumerate(zip(map(float, scores), range(len(scores))))
@@ -2705,8 +2705,11 @@ def _select_block_matches(
     for index, (similarity, position) in rows:
         if not similarity >= VECTOR_MATCH_THRESHOLD:
             continue
-        rank = ranks[index] if ranks is not None else order
-        order -= 1
+        if ranks is None:
+            rank = order
+            order -= 1
+        else:
+            rank = ranks[index]
         node_id = block.node_ids[index]
         lexical_hit = node_id in lexical_ids
         # Later ties cannot displace the earliest matching node.
@@ -2731,7 +2734,7 @@ def _select_block_matches(
         for slot, (score, rank, node_id, _, version) in enumerate(discovery):
             if rank in pending:
                 discovery[slot] = (score, rank, node_id, chunk_id(pending[rank]), version)
-    return next_order if ranks is not None else order
+    return order
 
 
 def _pooled_chunk_similarities(
