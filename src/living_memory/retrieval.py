@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+from bisect import bisect_left
 from collections import Counter, OrderedDict, defaultdict, deque
 from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
@@ -2649,16 +2650,62 @@ def _prepare_chunk_gather(blocks: tuple[_ChunkBlock, ...]) -> _ChunkGatherPlan:
     return _ChunkGatherPlan(blocks, (), template)
 
 
+def _pooled_contenders(
+    pooled: Any, node_ids: tuple[str, ...], keep_n: int, lexical_ids: Collection[str], order: int,
+) -> tuple[dict[int, int], int]:
+    """Return block winners and lexical positions with their original qualifying ranks."""
+    lexical = sorted(
+        index for node_id in lexical_ids
+        if (index := bisect_left(node_ids, node_id)) < len(node_ids) and node_ids[index] == node_id
+    )
+    ranks: dict[int, int] = {}
+    winners = _np.empty(0, dtype=_np.intp)
+    winner_ranks = _np.empty(0, dtype=_np.intp)
+    # Bound sort and rank scratch independently of corpus size. Earlier
+    # winners precede new rows so stable sorting retains the first equal score.
+    for start in range(0, len(pooled), 4096):
+        tile = pooled[start:start + 4096]
+        # A Python threshold can lie between two adjacent float32 scores.
+        eligible = _np.flatnonzero(tile >= _np.float64(VECTOR_MATCH_THRESHOLD))
+        first = bisect_left(lexical, start)
+        stop = bisect_left(lexical, start + len(tile), first)
+        for index in lexical[first:stop]:
+            if float(pooled[index]) >= VECTOR_MATCH_THRESHOLD:
+                ranks[index] = order - int(eligible.searchsorted(index - start))
+
+        indices = _np.concatenate((winners, start + eligible))
+        ordinals = _np.concatenate((winner_ranks, order - _np.arange(len(eligible))))
+        if len(indices) > keep_n:
+            top = _np.argsort(-pooled[indices], kind="stable")[:keep_n]
+            winners, winner_ranks = indices[top], ordinals[top]
+        else:
+            winners, winner_ranks = indices, ordinals
+        order -= len(eligible)
+    ranks.update(zip(winners.tolist(), winner_ranks.tolist()))
+    return ranks, order
+
+
 def _select_block_matches(
     block: _ChunkBlock, query_embedding: Sequence[float], q_arr: Any, order: int,
     keep_n: int, lexical_ids: Collection[str], discovery: list[_VectorMatch], lexical: list[_VectorMatch],
 ) -> int:
     scores, chunk_id = _pooled_chunk_similarities(block, query_embedding, q_arr)
+    ranks = None
+    if _np is not None and isinstance(scores, _np.ndarray):
+        # A dense lexical set or discovery budget already needs most of the
+        # block. Stream it directly without building positions or sorting.
+        if len(scores) > max(2 * keep_n, 8 * len(lexical_ids)):
+            ranks, next_order = _pooled_contenders(scores, block.node_ids, keep_n, lexical_ids, order)
+            rows = ((i, (float(scores[i]), i)) for i in sorted(ranks))
+        else:
+            rows = enumerate(zip(map(float, scores), range(len(scores))))
+    else:
+        rows = enumerate(scores)
     pending: dict[int, int] = {}
-    for index, (similarity, position) in enumerate(scores):
+    for index, (similarity, position) in rows:
         if not similarity >= VECTOR_MATCH_THRESHOLD:
             continue
-        rank = order
+        rank = ranks[index] if ranks is not None else order
         order -= 1
         node_id = block.node_ids[index]
         lexical_hit = node_id in lexical_ids
@@ -2684,14 +2731,14 @@ def _select_block_matches(
         for slot, (score, rank, node_id, _, version) in enumerate(discovery):
             if rank in pending:
                 discovery[slot] = (score, rank, node_id, chunk_id(pending[rank]), version)
-    return order
+    return next_order if ranks is not None else order
 
 
 def _pooled_chunk_similarities(
     block: _ChunkBlock,
     query_embedding: Sequence[float],
     q_arr: Any,
-) -> tuple[Iterable[tuple[float, int]], Callable[[int], str | None]]:
+) -> tuple[_np.ndarray | Iterable[tuple[float, int]], Callable[[int], str | None]]:
     """Return pooled scores with positions that resolve in this block."""
     if _np is not None and isinstance(block.rows, _np.ndarray):
         if q_arr is None:
@@ -2712,7 +2759,7 @@ def _pooled_chunk_similarities(
             row = start if end == start + 1 else start + int(sims[start:end].argmax())
             return None if sims[row] != sims[row] else block.chunk_ids[row]
 
-        return zip(map(float, pooled), range(len(pooled))), chunk_id
+        return pooled, chunk_id
 
     return _scalar_chunk_scores(block, query_embedding), block.chunk_ids.__getitem__
 

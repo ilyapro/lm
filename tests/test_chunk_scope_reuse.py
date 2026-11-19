@@ -16,6 +16,8 @@ from test_retrieval_chunk_maxpool import put_chunks
 
 def resolved_scores(block, query, query_array):
     scores, chunk_id = retrieval._pooled_chunk_similarities(block, query, query_array)
+    if retrieval._np is not None and isinstance(scores, retrieval._np.ndarray):
+        scores = zip(map(float, scores), range(len(scores)))
     return [(score, node_id, chunk_id(position))
             for node_id, (score, position) in zip(block.node_ids, scores)]
 
