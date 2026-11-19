@@ -93,7 +93,9 @@ def test_recall_skips_unusable_session_history(tmp_path, isolated, monkeypatch, 
                     assert entry["node"]["content"] == ""
                     assert event.results[0]["delivery"] == {"kind": "below_threshold"}
                     assert actual["recall_map"]["sel"]["n"] == 3
-                    assert actual["recall_map"] == event.recall_map
+                    stored_map = store.recent_recall_map_history()[0]
+                    assert stored_map["id"] == event.id
+                    assert stored_map["recall_map"] == actual["recall_map"]
                 else:
                     assert actual["results"] == event.results == []
                     assert "recall_map" not in actual
