@@ -530,13 +530,15 @@ def test_prompt_shares_chunk_and_anchor_preparation(runtime, monkeypatch, native
     rows = r.store.iter_chunk_embedding_rows
     anchors = retrieval._prepare_anchor_vectors
 
-    def counted_build(*args, **kwargs):
+    def counted_build(service, scope, revision):
+        assert scope == SCOPE
         counts["builds"] += 1
-        return build(*args, **kwargs)
+        return build(service, scope, revision)
 
-    def counted_rows(*args, **kwargs):
+    def counted_rows(**kwargs):
+        assert kwargs["scope"] == SCOPE
         counts["chunk_reads"] += 1
-        for row in rows(*args, **kwargs):
+        for row in rows(**kwargs):
             counts["rows"] += 1
             counts["vector_bytes"] += len(row[2])
             yield row
@@ -560,7 +562,7 @@ def test_prompt_shares_chunk_and_anchor_preparation(runtime, monkeypatch, native
     actual = (asyncio.run(scenario()) if native else
               prompts.retrieval_context_prompt(r.store, task=TASK, scope=SCOPE))
     assert actual == expected
-    assert counts["builds"] == counts["chunk_reads"] == 2
+    assert counts["builds"] == counts["chunk_reads"] == 1
     assert counts["anchor_builds"] > 0 and counts["rows"] > 0
     assert independent_counts == {key: 3 * count for key, count in counts.items()}
     assert list(r.store.connection.iterdump()) == before

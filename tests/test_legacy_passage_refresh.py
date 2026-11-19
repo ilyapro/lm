@@ -127,6 +127,7 @@ def test_first_fallback_next_passage_one_query_search_and_no_repeated_encoding(a
     assert len(encoder.batches) == 1
     assert 1 < len(encoder.batches[0]) <= retrieval.LEGACY_PASSAGE_MAX_CHUNKS
     assert encoder.queries == [QUERY] and len(searches) == 1
+    assert scans == [SCOPE]
     refreshed = rows(store, node.id)
     assert refreshed != original
     assert all(chunk.char_start is not None for chunk in store.list_node_chunks(node.id))
@@ -134,12 +135,11 @@ def test_first_fallback_next_passage_one_query_search_and_no_repeated_encoding(a
     assert store.get_node(node.id).embedding == node.embedding
     second = call(mcp)["results"][0]
     assert FACT in second["content"] and len(second["content"]) <= 2400
+    assert scans == [SCOPE, SCOPE]
     third = call(mcp)["results"][0]
     assert FACT in third["content"]
     assert encoder.queries == [QUERY] * 3 and len(searches) == 3
-    # The plan also initializes its empty global scope. Only the changed scope
-    # is rescanned after refresh; the third recall reuses both cached scopes.
-    assert scans.count(SCOPE) == 2 and scans.count("global") == 1
+    assert scans == [SCOPE, SCOPE]
     assert len(encoder.batches) == 1 and rows(store, node.id) == refreshed
     assert rows(store, untouched.id) == untouched_rows
     assert mcp.tools["memory_lookup"](node_id=node.id)["results"][0]["content"] == CONTENT
