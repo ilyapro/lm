@@ -6,7 +6,8 @@ from array import array
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, closing, contextmanager, nullcontext
 from dataclasses import dataclass, replace
-from itertools import groupby
+from heapq import heappush, heappushpop
+from itertools import groupby, pairwise
 from pathlib import Path
 from threading import RLock
 from typing import Any, Literal, TypeVar
@@ -4082,6 +4083,62 @@ class MemoryStore:
         rows = self._search_content_rows(query, projection="n.id", level=level, scope=scope,
                                          limit=limit, pending_encoder=pending_encoder)
         return [(str(row["id"]), float(row["score"])) for row in rows]
+
+    def iter_recall_content_ids(
+        self, query: str, plan: ScopePlan, *, limit: int,
+    ) -> Iterator[tuple[str, float]]:
+        """Yield each lexical top-K in plan order inside the caller's snapshot."""
+
+        if plan.restricted:
+            for scope in plan.search_scopes:
+                yield from self.search_content_ids(query, scope=scope, limit=limit)
+            return
+
+        match = _fts_query(query)
+        if not match:
+            return
+        named = plan.named_scopes
+        if not 0 < limit <= sys.maxsize:
+            for scope in (*named, None):
+                yield from self.search_content_ids(query, scope=scope, limit=limit)
+            return
+        if not any(self._conn.execute(
+            "SELECT 1 FROM nodes WHERE scope = ? AND decayed = 0 LIMIT 1", (scope,),
+        ).fetchone() for scope in named):
+            yield from self.search_content_ids(query, limit=limit)
+            return
+
+        groups: dict[str | None, list[tuple[float, float, float, str]]] = {
+            scope: [] for scope in (*named, None)
+        }
+        whole = groups[None]
+        with closing(self._conn.cursor()) as cursor:
+            cursor.row_factory = None
+            cursor.execute(
+                """
+                SELECT n.id, n.scope, bm25(nodes_fts), n.confidence, n.usefulness_score
+                FROM nodes_fts CROSS JOIN nodes n ON n.rowid = nodes_fts.rowid
+                WHERE nodes_fts MATCH ? AND n.decayed = 0
+                """,
+                (match,),
+            )
+            for node_id, scope, score, confidence, usefulness in cursor:
+                item = (-score, confidence, usefulness, node_id)
+                for group in (whole, groups[scope]) if scope in groups else (whole,):
+                    if len(group) <= limit:
+                        heappush(group, item)
+                    else:
+                        heappushpop(group, item)
+
+        for scope, group in groups.items():
+            group.sort(reverse=True)
+            # SQLite's original plan decides complete ties. Include one extra
+            # contender to catch ties across the cutoff as well as within it.
+            if any(left[:3] == right[:3] for left, right in pairwise(group)):
+                yield from self.search_content_ids(query, scope=scope, limit=limit)
+            else:
+                for score, _, _, node_id in group[:limit]:
+                    yield node_id, -score
 
     def _search_content_rows(
         self,

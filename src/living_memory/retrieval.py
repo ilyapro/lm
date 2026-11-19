@@ -1225,14 +1225,11 @@ class MemoryRecallService:
         # by query coverage, independently of that order or corpus statistics.
         # Named scopes retain their own discovery limits; a whole-store plan
         # also searches scopes that were not explicitly named.
-        scopes = plan.search_scopes if plan.restricted else (*plan.named_scopes, None)
-        discovered: dict[str, None] = {}
         # Keep discovery and admitted bodies in one short read snapshot. IDs
         # carry membership only; the current scoped/live reader admits bodies.
         with self.store.transaction():
-            for scope in scopes:
-                rows = self.store.search_content_ids(expanded_query, scope=scope, limit=per_scope_limit)
-                discovered.update((node_id, None) for node_id, _raw_score in rows)
+            rows = self.store.iter_recall_content_ids(expanded_query, plan, limit=per_scope_limit)
+            discovered = dict.fromkeys(node_id for node_id, _raw_score in rows)
             fetched = self.store.get_recall_nodes(
                 (node_id for node_id in discovered if node_id not in candidates), plan,
             )
