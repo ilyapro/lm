@@ -724,6 +724,7 @@ class MemoryRecallService:
         groups: dict[int, dict[str, _Candidate]] = {}
         matched_by_version: dict[str, set[str]] = {}
         scope_limits = {limit: _bm25_scope_limit(limit) for limit in limits}
+        shared_nodes: dict[str, Node] | None = {} if len(scope_limits) > 1 else None
         rows = {}
         if len(scope_limits) > 1:
             rows = self.store.recall_content_ids_by_limit(
@@ -732,7 +733,8 @@ class MemoryRecallService:
         for limit, per_scope in scope_limits.items():
             candidates = groups[limit] = {}
             self._collect_bm25(query.text, plan, candidates, max_results=limit,
-                               matched_by_version=matched_by_version, rows=rows.get(per_scope))
+                               matched_by_version=matched_by_version, rows=rows.get(per_scope),
+                               shared_nodes=shared_nodes)
         del rows
         if query.encoder_id is not None:
             lexical_ids = set().union(*(group.keys() for group in groups.values()))
@@ -744,7 +746,7 @@ class MemoryRecallService:
             for limit, candidates in groups.items():
                 keep = _vector_keep_n(plan, limit)
                 winners = discovery[:keep] if keep < len(discovery) else discovery
-                self._admit_vector(plan, candidates, winners, lexical)
+                self._admit_vector(plan, candidates, winners, lexical, shared_nodes=shared_nodes)
         term_count = len(_lexical_terms(query.text))
         coverage = {version: len(matched) / term_count for version, matched in matched_by_version.items()}
         return replace(query, prompt_discovery=_PromptDiscovery(plan, groups, coverage))
@@ -1235,6 +1237,16 @@ class MemoryRecallService:
     ) -> Any:
         return self.feedback.apply(result, useful=useful, signal=signal, scope=scope)
 
+    def _load_candidate_nodes(
+        self, ids: Iterable[str], plan: ScopePlan, shared_nodes: dict[str, Node] | None,
+    ) -> dict[str, Node]:
+        if shared_nodes is None:
+            return self.store.get_recall_nodes(ids, plan)
+        missing = [node_id for node_id in ids if node_id not in shared_nodes]
+        if missing:
+            shared_nodes.update(self.store.get_recall_nodes(missing, plan))
+        return shared_nodes
+
     def _collect_bm25(
         self,
         query: str,
@@ -1244,6 +1256,7 @@ class MemoryRecallService:
         max_results: int,
         matched_by_version: dict[str, set[str]] | None = None,
         rows: Iterable[tuple[str, float]] | None = None,
+        shared_nodes: dict[str, Node] | None = None,
     ) -> None:
         query_terms = _lexical_terms(query)
         # FTS order selects the bounded discovery set. Score admitted sources
@@ -1258,8 +1271,8 @@ class MemoryRecallService:
                     _expanded_query(query), plan, limit=_bm25_scope_limit(max_results),
                 )
             discovered = dict.fromkeys(node_id for node_id, _raw_score in rows)
-            fetched = self.store.get_recall_nodes(
-                (node_id for node_id in discovered if node_id not in candidates), plan,
+            fetched = self._load_candidate_nodes(
+                (node_id for node_id in discovered if node_id not in candidates), plan, shared_nodes,
             )
         for node_id in discovered:
             candidate = candidates.get(node_id)
@@ -1268,7 +1281,6 @@ class MemoryRecallService:
                 if node is None:
                     continue
                 candidate = candidates[node_id] = _Candidate(node=node)
-            # Prompt limits share only the query terms matched by the body.
             # Task terms extend discovery after content qualification is fixed.
             score = 0.0
             candidate.lexical_score = 0.0
@@ -1327,6 +1339,7 @@ class MemoryRecallService:
     def _admit_vector(
         self, plan: ScopePlan, candidates: dict[str, _Candidate],
         discovery: list[_VectorMatch], lexical: list[_VectorMatch],
+        *, shared_nodes: dict[str, Node] | None = None,
     ) -> None:
         # Keep vector evidence for this selector's lexical tail, including
         # winners below its discovery cutoff, before current-source admission.
@@ -1339,7 +1352,7 @@ class MemoryRecallService:
         # closer to its `keep_n` ceiling than it used to, and the per-node
         # round trip is the part of it that is pure overhead.
         missing = [item[2] for item in kept if item[2] not in candidates]
-        fetched = self.store.get_recall_nodes(missing, plan) if missing else {}
+        fetched = self._load_candidate_nodes(missing, plan, shared_nodes) if missing else {}
         for similarity, _order, node_id, chunk_id, version in kept:
             existing = candidates.get(node_id)
             node = existing.node if existing is not None else fetched.get(node_id)
