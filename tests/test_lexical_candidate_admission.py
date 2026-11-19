@@ -277,3 +277,31 @@ def test_lexical_snapshot_preserves_outer_writes_rollback_and_failure(tmp_path):
         assert candidates == {original.id: _Candidate(node=original, bm25_score=1.0,
                                                        lexical_score=1.0, lexical_score_prepared=True)}
         assert not store.connection.in_transaction
+
+
+def test_empty_named_scope_skips_fts_until_first_live_source(tmp_path):
+    path = tmp_path / "first-live.sqlite3"
+    with MemoryStore(path) as store, MemoryStore(path) as writer:
+        scope = "session:first-live"
+        dead = put(store, "dead", scope=scope)
+        store.soft_delete_node(dead.id)
+        put(store, "outside")
+        service = MemoryRecallService(store, embedder=Encoder())
+        plan = ScopePlan(scope, (scope,))
+
+        def collect():
+            statements = []
+            candidates = {}
+            store.connection.set_trace_callback(statements.append)
+            try:
+                service._collect_bm25(QUERY, plan, candidates, max_results=2)
+            finally:
+                store.connection.set_trace_callback(None)
+            reads_postings = any("nodes_fts_idx" in sql for sql in statements)
+            return list(candidates), reads_postings
+
+        with store.transaction():
+            assert collect() == ([], False)
+            writer.create_node(node_id="first", level="trace", content=QUERY, context={"scope": scope})
+            assert collect() == ([], False)
+        assert collect() == (["first"], True)
