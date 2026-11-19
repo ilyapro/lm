@@ -197,14 +197,15 @@ def test_body_admission_rechecks_live_scope_and_scores_surviving_source(tmp_path
 
 
 @pytest.mark.parametrize("mutation", ["content", "decay", "remove", "move"])
+@pytest.mark.parametrize("broad", [False, True])
 def test_discovery_and_bodies_share_snapshot_but_next_collection_reads_current_source(
-    tmp_path, monkeypatch, mutation,
+    tmp_path, monkeypatch, mutation, broad,
 ):
     path = tmp_path / "snapshot.sqlite3"
     with MemoryStore(path) as store, MemoryStore(path) as writer:
         original = put(store, "source")
         service = MemoryRecallService(store, embedder=Encoder())
-        plan = resolve_scope(scope=SCOPE)
+        plan = resolve_scope(scope=None if broad else SCOPE, ambient_context={"project": "lexical"})
         admit = store.get_recall_nodes
 
         def concurrent_write(ids, plan):
@@ -234,6 +235,8 @@ def test_discovery_and_bodies_share_snapshot_but_next_collection_reads_current_s
         service._collect_bm25(QUERY, plan, fresh, max_results=2)
         if mutation == "content":
             assert fresh[original.id].node.content == QUERY + " revised"
+        elif broad and mutation == "move":
+            assert fresh[original.id].node.scope == "project:foreign"
         else:
             assert fresh == {}
 
@@ -254,11 +257,12 @@ def test_lexical_snapshot_accepts_read_only_connection(tmp_path):
         assert not store.connection.in_transaction
 
 
-def test_lexical_snapshot_preserves_outer_writes_rollback_and_failure(tmp_path):
+@pytest.mark.parametrize("scope", [None, SCOPE])
+def test_lexical_snapshot_preserves_outer_writes_rollback_and_failure(tmp_path, scope):
     with MemoryStore(tmp_path / "nested.sqlite3") as store:
         original = put(store, "source")
         service = MemoryRecallService(store, embedder=Encoder())
-        plan = resolve_scope(scope=SCOPE)
+        plan = resolve_scope(scope=scope, ambient_context={"project": "lexical"})
         store.connection.execute("BEGIN")
         store.connection.execute("UPDATE nodes SET content = ? WHERE id = ?",
                                  (QUERY + " uncommitted", original.id))
@@ -305,6 +309,7 @@ def test_empty_named_scope_skips_fts_until_first_live_source(tmp_path):
             writer.create_node(node_id="first", level="trace", content=QUERY, context={"scope": scope})
             assert collect() == ([], False)
         assert collect() == (["first"], True)
+
 
 @pytest.mark.parametrize("analyzed", [False, True])
 def test_broad_discovery_matches_each_top_k_before_deduplication(tmp_path, analyzed):
