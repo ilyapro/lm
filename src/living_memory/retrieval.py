@@ -2663,8 +2663,9 @@ def _pooled_contenders(
     winner_ranks = _np.empty(0, dtype=_np.intp)
     # Bound sort and rank scratch independently of corpus size. Earlier
     # winners precede new rows so stable sorting retains the first equal score.
-    for start in range(0, len(pooled), 4096):
-        tile = pooled[start:start + 4096]
+    tile_size = max(4096, keep_n)
+    for start in range(0, len(pooled), tile_size):
+        tile = pooled[start:start + tile_size]
         # A Python threshold can lie between two adjacent float32 scores.
         eligible = _np.flatnonzero(tile >= _np.float64(VECTOR_MATCH_THRESHOLD))
         first = bisect_left(lexical, start)

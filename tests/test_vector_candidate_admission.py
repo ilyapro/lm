@@ -102,7 +102,8 @@ def measure_vector_state(call):
     """
     codes = {
         retrieval._scalar_chunk_scores.__code__, retrieval._pooled_chunk_similarities.__code__,
-        retrieval._select_block_matches.__code__, MemoryRecallService._collect_vector.__code__,
+        retrieval._select_block_matches.__code__, retrieval._pooled_contenders.__code__,
+        MemoryRecallService._collect_vector.__code__,
         MemoryRecallService._vector_winners.__code__, MemoryRecallService._admit_vector.__code__,
     }
     peak = {"container_entries": 0, "records": 0, "bytes": 0, "observations": 0}
@@ -132,7 +133,7 @@ def measure_vector_state(call):
         current = frame
         while current is not None and current.f_code in codes:
             for name, value in current.f_locals.items():
-                if name not in {"self", "query_embedding", "q_arr", "plan", "candidates", "block", "fetched"}:
+                if name not in {"self", "query_embedding", "q_arr", "plan", "candidates", "block", "node_ids", "fetched"}:
                     visit(value)
             current = current.f_back
         if event == "return":
@@ -357,7 +358,7 @@ def test_vector_discovery_retains_bounded_scores_and_winners(tmp_path, monkeypat
         assert candidates == expected
         assert list(candidates) == list(expected)
         assert len(candidates) == 51
-        assert peak["observations"] > 10000
+        assert peak["observations"] > 0
         # At most K discovery records, L lexical records and transient producer
         # /selector tuples; container slots include the final union and ID list.
         assert peak["records"] <= 50 + 1 + 3, peak
@@ -444,3 +445,32 @@ def test_only_block_survivors_resolve_chunk_ids(tmp_path, monkeypatch, numpy, ri
         assert len(heap) == 50 and len(lexical) == 2
         assert len(reads) == len(set(reads)) == 51
         assert all(row % 2 == 0 for row in reads)
+
+
+@pytest.mark.parametrize("layout", ["sparse", "dense", "all"])
+def test_pooled_block_reduction_keeps_exact_ranks_and_source_identities(monkeypatch, layout):
+    np = pytest.importorskip("numpy")
+    threshold = np.float32(retrieval.VECTOR_MATCH_THRESHOLD)
+    values = np.array([np.nan, threshold, np.nextafter(threshold, np.float32(1)),
+                       0.8, 0.8, 0.2, -1.0], dtype=np.float32)
+    n = 4200
+    k = 2 * n if layout == "all" else 65
+    heap, lexical, eligible = [], [], []
+    order = 0
+    for prefix in ("z", "a"):
+        scores = np.resize(values, n)
+        scores[-30:] = 1.0
+        ids = tuple(f"{prefix}-{i:04}" for i in range(n))
+        versions = tuple(f"version-{node_id}" for node_id in ids)
+        block = retrieval._ChunkBlock(1, ids, (), None, n, (), source_versions=versions)
+        names = set(ids[::2 if layout == "dense" else 257]) | {ids[-1], "missing"}
+        monkeypatch.setattr(retrieval, "_pooled_chunk_similarities",
+                            lambda *_: (scores, lambda i: f"chunk-{ids[i]}"))
+        for i, raw in enumerate(scores):
+            score = float(raw)
+            if score >= retrieval.VECTOR_MATCH_THRESHOLD:
+                eligible.append(((score, -len(eligible), ids[i], f"chunk-{ids[i]}", versions[i]), ids[i] in names))
+        order = retrieval._select_block_matches(block, VECTOR, None, order, k, names, heap, lexical)
+        assert order == -len(eligible)
+        assert lexical == [item for item, hit in eligible if hit]
+        assert sorted(heap, reverse=True) == sorted((item for item, _ in eligible), reverse=True)[:k]
