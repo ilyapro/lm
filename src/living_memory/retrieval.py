@@ -719,10 +719,14 @@ class MemoryRecallService:
         """Prepare bounded seeds for the active selectors within their shared snapshot."""
         groups: dict[int, dict[str, _Candidate]] = {}
         matched_by_version: dict[str, set[str]] = {}
-        for limit in dict.fromkeys(limits):
+        scope_limits = {limit: max(25, limit * 8) for limit in limits}
+        rows = (self.store.recall_content_ids_by_limit(_expanded_query(query.text), plan, list(scope_limits.values()))
+                if len(scope_limits) > 1 else {})
+        for limit, per_scope in scope_limits.items():
             candidates = groups[limit] = {}
             self._collect_bm25(query.text, plan, candidates, max_results=limit,
-                               matched_by_version=matched_by_version)
+                               matched_by_version=matched_by_version, rows=rows.get(per_scope))
+        del rows
         if query.encoder_id is not None:
             lexical_ids = set().union(*(group.keys() for group in groups.values()))
             discovery, lexical = self._vector_winners(
@@ -1232,9 +1236,8 @@ class MemoryRecallService:
         *,
         max_results: int,
         matched_by_version: dict[str, set[str]] | None = None,
+        rows: Iterable[tuple[str, float]] | None = None,
     ) -> None:
-        per_scope_limit = max(25, max_results * 8)
-        expanded_query = _expanded_query(query)
         query_terms = _lexical_terms(query)
         # FTS order selects the bounded discovery set. Score admitted sources
         # by query coverage, independently of that order or corpus statistics.
@@ -1243,7 +1246,8 @@ class MemoryRecallService:
         # Keep discovery and admitted bodies in one short read snapshot. IDs
         # carry membership only; the current scoped/live reader admits bodies.
         with self.store.transaction():
-            rows = self.store.iter_recall_content_ids(expanded_query, plan, limit=per_scope_limit)
+            if rows is None:
+                rows = self.store.iter_recall_content_ids(_expanded_query(query), plan, limit=max(25, max_results * 8))
             discovered = dict.fromkeys(node_id for node_id, _raw_score in rows)
             fetched = self.store.get_recall_nodes(
                 (node_id for node_id in discovered if node_id not in candidates), plan,

@@ -4089,6 +4089,30 @@ class MemoryStore:
     ) -> Iterator[tuple[str, float]]:
         """Yield each lexical top-K in plan order inside the caller's snapshot."""
 
+        for _, rows in self._recall_content_groups(query, plan, limit):
+            yield from rows
+
+    def recall_content_ids_by_limit(
+        self, query: str, plan: ScopePlan, limits: Sequence[int],
+    ) -> dict[int, list[tuple[str, float]]]:
+        """Read positive selector limits together inside the prompt snapshot."""
+        largest = max(limits)
+        by_limit: dict[int, list[tuple[str, float]]] = {limit: [] for limit in limits}
+        for scope, rows in self._recall_content_groups(query, plan, largest):
+            for limit, result in by_limit.items():
+                if limit == largest:
+                    result.extend(rows)
+                elif any(left[1] == right[1] for left, right in pairwise(rows[:limit + 1])):
+                    # Include the first excluded row. SQLite may visit tied
+                    # rows in a different order with the smaller LIMIT.
+                    result.extend(self.search_content_ids(query, scope=scope, limit=limit))
+                else:
+                    result.extend(rows[:limit])
+        return by_limit
+
+    def _recall_content_groups(
+        self, query: str, plan: ScopePlan, limit: int,
+    ) -> Iterator[tuple[str | None, list[tuple[str, float]]]]:
         named = plan.named_scopes
         scopes = plan.search_scopes if plan.restricted else (*named, None)
         winners = {}
@@ -4113,9 +4137,9 @@ class MemoryStore:
                 scopes = (None,)
         for scope in scopes:
             if scope in winners:
-                yield from winners[scope]
+                yield scope, winners[scope]
             else:
-                yield from self.search_content_ids(query, scope=scope, limit=limit)
+                yield scope, self.search_content_ids(query, scope=scope, limit=limit)
 
     def _broad_content_winners(
         self, match: str, named: tuple[str, ...], limit: int,
