@@ -7375,13 +7375,14 @@ def _duplicate_nodes(
     connection: sqlite3.Connection, node_id: str, *, successors: bool,
 ) -> list[Node]:
     endpoint, peer = ("target_id", "source_id") if successors else ("source_id", "target_id")
-    live = f"AND n.decayed = 0 AND {_DUPLICATE_CANDIDATE_SQL}" if successors else ""
+    live = "AND n.decayed = 0" if successors else ""
+    candidates = f"AND {_DUPLICATE_CANDIDATE_SQL}" if successors else ""
     rows = connection.execute(
         f"""
         SELECT n.* FROM connections c JOIN nodes n ON n.id = c.{peer}
         WHERE c.{endpoint} = ? AND c.{peer} <> ? {live}
           AND c.type IN ('related', 'supersedes')
-          AND json_extract(c.metadata, '$.kind') = 'duplicate_content'
+          AND json_extract(c.metadata, '$.kind') = 'duplicate_content' {candidates}
         ORDER BY c.weight DESC, c.created_at DESC
         """,
         (node_id, node_id),
