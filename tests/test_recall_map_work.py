@@ -66,6 +66,44 @@ def labels(response):
     return {c["label"] for c in response["recall_map"]["clusters"]}
 
 
+@pytest.mark.parametrize("scope", ["project:empty", SCOPE], ids=["empty", "all-withheld"])
+def test_recall_skips_unusable_session_history(tmp_path, isolated, monkeypatch, scope):
+    monkeypatch.setenv("LM_DELIVERY_SESSION_DEDUP", "1")
+
+    async def run():
+        mcp = create_mcp_server(tmp_path / "history.sqlite3")
+        store = mcp.memory_store
+        try:
+            seed(store)
+            async with Client(mcp) as client:
+                prior = await recall(client)
+                prior_id = prior["results"][0]["id"]
+                monkeypatch.setenv("LM_RECALL_MIN_SCORE", "9")
+
+                def unexpected_history(*args, **kwargs):
+                    pytest.fail("read delivery history without a content-bearing slot")
+
+                monkeypatch.setattr(store, "stream_recall_delivery_history", unexpected_history)
+                actual = await recall(client, scope=scope, view="full", used=[prior_id])
+                event = store.get_recall_event(actual["recall_event_id"])
+                assert actual["feedback_marks"]["accepted"] == 1
+                if scope == SCOPE:
+                    entry, = actual["results"]
+                    assert entry["delivery"] == "below_threshold"
+                    assert entry["node"]["content"] == ""
+                    assert event.results[0]["delivery"] == {"kind": "below_threshold"}
+                    assert actual["recall_map"]["sel"]["n"] == 3
+                    assert actual["recall_map"] == event.recall_map
+                else:
+                    assert actual["results"] == event.results == []
+                    assert "recall_map" not in actual
+        finally:
+            mcp.auto_consolidation.close()
+            store.close()
+
+    asyncio.run(run())
+
+
 def test_two_real_clients_preserve_independent_residual_and_own_cadence(tmp_path, isolated):
     async def run():
         mcp = create_mcp_server(tmp_path / "work.sqlite3")
