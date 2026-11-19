@@ -1852,6 +1852,13 @@ def _cluster_admission(
     return owners, assigned, groups, current
 
 
+def _cluster_read_version(store: MemoryStore) -> tuple[int, int]:
+    # Called inside the owner transaction. SQLite tracks other connections'
+    # commits separately from this connection's own writes.
+    connection = store.connection
+    return connection.total_changes, connection.execute("PRAGMA main.data_version").fetchone()[0]
+
+
 def _materialize_cluster(
     store: MemoryStore, cluster: _TraceCluster, *, min_cluster_size: int,
     step: Callable[[], AbstractContextManager[Any]] = nullcontext,
@@ -1874,6 +1881,7 @@ def _materialize_cluster(
             with step():
                 nested = store.connection.in_transaction
                 with store.transaction():
+                    admission_version = _cluster_read_version(store)
                     owners, assigned, groups, fresh = _cluster_admission(store, cluster)
                     updates = [owner.id for owner in owners if owner.id in assigned]
                     # New owners and their admission share the same observation. No other
@@ -1904,6 +1912,7 @@ def _materialize_cluster(
 
     result: list[tuple[Node, bool]] = []
     for owner_id in updates:
+        assessment_version = None
         while True:
             try:
                 with step():
@@ -1914,10 +1923,18 @@ def _materialize_cluster(
                                 or owner.scope != cluster.scope or owner.level != "concept"
                                 or owner.materializer != "cluster" or _is_superseded(store, owner_id)):
                             break
-                        _, assigned, _, _ = _cluster_admission(store, cluster)
-                        assessment = _current_derivation(
-                            store, owner, additional=store.get_nodes(sorted(assigned.get(owner_id, ()))).values(),
-                        )
+                        version = _cluster_read_version(store)
+                        # Detached preparation can yield to writers. Reuse reads
+                        # only across unchanged committed snapshots; caller-owned
+                        # transactions can roll back without advancing either count.
+                        if nested or version != admission_version:
+                            _, assigned, _, _ = _cluster_admission(store, cluster)
+                            admission_version = version
+                        if nested or version != assessment_version:
+                            assessment = _current_derivation(
+                                store, owner, additional=store.get_nodes(sorted(assigned.get(owner_id, ()))).values(),
+                            )
+                            assessment_version = version
                         if not assessment.live:
                             store.soft_delete_node(owner_id, "derivation: no current sources")
                             break
