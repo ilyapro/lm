@@ -6,6 +6,7 @@ import pytest
 
 from fixture_vectors import fixture_vector
 from living_memory import embeddings, retrieval
+from living_memory.prompts import retrieval_context_prompt
 from living_memory.scope import resolve_scope
 from living_memory.storage import MemoryStore
 
@@ -142,3 +143,40 @@ def test_recall_prepares_each_body_once_and_reads_fresh_source(tmp_path, monkeyp
         assert changed["task"].lexical_score == 1
         assert changed["task"].bm25_score == 1
         assert "task" in service.last_query_relevance.eligible_ids()
+
+
+def test_prompt_shares_source_coverage_until_snapshot_ends(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIVING_MEMORY_CHUNK_TOKENIZER", "regex")
+    encoder = Encoder()
+    path = tmp_path / "prompt.sqlite3"
+    old, new = "Opaque vector source.", QUERY + " updated source."
+    task_match = "Task metadata supplies discovery."
+    with MemoryStore(path, chunk_embedder=encoder.embed_batch) as store, MemoryStore(path) as writer:
+        for name, body, task in (("vector", old, ""), ("task", task_match, QUERY)):
+            store.create_node(node_id=name, level="concept", content=body,
+                              context={"scope": SCOPE, "task": task}, embedding=encoder.embed(body))
+        service = retrieval.MemoryRecallService(store, embedder=encoder, anchor_seeding=False)
+        calls = Counter()
+        terms = retrieval._lexical_terms
+        scores = []
+
+        def count(text):
+            calls[text] += 1
+            return terms(text)
+
+        recall = service.memory_recall
+
+        def select(*args, **kwargs):
+            results = recall(*args, **kwargs)
+            scores.append({item.node_id: item.lexical_score for item in service.last_query_relevance.ranked})
+            if len(scores) == 1:
+                writer.update_node("vector", content=new)
+            return results
+
+        monkeypatch.setattr(retrieval, "_lexical_terms", count)
+        monkeypatch.setattr(service, "memory_recall", select)
+        for body, expected in ((old, 0.0), (new, 1.0)):
+            calls.clear()
+            retrieval_context_prompt(store, task=QUERY, scope=SCOPE, repair_pending=False, recall_service=service)
+            assert scores[-3:] == [{"vector": expected, "task": 0.0}] * 3
+            assert calls[body] == calls[task_match] == 1
