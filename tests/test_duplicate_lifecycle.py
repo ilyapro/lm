@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
 
 from living_memory.retrieval import memory_recall
-from living_memory.storage import MemoryStore
+from living_memory.storage import MemoryStore, duplicate_replacements
 
 
 def _fingerprint(content: str) -> str:
@@ -344,3 +346,32 @@ def test_duplicate_replacement_requires_current_exact_identity(
         assert [node.id for node in store.list_duplicate_replacements(original.id)] == expected
         assert store.list_supersedes_pairs([original.id, replacement.id]) == []
         assert store.get_node(original.id).content == "Restart is allowed."
+
+
+def test_duplicate_metadata_errors_stay_local_across_index_creation(tmp_path: Path) -> None:
+    path = tmp_path / "memory.sqlite3"
+    with MemoryStore(path) as store:
+        original = store.append_trace("Public source", {})
+        copy = store.append_trace(original.content, {})
+        other = store.append_trace("Independent source", {})
+        edge = store.create_connection(copy.id, other.id, "related")
+        store.connection.execute("DROP INDEX idx_connections_duplicate_target")
+        store.connection.execute("UPDATE connections SET metadata = 'broken' WHERE id = ?", (edge.id,))
+        store.connection.commit()
+
+    def check_reader() -> None:
+        with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)) as db:
+            db.row_factory = sqlite3.Row
+            assert [n.id for n in duplicate_replacements(db, original.id)] == [copy.id]
+            assert duplicate_replacements(db, copy.id) == []
+            with pytest.raises(sqlite3.OperationalError, match="malformed JSON"):
+                duplicate_replacements(db, other.id)
+
+    check_reader()
+    with MemoryStore(path) as store:
+        check_reader()
+        store.connection.execute("UPDATE connections SET metadata = '{}' WHERE id = ?", (edge.id,))
+        assert store.list_duplicate_replacements(other.id) == []
+        store.connection.execute("UPDATE connections SET metadata = '[' WHERE id = ?", (edge.id,))
+        with pytest.raises(sqlite3.OperationalError, match="malformed JSON"):
+            store.list_duplicate_replacements(other.id)
