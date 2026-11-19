@@ -721,7 +721,8 @@ class MemoryRecallService:
         matched_by_version: dict[str, set[str]] = {}
         for limit in dict.fromkeys(limits):
             candidates = groups[limit] = {}
-            self._collect_bm25(query.text, plan, candidates, max_results=limit, matched_by_version=matched_by_version)
+            self._collect_bm25(query.text, plan, candidates, max_results=limit,
+                               matched_by_version=matched_by_version)
         if query.encoder_id is not None:
             lexical_ids = set().union(*(group.keys() for group in groups.values()))
             discovery, lexical = self._vector_winners(
@@ -1254,8 +1255,8 @@ class MemoryRecallService:
                 if node is None:
                     continue
                 candidate = candidates[node_id] = _Candidate(node=node)
-            # Prepare each body once, retaining only scalar coverage. Task
-            # terms extend discovery after content qualification is fixed.
+            # Prompt limits share only the query terms matched by the body.
+            # Task terms extend discovery after content qualification is fixed.
             score = 0.0
             candidate.lexical_score = 0.0
             if query_terms:
