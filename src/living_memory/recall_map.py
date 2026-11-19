@@ -2602,11 +2602,8 @@ class RecallMapBuilder:
     ) -> tuple[list[MapCluster], int]:
         """Fit the widest common gist, trading tail breadth before gist quality.
 
-        Every pass searches the full ``[0, MEDOID_EXAMPLE_CHARS]`` interval
-        against the *current* payload.  That restart is load-bearing: the old
-        shave loop could reach zero, drop several clusters, and then return the
-        zero-width examples it had inherited even though the smaller map left
-        roughly two hundred characters unused.
+        Each change in breadth or journal names starts a fresh width search.
+        The full map fixes the overhead shared by all positive example caps.
 
         A gist below :data:`MIN_MEDOID_EXAMPLE_CHARS` first buys room by
         dropping the tail cluster, down to :data:`MIN_CLUSTERS`.  Each such
@@ -2631,18 +2628,6 @@ class RecallMapBuilder:
         ]
         breadth_floor = min(MIN_CLUSTERS, len(full))
 
-        def at_width(example_chars: int) -> list[MapCluster]:
-            return [
-                replace(
-                    cluster,
-                    medoid=replace(
-                        cluster.medoid,
-                        example=_shorten(cluster.medoid.example, example_chars),
-                    ),
-                )
-                for cluster in full
-            ]
-
         def floor_met(clusters: Sequence[MapCluster]) -> bool:
             return all(
                 bool(cluster.medoid.example)
@@ -2651,37 +2636,43 @@ class RecallMapBuilder:
                 for cluster, source in zip(clusters, full, strict=True)
             )
 
-        def widest() -> tuple[int, list[MapCluster]]:
-            """Largest shared example cap whose measured payload fits."""
+        def widest() -> list[MapCluster]:
+            full_size = _payload_size(
+                full, pool_size, len(journal.dropped), journal.block(),
+                selection=selection, selection_sample_limit=0,
+            )
+            if full_size <= MAX_RESPONSE_CHARS:
+                return full
 
-            low = 0
-            high = MEDOID_EXAMPLE_CHARS
-            best_chars = -1
-            best: list[MapCluster] = []
+            examples = [cluster.medoid.example for cluster in full]
+
+            def encoded_length(example: str) -> int:
+                return len(json.dumps(example, ensure_ascii=False))
+
+            # At positive widths each nonempty example keeps its JSON field.
+            # Zero width can never satisfy floor_met.
+            budget = MAX_RESPONSE_CHARS - full_size + sum(map(encoded_length, examples))
+            low, high = 1, max(map(len, examples)) - 1
+            best = 0
             while low <= high:
-                example_chars = (low + high) // 2
-                candidates = at_width(example_chars)
-                if (
-                    _payload_size(
-                        candidates,
-                        pool_size,
-                        len(journal.dropped),
-                        journal.block(),
-                        selection=selection,
-                        selection_sample_limit=0,
-                    )
-                    <= MAX_RESPONSE_CHARS
-                ):
-                    best_chars = example_chars
-                    best = candidates
-                    low = example_chars + 1
+                width = (low + high) // 2
+                if sum(encoded_length(_shorten(text, width)) for text in examples) <= budget:
+                    best = width
+                    low = width + 1
                 else:
-                    high = example_chars - 1
-            return best_chars, best
+                    high = width - 1
+            if not best:
+                return []
+            return [
+                replace(cluster, medoid=replace(
+                    cluster.medoid, example=_shorten(cluster.medoid.example, best)
+                ))
+                for cluster in full
+            ]
 
         while full:
-            example_chars, clusters = widest()
-            if example_chars >= 0 and floor_met(clusters):
+            clusters = widest()
+            if clusters and floor_met(clusters):
                 return clusters, _selection_sample_limit(
                     clusters,
                     pool_size,
@@ -2916,7 +2907,7 @@ def _selection_sample_limit(
     """Most ``q`` examples that fit without changing existing semantics."""
 
     maximum = min(SELECTION_SAMPLE_LIMIT, len(selection.samples))
-    for sample_limit in range(maximum, -1, -1):
+    for sample_limit in range(maximum, 0, -1):
         payload = _payload(
             clusters,
             pool_size,
