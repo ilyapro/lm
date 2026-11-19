@@ -320,13 +320,19 @@ def test_broad_discovery_matches_each_top_k_before_deduplication(tmp_path, analy
                     stats={"confidence": (8 - index // 2) / 10})
         if analyzed:
             store.connection.execute("ANALYZE")
-        plan = ScopePlan("global", ("session:empty", SCOPE, "global", "*"))
-        for query in (QUERY, "nonmatching", ""):
-            for limit in (1, 3, 4, 25):
-                expected = [row for scope in (*plan.named_scopes, None)
-                            for row in store.search_content_ids(query, scope=scope, limit=limit)]
-                with store.transaction():
-                    assert list(store.iter_recall_content_ids(query, plan, limit=limit)) == expected
+        scopes = ("session:empty", SCOPE, "global", SCOPE)
+        for plan in (ScopePlan(SCOPE, scopes), ScopePlan("global", (*scopes, "*"))):
+            partitions = plan.search_scopes if plan.restricted else (*plan.named_scopes, None)
+            for query in (QUERY, "nonmatching", ""):
+                with store.read_snapshot():
+                    expected = {
+                        limit: [row for scope in partitions
+                                for row in store.search_content_ids(query, scope=scope, limit=limit)]
+                        for limit in (3, 25, 1, 4)
+                    }
+                    for limit, rows in expected.items():
+                        assert list(store.iter_recall_content_ids(query, plan, limit=limit)) == rows
+                    assert store.recall_content_ids_by_limit(query, plan, tuple(expected)) == expected
 
 
 def test_broad_discovery_scans_distinct_winners_once(tmp_path):
@@ -341,7 +347,7 @@ def test_broad_discovery_scans_distinct_winners_once(tmp_path):
         store.connection.set_trace_callback(statements.append)
         try:
             with store.transaction():
-                assert list(store.iter_recall_content_ids(QUERY, plan, limit=3)) == expected
+                assert store.recall_content_ids_by_limit(QUERY, plan, (1, 3))[3] == expected
         finally:
             store.connection.set_trace_callback(None)
         assert sum("nodes_fts MATCH" in sql for sql in statements) == 1
@@ -357,6 +363,32 @@ def test_broad_discovery_preserves_storage_order_and_projection_errors(tmp_path)
             expected = [row for scope in (*plan.named_scopes, None)
                         for row in store.search_content_ids(QUERY, scope=scope, limit=1)]
             assert list(store.iter_recall_content_ids(QUERY, plan, limit=1)) == expected
+            assert store.recall_content_ids_by_limit(QUERY, plan, (1, 2))[1] == expected
         store.connection.execute("DROP TABLE nodes_fts")
         with pytest.raises(sqlite3.OperationalError, match="no such table: nodes_fts"):
             list(store.iter_recall_content_ids(QUERY, plan, limit=1))
+        with pytest.raises(sqlite3.OperationalError, match="no such table: nodes_fts"):
+            store.recall_content_ids_by_limit(QUERY, plan, (1, 2))
+
+
+def test_scoped_prefix_checks_score_ties_inside_and_across_limit(tmp_path, monkeypatch):
+    plan = ScopePlan(SCOPE, (SCOPE,))
+    with MemoryStore(tmp_path / "scoped.sqlite3") as store:
+        # Increasing document lengths give distinct scores, except this pair.
+        for i, words in enumerate((1, 2, 3, 3, 4, 5)):
+            store.create_node(node_id=str(i), level="trace", content="amber" + " mineral" * words,
+                              context={"scope": SCOPE})
+        limits = (1, 2, 3, 4, 6)
+        expected = {k: store.search_content_ids("amber", scope=SCOPE, limit=k) for k in limits}
+        assert expected[6][2][1] == expected[6][3][1]
+        calls = []
+        search = store.search_content_ids
+
+        def read(query, *, scope, limit):
+            calls.append(limit)
+            return search(query, scope=scope, limit=limit)
+
+        monkeypatch.setattr(store, "search_content_ids", read)
+        with store.read_snapshot():
+            assert store.recall_content_ids_by_limit("amber", plan, limits) == expected
+        assert calls == [6, 3, 4]
