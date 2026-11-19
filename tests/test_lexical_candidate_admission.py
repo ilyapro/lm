@@ -124,7 +124,7 @@ def test_overlapping_passes_keep_candidates_order_limits_and_load_new_bodies_onc
             return decode(row)
 
         def discover(query, **options):
-            passes.append((options["scope"], options["limit"]))
+            passes.append((options.get("scope"), options["limit"]))
             return search(query, **options)
 
         monkeypatch.setattr(storage, "_node_from_row", count)
@@ -134,7 +134,7 @@ def test_overlapping_passes_keep_candidates_order_limits_and_load_new_bodies_onc
         assert list(actual) == list(expected)
         assert actual[existing.node.id].node is existing.node
         assert decoded == Counter({key: 1 for key in expected.keys() - initial.keys()})
-        if plan.restricted:
+        if plan.restricted or not plan.named_scopes:
             assert passes == [(scope, 25) for scope in plan.search_scopes]
         assert not store.connection.in_transaction
 
