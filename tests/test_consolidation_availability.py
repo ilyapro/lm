@@ -606,3 +606,52 @@ def test_interrupted_pass_rolls_back_current_owner_and_resumes_durable_pending(m
     finally:
         resumed.auto_consolidation.close()
         resumed.memory_store.close()
+
+
+@pytest.mark.parametrize("change", ["none", "retire", "newer"])
+def test_overlap_rechecks_other_owner_and_search_limit(memory, monkeypatch, change):
+    mcp, lock, _, traces, owners, cluster = memory
+    store = mcp.memory_store
+    extra = store.append_trace("Harbor departure log entry.", {"scope": SCOPE})
+    cluster.traces.append(extra)
+    monkeypatch.setattr(c, "_CLUSTER_OWNER_LIMIT", 2)
+    first, last = store.list_nodes(scope=SCOPE, level="concept")
+    scans = []
+    list_nodes = store.list_nodes
+
+    def observed(**kwargs):
+        if kwargs.get("source_ids") is not None:
+            scans.append(1)
+        return list_nodes(**kwargs)
+
+    monkeypatch.setattr(store, "list_nodes", observed)
+    changed = False
+
+    @contextmanager
+    def step():
+        nonlocal changed
+        with lock:
+            yield
+        if not changed:
+            changed = True
+            if change == "retire":
+                store.soft_delete_node(last.id, "retired")
+            if change == "newer":
+                store.create_node(
+                    level="concept", content="Another inspection owner",
+                    context={"scope": SCOPE, "timestamp": "2100-01-01T00:00:00Z"},
+                    provenance={"strategy": "token-jaccard", "source_traces": [extra.id]},
+                )
+
+    results = c._materialize_cluster(store, cluster, min_cluster_size=3, step=step)
+    written = [node.id for node, created in results if not created]
+    if change == "none":
+        assert written == [first.id, last.id]
+        assert len(scans) == 1
+        assert all(store.get_node(n.id).source_traces == sorted(n.source_traces) for n in owners)
+    elif change == "retire":
+        assert written == [first.id]
+        assert store.get_node(first.id).source_traces == sorted(t.id for t in cluster.traces)
+    else:
+        assert written == [first.id]
+        assert store.get_node(last.id) == last
