@@ -1828,8 +1828,8 @@ def _cluster_sources(
     return current, _source_ancestors(store, current.live)
 
 
-def _active_cluster_owner(store: MemoryStore, node: Node | None, scope: str) -> bool:
-    return (node is not None and node.scope == scope and node.materializer == "cluster"
+def _active_cluster_owner(store: MemoryStore, node: Node, scope: str) -> bool:
+    return (node.scope == scope and node.materializer == "cluster"
             and not node.decayed and not node.corrections and not _is_superseded(store, node.id))
 
 
@@ -1867,7 +1867,7 @@ def _cluster_owner_inputs(
 ) -> set[str]:
     current, ancestors = _cluster_sources(store, cluster)
     # Two current owners establish ambiguity. Only this owner's recorded
-    # overlap can join it, regardless of how many further owners match.
+    # overlap can join it. Both must fit in the ordinary search prefix.
     if other_id is not None:
         other = store.get_node(other_id)
         if (other is not None and _active_cluster_owner(store, other, owner.scope)
