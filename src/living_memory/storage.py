@@ -54,6 +54,12 @@ from living_memory.temporal import parse_timestamp
 
 SCHEMA_VERSION = 8
 
+# Keep malformed edge metadata in the candidate set. The reader's json_extract
+# must still raise for a matching endpoint, while index creation and unrelated
+# writes need to succeed on databases containing such rows.
+_DUPLICATE_CANDIDATE_SQL = """CASE WHEN json_valid(metadata)
+    THEN json_extract(metadata, '$.kind') = 'duplicate_content' ELSE 1 END"""
+
 CHUNK_EMBEDDING_TABLE = "node_chunk_embeddings"
 QUERY_ANCHOR_TABLE = "query_anchors"
 QUERY_ANCHOR_EDGE_TABLE = "query_anchor_edges"
@@ -6375,6 +6381,11 @@ class MemoryStore:
                     ON recall_events(scope, task_pattern, created_at DESC);
                 """
             )
+            self._conn.execute(
+                f"""CREATE INDEX IF NOT EXISTS idx_connections_duplicate_target
+                    ON connections(target_id, type)
+                    WHERE type IN ('related', 'supersedes') AND {_DUPLICATE_CANDIDATE_SQL}"""
+            )
             self._initialize_chunk_revisions()
             # Query anchors (v7). Same script the pre-v7 migration runs, so a
             # fresh database and a migrated one end up with identical objects.
@@ -7364,7 +7375,7 @@ def _duplicate_nodes(
     connection: sqlite3.Connection, node_id: str, *, successors: bool,
 ) -> list[Node]:
     endpoint, peer = ("target_id", "source_id") if successors else ("source_id", "target_id")
-    live = "AND n.decayed = 0" if successors else ""
+    live = f"AND n.decayed = 0 AND {_DUPLICATE_CANDIDATE_SQL}" if successors else ""
     rows = connection.execute(
         f"""
         SELECT n.* FROM connections c JOIN nodes n ON n.id = c.{peer}

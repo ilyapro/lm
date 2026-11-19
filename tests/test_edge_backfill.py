@@ -414,10 +414,11 @@ def test_preview_rejects_unsupported_database(preview_db, tmp_path, monkeypatch,
         path.write_bytes(b"not SQLite" if kind == "invalid" else b"")
     else:
         with closing(sqlite3.connect(path)) as conn, conn:
-            conn.execute(
-                "DROP TABLE connections" if kind == "missing_table"
-                else "ALTER TABLE connections DROP COLUMN metadata"
-            )
+            if kind == "missing_table":
+                conn.execute("DROP TABLE connections")
+            else:
+                conn.execute("DROP INDEX idx_connections_duplicate_target")
+                conn.execute("ALTER TABLE connections DROP COLUMN metadata")
     before = path.read_bytes() if kind == "invalid" else _snapshot(path)
     stores = _capture_store(monkeypatch)
     with pytest.raises(sqlite3.DatabaseError):
