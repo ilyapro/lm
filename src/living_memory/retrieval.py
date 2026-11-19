@@ -439,10 +439,17 @@ class _PreparedQuery:
 
 @dataclass(frozen=True, slots=True)
 class _PromptDiscovery:
-    """Read-only channel seeds for one query inside the prompt's snapshot."""
+    """Channel seeds and source coverage for one query inside the prompt's snapshot."""
 
     plan: ScopePlan
     by_limit: dict[int, dict[str, _Candidate]]
+    coverage: dict[str, float]
+
+    def lexical_support(self, query_terms: set[str], content: str) -> float:
+        version = _content_fingerprint(content)
+        if version not in self.coverage:
+            self.coverage[version] = _lexical_support(query_terms, content)
+        return self.coverage[version]
 
 
 _VectorMatch = tuple[float, int, str, str | None, str]
@@ -711,9 +718,10 @@ class MemoryRecallService:
     ) -> _PreparedQuery:
         """Prepare bounded seeds for the active selectors within their shared snapshot."""
         groups: dict[int, dict[str, _Candidate]] = {}
+        matched_by_version: dict[str, set[str]] = {}
         for limit in dict.fromkeys(limits):
             candidates = groups[limit] = {}
-            self._collect_bm25(query.text, plan, candidates, max_results=limit)
+            self._collect_bm25(query.text, plan, candidates, max_results=limit, matched_by_version=matched_by_version)
         if query.encoder_id is not None:
             lexical_ids = set().union(*(group.keys() for group in groups.values()))
             discovery, lexical = self._vector_winners(
@@ -725,7 +733,9 @@ class MemoryRecallService:
                 keep = _vector_keep_n(plan, limit)
                 winners = discovery[:keep] if keep < len(discovery) else discovery
                 self._admit_vector(plan, candidates, winners, lexical)
-        return replace(query, prompt_discovery=_PromptDiscovery(plan, groups))
+        term_count = len(_lexical_terms(query.text))
+        coverage = {version: len(matched) / term_count for version, matched in matched_by_version.items()}
+        return replace(query, prompt_discovery=_PromptDiscovery(plan, groups, coverage))
 
     def _select_recall(
         self, prepared: _PreparedQuery, *, scope: str | None,
@@ -739,7 +749,9 @@ class MemoryRecallService:
             store=self.store,
         )
         discovery = prepared.prompt_discovery
+        lexical_support = _lexical_support
         if discovery is not None and discovery.plan == plan and max_results in discovery.by_limit:
+            lexical_support = discovery.lexical_support
             # Graph walks and trigger collection mutate evidence independently for each depth.
             candidates = {key: replace(seed) for key, seed in discovery.by_limit[max_results].items()}
         else:
@@ -754,7 +766,7 @@ class MemoryRecallService:
         query_terms = _lexical_terms(query)
         for candidate in candidates.values():
             if not candidate.lexical_score_prepared:
-                candidate.lexical_score = _lexical_support(query_terms, candidate.node.content)
+                candidate.lexical_score = lexical_support(query_terms, candidate.node.content)
         lexical_ids = set(candidates)
 
         graph_depth, causal_mode = _parse_depth(depth, query)
@@ -784,7 +796,7 @@ class MemoryRecallService:
 
         for node_id in candidates.keys() - lexical_ids:
             candidate = candidates[node_id]
-            candidate.lexical_score = _lexical_support(query_terms, candidate.node.content)
+            candidate.lexical_score = lexical_support(query_terms, candidate.node.content)
 
         demotions = _merge_demotions(
             self._collect_query_demotions(plan, query_embedding, matches=anchor_matches, encoder_id=prepared.encoder_id,
@@ -1218,6 +1230,7 @@ class MemoryRecallService:
         candidates: dict[str, _Candidate],
         *,
         max_results: int,
+        matched_by_version: dict[str, set[str]] | None = None,
     ) -> None:
         per_scope_limit = max(25, max_results * 8)
         expanded_query = _expanded_query(query)
@@ -1246,11 +1259,18 @@ class MemoryRecallService:
             score = 0.0
             candidate.lexical_score = 0.0
             if query_terms:
-                source_terms = _lexical_terms(candidate.node.content)
-                candidate.lexical_score = len(query_terms.intersection(source_terms)) / len(query_terms)
+                content = candidate.node.content
+                if matched_by_version is None:
+                    matched = query_terms.intersection(_lexical_terms(content))
+                else:
+                    version = _content_fingerprint(content)
+                    if version not in matched_by_version:
+                        matched_by_version[version] = query_terms.intersection(_lexical_terms(content))
+                    matched = matched_by_version[version]
+                candidate.lexical_score = len(matched) / len(query_terms)
                 if candidate.node.task:
-                    source_terms.update(_lexical_terms(candidate.node.task))
-                score = len(query_terms.intersection(source_terms)) / len(query_terms)
+                    matched = matched.union(query_terms.intersection(_lexical_terms(candidate.node.task)))
+                score = len(matched) / len(query_terms)
             candidate.lexical_score_prepared = True
             candidate.bm25_score = max(candidate.bm25_score, score)
 
