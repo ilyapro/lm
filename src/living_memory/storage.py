@@ -112,6 +112,7 @@ def _chunk_revision_write(scopes: str, *, chunked_ids: str | None = None) -> str
         f"AND EXISTS (SELECT 1 FROM node_chunk_embeddings WHERE node_id IN ({chunked_ids}))"
         if chunked_ids else ""
     )
+    # changes() counts the scope rows touched by the immediately preceding upsert.
     return f"""UPDATE metadata SET value = value + 1 WHERE key = 'pending_chunk_revision';
         INSERT INTO metadata (key, value)
         SELECT '{_CHUNK_SCOPE_REVISION_PREFIX}' || scope, 1 FROM ({scopes})

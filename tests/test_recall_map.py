@@ -2042,7 +2042,6 @@ def test_normalize_key_mirrors_consolidation_normalize_trigger() -> None:
 
 def test_chunk_revision_tracks_insert_and_delete(store: MemoryStore) -> None:
     node = make_node(store, "content that will gain a chunk")
-    builder = RecallMapBuilder(store)
     empty = store.recall_map_revision()
 
     embed(store, node, [1.0, 0.0, 0.0])
@@ -2261,7 +2260,7 @@ def test_scope_only_format_keeps_map_identity_across_writable_upgrade(store):
             assert reader.recall_map_revision() > changed
 
 
-@pytest.mark.parametrize("missing", ["chunks", "chunk-format", "anchors"])
+@pytest.mark.parametrize("missing", ["chunk_scope_revision_format", "chunk-format", "map_chunk_revision", "query_anchor_revision"])
 @pytest.mark.parametrize("filtered", [False, True], ids=["clusters", "empty-selection"])
 def test_legacy_read_only_map_rebuilds_without_reusable_identity(store, missing, filtered):
     node = make_node(store, "orbital telemetry calibration")
@@ -2272,9 +2271,8 @@ def test_legacy_read_only_map_rebuilds_without_reusable_identity(store, missing,
                 "UPDATE metadata SET value = 'unsupported' WHERE key = 'chunk_scope_revision_format'"
             )
     else:
-        key = "chunk_scope_revision_format" if missing == "chunks" else "query_anchor_revision"
         with store.connection:
-            store.connection.execute("DELETE FROM metadata WHERE key = ?", (key,))
+            store.connection.execute("DELETE FROM metadata WHERE key = ?", (missing,))
     candidates = [RecallResult(node=node, score=0.0)] if filtered else pool([node])
     with ReadOnlyAuditStore.open_path(store.db_path) as reader:
         builder = RecallMapBuilder(reader)
