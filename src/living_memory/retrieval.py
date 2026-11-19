@@ -653,6 +653,7 @@ class MemoryRecallService:
         include_passages: bool = True,
         repeatable_selection: bool = False,
         select_results: _ResultSelector | None = None,
+        event_results: list[dict[str, Any]] | None = None,
     ) -> Iterator[list[RecallResult]]:
         """Form a response within the short consumption rollback boundary.
 
@@ -661,11 +662,14 @@ class MemoryRecallService:
         this context; failure rolls back access and event/history together.
         Optional work and transport belong after it. A repeatable read-only
         selector observes one snapshot through passage and validity reads.
-        Logging flags independently control the consumption transaction.
+        Logging flags independently control the consumption transaction. An
+        optional caller-owned list retains this event's selection for its receipt.
         """
         self.last_recall_event_id = None
         self.last_residual = []
         self.last_query_relevance = None
+        if event_results is not None:
+            event_results.clear()
         if max_results <= 0:
             yield []
             return
@@ -692,6 +696,8 @@ class MemoryRecallService:
         try:
             with self.store.transaction() if log_access or log_event else nullcontext():
                 if log_access or log_event:
+                    summaries = event_results if event_results is not None and log_event else []
+                    summaries.extend(_recall_result_summary(i, result) for i, result in enumerate(limited))
                     nodes, event_id = self.store.record_recall(
                         nodes=[result.node for result in limited],
                         log_access=log_access,
@@ -703,7 +709,7 @@ class MemoryRecallService:
                         ambient_context=ambient_context,
                         depth=depth,
                         max_results=max_results,
-                        results=[_recall_result_summary(index, result) for index, result in enumerate(limited)],
+                        results=summaries,
                         event_id_only=True,
                     )
                     assert event_id is None or isinstance(event_id, str)
@@ -714,6 +720,8 @@ class MemoryRecallService:
                     ]
                 yield limited
         except BaseException:
+            if event_results is not None:
+                event_results.clear()
             self.last_recall_event_id = None
             raise
 
