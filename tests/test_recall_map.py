@@ -1119,7 +1119,9 @@ def test_example_width_uses_the_serialized_shortened_text(store, monkeypatch):
     ])
     monkeypatch.setattr(recall_map, "MAX_RESPONSE_CHARS", 10_000)
     builder = RecallMapBuilder(store)
-    full = builder.build(candidates, scope=SCOPE).to_dict()
+    with patch.object(recall_map, "_payload_size", wraps=_payload_size) as measure:
+        full = builder.build(candidates, scope=SCOPE).to_dict()
+    measure.assert_called_once()
     assert len(full["clusters"]) == 2
     examples = [cluster["medoid"]["example"] for cluster in full["clusters"]]
 
@@ -1133,11 +1135,18 @@ def test_example_width_uses_the_serialized_shortened_text(store, monkeypatch):
         size = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
         forms.append((size, payload))
 
-    for size, _ in forms[2:]:
+    for size in sorted({size for size, _ in forms if size > forms[0][0]}):
         for budget in (size - 1, size):
             expected = next(form for cost, form in reversed(forms) if cost <= budget)
+            if any(len(row["medoid"]["example"]) < MIN_MEDOID_EXAMPLE_CHARS
+                   for row in expected["clusters"]):
+                expected = None
             monkeypatch.setattr(recall_map, "MAX_RESPONSE_CHARS", budget)
-            assert builder.build(candidates, scope=SCOPE).to_dict() == expected
+            actual = builder.build(candidates, scope=SCOPE).to_dict()
+            if expected is None:
+                assert actual["clusters"] == []
+            else:
+                assert actual == expected
 
 
 def test_example_budget_reflows_from_scratch_after_cluster_drops(

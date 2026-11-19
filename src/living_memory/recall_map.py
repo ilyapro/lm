@@ -2646,28 +2646,28 @@ class RecallMapBuilder:
 
             examples = [cluster.medoid.example for cluster in full]
 
-            def encoded_length(example: str) -> int:
-                return len(json.dumps(example, ensure_ascii=False))
+            def encoded_length(texts: list[str]) -> int:
+                return len(json.dumps(texts, ensure_ascii=False, separators=(",", ":")))
 
             # At positive widths each nonempty example keeps its JSON field.
+            # The list punctuation cancels when comparing equal-length lists.
             # Zero width can never satisfy floor_met.
-            budget = MAX_RESPONSE_CHARS - full_size + sum(map(encoded_length, examples))
+            budget = MAX_RESPONSE_CHARS - full_size + encoded_length(examples)
             low, high = 1, max(map(len, examples)) - 1
-            best = 0
+            best: list[str] = []
             while low <= high:
                 width = (low + high) // 2
-                if sum(encoded_length(_shorten(text, width)) for text in examples) <= budget:
-                    best = width
+                shortened = [_shorten(text, width) for text in examples]
+                if encoded_length(shortened) <= budget:
+                    best = shortened
                     low = width + 1
                 else:
                     high = width - 1
             if not best:
                 return []
             return [
-                replace(cluster, medoid=replace(
-                    cluster.medoid, example=_shorten(cluster.medoid.example, best)
-                ))
-                for cluster in full
+                replace(cluster, medoid=replace(cluster.medoid, example=text))
+                for cluster, text in zip(full, best, strict=True)
             ]
 
         while full:
