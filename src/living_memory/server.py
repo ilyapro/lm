@@ -1339,22 +1339,21 @@ def _register_tools(
                 limited: list[RecallResult], residual: list[RecallResult], limit: int, relevance: QueryRelevance,
             ) -> tuple[list[RecallResult], list[RecallResult]]:
                 nonlocal delivery_history, correction_refs
-                # Read only prior formed responses. Selection and shaping share
-                # this bounded observation; recording the current event adds no proof.
-                try:
-                    with store.stream_recall_delivery_history(
-                        transport_session_id if session_dedup else None,
-                    ) as history_results:
-                        pool = _delivery_pool(limited, residual, limit) if session_dedup else ()
-                        delivery_history = DeliveryHistory(
-                            history_results,
-                            candidates={r.node_id: r.node for r in pool if not r.withheld},
+                # Withheld slots stay in the cut, so residual candidates alone
+                # cannot use delivery evidence for replacement or shaping.
+                if session_dedup and any(not result.withheld for result in limited):
+                    try:
+                        with store.stream_recall_delivery_history(transport_session_id) as history_results:
+                            pool = _delivery_pool(limited, residual, limit)
+                            delivery_history = DeliveryHistory(
+                                history_results,
+                                candidates={r.node_id: r.node for r in pool if not r.withheld},
+                            )
+                    except Exception:
+                        logging.getLogger(__name__).warning(
+                            "could not read recall delivery history", exc_info=True,
                         )
-                except Exception:
-                    logging.getLogger(__name__).warning(
-                        "could not read recall delivery history", exc_info=True,
-                    )
-                    delivery_history = DeliveryHistory()
+                        delivery_history = DeliveryHistory()
                 selected, residual = _select_distinct_results(
                     limited, residual, limit, delivery_history, relevance=relevance,
                 )
