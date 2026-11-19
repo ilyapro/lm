@@ -1125,28 +1125,22 @@ def test_example_width_uses_the_serialized_shortened_text(store, monkeypatch):
     assert len(full["clusters"]) == 2
     examples = [cluster["medoid"]["example"] for cluster in full["clusters"]]
 
-    # Compare adjacent budgets with the actual wire payload at every cap.
-    forms = []
+    # Enumerate feasible wire forms independently of the fitter's search.
+    forms = {}
     for width in range(MIN_MEDOID_EXAMPLE_CHARS, MEDOID_EXAMPLE_CHARS + 1):
         payload = {**full, "clusters": []}
         for row, text in zip(full["clusters"], examples, strict=True):
-            example = recall_map._shorten(text, width)
-            payload["clusters"].append({**row, "medoid": {**row["medoid"], "example": example}})
-        size = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
-        forms.append((size, payload))
+            medoid = {**row["medoid"], "example": recall_map._shorten(text, width)}
+            payload["clusters"].append({**row, "medoid": medoid})
+        if all(len(row["medoid"]["example"]) >= MIN_MEDOID_EXAMPLE_CHARS
+               for row in payload["clusters"]):
+            size = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+            forms[size] = payload
 
-    for size in sorted({size for size, _ in forms if size > forms[0][0]}):
-        for budget in (size - 1, size):
-            expected = next(form for cost, form in reversed(forms) if cost <= budget)
-            if any(len(row["medoid"]["example"]) < MIN_MEDOID_EXAMPLE_CHARS
-                   for row in expected["clusters"]):
-                expected = None
-            monkeypatch.setattr(recall_map, "MAX_RESPONSE_CHARS", budget)
-            actual = builder.build(candidates, scope=SCOPE).to_dict()
-            if expected is None:
-                assert actual["clusters"] == []
-            else:
-                assert actual == expected
+    for budget in range(min(forms), max(forms) + 1):
+        monkeypatch.setattr(recall_map, "MAX_RESPONSE_CHARS", budget)
+        expected = forms[max(size for size in forms if size <= budget)]
+        assert builder.build(candidates, scope=SCOPE).to_dict() == expected
 
 
 def test_example_budget_reflows_from_scratch_after_cluster_drops(
