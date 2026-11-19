@@ -240,6 +240,17 @@ _ANCHOR_TEXT_TRIGGERS = (
 )
 
 
+# The unlabelled text counter covers membership, including displaced rows.
+# Track in-place vector edits separately so text postings can still be reused.
+_UNLABELLED_VECTOR_TRIGGER = """CREATE TRIGGER unlabelled_anchor_vector_update
+    AFTER UPDATE OF embedding, dimensions ON query_anchors
+    WHEN NEW.encoder_id IS NULL AND NEW.decayed = 0 AND
+        (OLD.embedding IS NOT NEW.embedding OR OLD.dimensions IS NOT NEW.dimensions)
+    BEGIN
+        UPDATE metadata SET value = value + 1 WHERE key = 'unlabelled_anchor_vector_revision';
+    END"""
+
+
 def install_derived_only_authorizer(
     conn: sqlite3.Connection, *, corpus: Literal["chunks", "anchors"]
 ) -> None:
@@ -258,7 +269,7 @@ def install_derived_only_authorizer(
         revision_key = _CHUNK_SCOPE_REVISION_FORMAT
     elif corpus == "anchors":
         tables = {QUERY_ANCHOR_TABLE, QUERY_ANCHOR_EDGE_TABLE}
-        triggers = (*_QUERY_ANCHOR_CORPUS_TRIGGERS, *_ANCHOR_TEXT_TRIGGERS)
+        triggers = (*_QUERY_ANCHOR_CORPUS_TRIGGERS, *_ANCHOR_TEXT_TRIGGERS, _UNLABELLED_VECTOR_TRIGGER)
         revision_key = "query_anchor_revision"
     else:
         raise ValueError(f"unknown derived corpus: {corpus!r}")
@@ -5680,6 +5691,15 @@ class MemoryStore:
             (_ANCHOR_TEXT_PREFIX, "anchor_text_revision;", _ANCHOR_TEXT_PREFIX + ":" + encoder),
         ).fetchone()[0]
 
+    def unlabelled_anchor_vector_revision(self) -> int | None:
+        """Combine the two monotonic counters in one snapshot, or defer to the legacy reader."""
+        row = self._conn.execute(
+            "SELECT CAST(m.value AS INTEGER) + CAST(v.value AS INTEGER) "
+            "FROM metadata AS m, metadata AS v WHERE m.key = ? AND v.key = 'unlabelled_anchor_vector_revision'",
+            (_ANCHOR_TEXT_PREFIX,),
+        ).fetchone()
+        return row[0] if row else None
+
     def iter_foreign_anchor_queries(
         self, encoder_id: str, scopes: Sequence[str] | None,
     ) -> Iterator[tuple[str, str]]:
@@ -6397,13 +6417,16 @@ class MemoryStore:
                 self._conn.execute(
                     "INSERT OR IGNORE INTO metadata (key, value) VALUES ('query_anchor_revision', '0')"
                 )
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO metadata (key, value) VALUES ('unlabelled_anchor_vector_revision', '0')"
+                )
                 initialized = self._conn.execute(
                     "INSERT OR IGNORE INTO metadata (key, value) VALUES (?, '0')", (_ANCHOR_TEXT_PREFIX,)
                 )
                 if initialized.rowcount:
                     # Unique-key updates can displace a live vector via OR REPLACE.
                     self._conn.execute("DROP TRIGGER IF EXISTS query_anchor_corpus_update")
-                for trigger in (*_QUERY_ANCHOR_CORPUS_TRIGGERS, *_ANCHOR_TEXT_TRIGGERS):
+                for trigger in (*_QUERY_ANCHOR_CORPUS_TRIGGERS, *_ANCHOR_TEXT_TRIGGERS, _UNLABELLED_VECTOR_TRIGGER):
                     self._conn.execute(trigger.replace("CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ", 1))
             self._anchor_tables_cache = None
             # Attestation ledger (v8). Runs after the main script because its

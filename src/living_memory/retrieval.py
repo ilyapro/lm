@@ -378,6 +378,7 @@ class _AnchorVectorCache:
     """
 
     revision: int
+    read_revision: Callable[[], int | None]
     store: MemoryStore
     by_width: dict[_AnchorBlockKey, _PreparedAnchorVectors]
     has_anchors: bool
@@ -401,7 +402,7 @@ class _AnchorVectorCache:
             cacheable = self.store.cacheable_read
             # Layout and newly prepared rows must belong to the same revision,
             # even if another writer committed after the source was selected.
-            if not cacheable or self.store.query_anchor_revision() != self.revision:
+            if not cacheable or self.read_revision() != self.revision:
                 return _prepare_anchor_vectors(
                     self.store.iter_query_anchor_vectors(scopes, dimensions=width, space=space),
                     width, index_scopes=True,
@@ -500,6 +501,7 @@ class MemoryRecallService:
         self._chunk_index: dict[str, _ScopeChunkIndex] = {}
         self._chunk_gathers: dict[int, _ChunkGatherPlan] = {}
         self._anchor_vectors: _AnchorVectorCache | None = None
+        self._unlabelled_vectors: _AnchorVectorCache | None = None
         self._anchor_text_index: tuple[
             str, tuple[str, ...] | None, int | tuple[int, int], _AnchorTextIndex
         ] | None = None
@@ -551,6 +553,17 @@ class MemoryRecallService:
         # Neither a lexical hit nor a historical cosine contributes a score.
         # The two shortlists cover changed spaces and unlabelled compatible rows.
         candidates = index.nearest(query.text, ANCHOR_MATCH_LIMIT)
+        if isinstance(source, _AnchorVectorCache):
+            read_revision = self.store.unlabelled_anchor_vector_revision
+            vector_revision = read_revision()
+            if vector_revision is not None:
+                cached_vectors = self._unlabelled_vectors
+                key = (len(query.embedding), (None, True))
+                if (cached_vectors is None or cached_vectors.revision != vector_revision
+                        or key not in cached_vectors.by_width):
+                    cached_vectors = _AnchorVectorCache(vector_revision, read_revision, self.store, {}, True)
+                    self._unlabelled_vectors = cached_vectors
+                source = cached_vectors
         nominations = _rank_anchors(
             source, query.embedding, scopes, min_similarity=ANCHOR_MATCH_COSINE_THRESHOLD,
             limit=ANCHOR_MATCH_LIMIT, space=(None, True),
@@ -1601,7 +1614,7 @@ class MemoryRecallService:
         cached = self._anchor_vectors
         if cached is None or cached.revision != revision or (encoder_id and cached.encoder_id != encoder_id):
             cached = _AnchorVectorCache(
-                revision, self.store, {},
+                revision, self.store.query_anchor_revision, self.store, {},
                 self.store.has_live_query_anchors(), encoder_id,
             )
             self._anchor_vectors = cached

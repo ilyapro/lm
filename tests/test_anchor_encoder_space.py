@@ -94,6 +94,8 @@ def test_first_historical_match_rescores_text_and_reuses_encoder_work(tmp_path, 
         learn(old_text, list(model.embed(query)), "other", 1, "project:outside")
         if reader != "current":
             store.connection.executescript("""
+                DROP TRIGGER unlabelled_anchor_vector_update;
+                DELETE FROM metadata WHERE key='unlabelled_anchor_vector_revision';
                 DROP TRIGGER anchor_text_insert;
                 DROP TRIGGER anchor_text_update;
                 DROP TRIGGER anchor_text_delete;
