@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 from datetime import UTC, datetime
 import sqlite3
+from weakref import WeakSet
 
 import pytest
 
@@ -13,6 +14,37 @@ from living_memory.storage import MemoryStore
 
 
 NOW = datetime(2026, 10, 23, tzinfo=UTC)
+
+
+def test_timed_sweep_releases_retired_content_as_it_counts(tmp_path, monkeypatch):
+    class Content(str):
+        pass
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        store.create_node(level="schema", node_id="replacement", content="current")
+        for i in range(10):
+            store.create_node(level="trace", node_id=f"expired-{i}", content=f"old {i}",
+                              context={"timestamp": "2000-01-01"})
+            store.create_node(level="trace", node_id=f"original-{i}", content=f"original {i}",
+                              context={"timestamp": NOW.isoformat()})
+            store.create_connection("replacement", f"original-{i}", "supersedes")
+
+        retire = store.soft_delete_node
+        live_content = WeakSet()
+        peak = 0
+
+        def observe(*args):
+            nonlocal peak
+            node = retire(*args)
+            node.content = Content(node.content)
+            live_content.add(node.content)
+            peak = max(peak, len(live_content))
+            return node
+
+        monkeypatch.setattr(store, "soft_delete_node", observe)
+        result = _decay_sweep_if_due(store, force=True, now=NOW)
+        assert (result["expired_count"], result["superseded_count"]) == (10, 10)
+        assert 0 < peak <= 2
 
 
 @pytest.mark.parametrize(
