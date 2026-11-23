@@ -196,16 +196,17 @@ def test_reopen_indexes_retained_writes_without_new_progress_state(tmp_path, mon
         # Exercise opening a database with the existing active-only indexes.
         store.connection.execute("DROP INDEX idx_nodes_trace_scope")
     with MemoryStore(path) as store:
-        store.append_trace(TOPIC, CONTEXT)
-        assert _auto_consolidation_due(store, SCOPE) == 1
-        assert _auto_consolidation_due(store, "project:other") is None
-        plan = [row[3] for row in store.connection.execute(
-            "EXPLAIN QUERY PLAN SELECT COUNT(*) FROM nodes WHERE level='trace' AND scope=?", (SCOPE,)
-        )]
+        boundary = store.append_trace(TOPIC, CONTEXT)
+        later = store.append_trace(TOPIC, CONTEXT)
+        statements = []
+        store.connection.set_trace_callback(statements.append)
+        assert _auto_consolidation_due(store, SCOPE, boundary.id) == 1
+        store.connection.set_trace_callback(None)
+        plan = [row[3] for row in store.connection.execute("EXPLAIN QUERY PLAN " + statements[0])]
         assert any("COVERING INDEX idx_nodes_trace_scope" in detail for detail in plan)
         assert not any("SCAN nodes" in detail for detail in plan)
-        store.append_trace(TOPIC, CONTEXT)
-        assert _auto_consolidation_due(store, SCOPE) is None
+        assert _auto_consolidation_due(store, "project:other", boundary.id) is None
+        assert _auto_consolidation_due(store, SCOPE, later.id) is None
 
 
 @pytest.mark.parametrize("policy,interval", [("fixed", 100), ("adaptive", 5)])

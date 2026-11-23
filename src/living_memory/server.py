@@ -1113,7 +1113,8 @@ def _register_tools(
                 pass
             scheduled = _schedule_auto_consolidation_if_due(
                 store, auto_consolidation, node.scope,
-                admitted_traces=1 + len(rejected_alternatives or []),
+                rejected_nodes[-1].id if rejected_nodes else node.id,
+                admitted_traces=1 + len(rejected_nodes),
             )
             response = {
                 "node": _remember_node_confirmation(node),
@@ -1203,7 +1204,8 @@ def _register_tools(
                     # The corrective trace counts toward the scope's cadence like any
                     # write; the pass it makes due is scheduled, never run here.
                     response["auto_consolidation"] = _schedule_auto_consolidation_if_due(
-                        store, auto_consolidation, taught.corrective_trace.scope
+                        store, auto_consolidation, taught.corrective_trace.scope,
+                        taught.corrective_trace.id,
                     )
                     if marks is not None:
                         response["feedback_marks"] = marks.summary()
@@ -2030,19 +2032,24 @@ _AUTO_CONSOLIDATION_STEP_HANDOFF_SECONDS = 0.005
 
 
 def _auto_consolidation_due(
-    store: MemoryStore, scope: str, admitted_traces: int = 1,
+    store: MemoryStore, scope: str, last_trace_id: str, admitted_traces: int = 1,
 ) -> int | None:
     """Active population when the committed writes crossed an interval.
 
     Trace rows retain admitted knowledge, including replacements and soft
-    deletions. Their scoped covering index supplies the cadence without a
-    separate progress record. A remember with alternatives can cross a
-    boundary without ending exactly on it.
+    deletions. SQLite serializes inserts and assigns increasing rowids.
+    Count through this transaction's last inserted trace, so later commits
+    cannot shift its interval. This covering-index read stays outside the
+    write lock, including for a remember with multiple alternatives.
     """
 
     row = store.connection.execute(
-        "SELECT COUNT(*) AS count FROM nodes WHERE level = 'trace' AND scope = ?",
-        (scope,),
+        """
+        SELECT COUNT(*) AS count FROM nodes
+        WHERE level = 'trace' AND scope = ?
+          AND rowid <= (SELECT rowid FROM nodes WHERE id = ?)
+        """,
+        (scope, last_trace_id),
     ).fetchone()
     write_count = int(row["count"])
     step = (
@@ -2072,6 +2079,7 @@ def _schedule_auto_consolidation_if_due(
     store: MemoryStore,
     scheduler: AutoConsolidationScheduler,
     scope: str,
+    last_trace_id: str,
     *,
     admitted_traces: int = 1,
 ) -> dict[str, Any] | None:
@@ -2089,7 +2097,7 @@ def _schedule_auto_consolidation_if_due(
     """
 
     try:
-        trace_count = _auto_consolidation_due(store, scope, admitted_traces)
+        trace_count = _auto_consolidation_due(store, scope, last_trace_id, admitted_traces)
         if trace_count is None:
             scheduler.retry_pending()
             return None
