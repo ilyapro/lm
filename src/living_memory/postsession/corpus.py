@@ -78,7 +78,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator, Sequence
+from typing import Any, BinaryIO, Callable, Iterable, Iterator, Sequence
 
 from .session import SessionRecord
 from .transcripts import (
@@ -387,24 +387,37 @@ def hash_and_probe(path: Path) -> tuple[str, int, int, list[bytes], list[bytes]]
     return digest.hexdigest(), total, records, head_lines, tail_lines
 
 
-def hash_prefix(path: Path, length: int) -> str:
-    """sha256 of the first ``length`` bytes of ``path``.
+def _prefix_chunks(handle: BinaryIO, length: int) -> Iterator[bytes]:
+    while length > 0:
+        chunk = handle.read(min(_CHUNK, length))
+        if not chunk:
+            break
+        yield chunk
+        length -= len(chunk)
 
-    Used to tell an *append* (a resumed session wrote more records; the sealed
-    bytes are still there, unchanged) from a *rewrite* (the sealed bytes no
-    longer exist, which is what a moved seal looks like).
-    """
+
+def hash_prefix(path: Path, length: int) -> str:
+    """sha256 of the first ``length`` bytes of ``path``."""
 
     digest = hashlib.sha256()
-    remaining = length
     with open(path, "rb") as handle:
-        while remaining > 0:
-            chunk = handle.read(min(_CHUNK, remaining))
-            if not chunk:
-                break
+        for chunk in _prefix_chunks(handle, length):
             digest.update(chunk)
-            remaining -= len(chunk)
     return digest.hexdigest()
+
+
+def _transcript_digests(path: Path, recorded_bytes: int) -> tuple[str, int, str]:
+    digest = hashlib.sha256()
+    size = 0
+    with open(path, "rb") as handle:
+        for chunk in _prefix_chunks(handle, recorded_bytes):
+            digest.update(chunk)
+            size += len(chunk)
+        prefix = digest.hexdigest()
+        while chunk := handle.read(_CHUNK):
+            digest.update(chunk)
+            size += len(chunk)
+    return digest.hexdigest(), size, prefix
 
 
 def _decode_records(raw_lines: Sequence[bytes]) -> list[dict[str, Any]]:
@@ -639,15 +652,18 @@ def write_index(entries: Iterable[SessionEntry], path: Path) -> IndexStats:
     return IndexStats(sha256=digest.hexdigest(), lines=lines, bytes=size)
 
 
+def _parse_index_line(raw: bytes) -> SessionEntry | None:
+    text = raw.decode("utf-8").strip()
+    return SessionEntry.from_dict(json.loads(text)) if text else None
+
+
 def iter_index(path: Path) -> Iterator[SessionEntry]:
     """Stream the index. Thousands of rows, so it is never held twice."""
 
     with open(path, "rb") as handle:
         for raw in handle:
-            text = raw.decode("utf-8").strip()
-            if not text:
-                continue
-            yield SessionEntry.from_dict(json.loads(text))
+            if (entry := _parse_index_line(raw)) is not None:
+                yield entry
 
 
 def read_index(path: Path) -> list[SessionEntry]:
@@ -1017,22 +1033,30 @@ def _verify_with_index(
     manifest: dict[str, Any], index_path: Path, report: dict[str, Any], *, strict: bool
 ) -> None:
     report["mode"] = "index"
-    stats = hash_index_file(index_path)
+    digest = hashlib.sha256()
+    lines = 0
+    entries = []
+    with open(index_path, "rb") as handle:
+        for raw in handle:
+            digest.update(raw)
+            lines += raw.endswith(b"\n")
+            if (entry := _parse_index_line(raw)) is not None:
+                entries.append(entry)
+    index_sha256 = digest.hexdigest()
     recorded = manifest.get("index_sha256")
     recorded_meta = manifest.get("index") or {}
     report["index"] = {
         "path": str(index_path),
         "present": True,
         "recorded_sha256": recorded,
-        "actual_sha256": stats.sha256,
-        "sha256_match": recorded == stats.sha256,
+        "actual_sha256": index_sha256,
+        "sha256_match": recorded == index_sha256,
         "recorded_lines": recorded_meta.get("lines"),
-        "actual_lines": stats.lines,
+        "actual_lines": lines,
     }
     if not report["index"]["sha256_match"]:
         report["ok"] = False
 
-    entries = read_index(index_path)
     try:
         assert_no_content(manifest, entries)
     except CorpusContentLeak as error:
@@ -1064,24 +1088,24 @@ def _verify_with_index(
                 report["holdout_missing"].append(entry.session_key)
             continue
         try:
-            digest, size, _records, _head, _tail = hash_and_probe(path)
+            actual_sha256, size, prefix = _transcript_digests(path, entry.bytes)
         except OSError:
             report["missing"].append(entry.session_key)
             if entry.split == "holdout":
                 report["holdout_missing"].append(entry.session_key)
             continue
-        if digest == entry.sha256 and size == entry.bytes:
+        if actual_sha256 == entry.sha256 and size == entry.bytes:
             report["verified"] += 1
             report["unchanged_bytes"] += size
             continue
-        appended = size > entry.bytes and hash_prefix(path, entry.bytes) == entry.sha256
+        appended = size > entry.bytes and prefix == entry.sha256
         report["changed"].append(
             {
                 "session_key": entry.session_key,
                 "split": entry.split,
                 "kind": "append" if appended else "rewrite",
                 "recorded_sha256": entry.sha256,
-                "actual_sha256": digest,
+                "actual_sha256": actual_sha256,
                 "recorded_bytes": entry.bytes,
                 "actual_bytes": size,
             }
