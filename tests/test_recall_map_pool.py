@@ -646,3 +646,37 @@ def test_filtered_pool_reads_revisions_only_for_keyed_fifo_pressure(tmp_path):
             assert sum("map_chunk_revision" in sql for sql in statements) == 3
         finally:
             store.connection.set_trace_callback(None)
+
+
+@pytest.mark.parametrize("separator", ["\n", "\r", "\r\n", "\v", "\f", "\x1c", "\x1d",
+                                       "\x1e", "\x85", "\u2028", "\u2029"])
+def test_ballast_uses_only_the_first_logical_line(separator):
+    header = "[file-chunk]\t" + _machine_header(0)
+    assert _ballast_reason(header + separator + "текст") == "fc"
+    assert _ballast_reason("[Monitoring-Journal]" + separator + "текст") == "sj"
+    assert _ballast_reason("[file-chunk] " + separator + header) is None
+    assert _ballast_reason(separator + "[supervision_journal]") is None
+
+
+def test_selection_counts_only_surviving_text_and_keeps_first_sample_per_reason():
+    ledger = recall_map_module._SelectionLedger(inspected=8)
+    rows = [
+        ("sj", "a b", " a\u00a0b\t a\u2003b "),
+        ("lr", "id", "\t \u3000"),
+        ("sj", "ключ", "ключ" * 40 + "\u2028 雪\t 🪶"),
+        ("lr", "a b", "Ж" * 22 + "\t a\u00a0b\tхвост"),
+        ("sj", "ключ", "ключ" * 40),
+        ("sj", "z", "\u2029" * 256 + "字"),
+        ("lr", "id", ""),
+        ("lr", "z", "more"),
+    ]
+    for ordinal, (reason, node_id, content) in enumerate(rows):
+        ledger.exclude(reason, ordinal=ordinal, node=SimpleNamespace(id=node_id, content=content))
+    selection = ledger.freeze(0)
+    assert selection.sampleable == 4
+    assert [(s.ordinal, s.gist) for s in selection.samples] == [(2, "雪 🪶"), (3, "Ж" * 22 + "…")]
+    for limit in (0, 1, 2):
+        wire = selection.to_dict(sample_limit=limit)
+        assert wire["x"] == [0, 0, 0, 0, 4, 4, 0]
+        assert wire.get("q", []) == [["sj", "雪 🪶"], ["lr", "Ж" * 22 + "…"]][:limit]
+        assert wire["o"] == 4 - limit
