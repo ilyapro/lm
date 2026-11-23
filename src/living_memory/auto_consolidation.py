@@ -142,6 +142,8 @@ class AutoConsolidationScheduler:
         must leave this write pending.
         """
         with self._persist_guard, self._cond:
+            if self._load_pending is None or self._save_pending is None:
+                raise RuntimeError("recording a transactional request requires a pending store")
             self._load_and_merge_pending()
             current = _read_pending(self._load_pending())
             previous = {scope: self._saved[scope]} if scope in self._saved else {}
@@ -162,21 +164,9 @@ class AutoConsolidationScheduler:
         # Requests survive save failure, but only saved requests become ready.
         # The store's guard always precedes the condition.
         with self._persist_guard, self._cond:
-            if self._closed:
-                raise RuntimeError("auto-consolidation scheduler is closed")
-            already_queued = scope in self._queue
-            running = self._running == scope
-            queued = self._queue.get(scope, _QueuedPass())
-            self._queue[scope] = _QueuedPass(
-                ready_at=queued.ready_at,
-                requested_at=(
-                    queued.requested_at if queued.requested_at is not None else self._clock()
-                ),
-            )
+            coalesced = self._enqueue(scope, committed_mark or uuid4().hex)
             if committed_mark is not None:
-                self._saved[scope] = self._desired[scope] = committed_mark
-            else:
-                self._desired[scope] = uuid4().hex
+                self._saved[scope] = committed_mark
             if committed_mark is None or self._pending_dirty:
                 self._save_and_admit()
             else:
@@ -186,13 +176,31 @@ class AutoConsolidationScheduler:
         report: dict[str, Any] = {
             "status": "scheduled",
             "scope": scope,
-            "coalesced": already_queued or running,
+            "coalesced": coalesced,
         }
         if trace_count is not None:
             report["trace_count"] = trace_count
         if not worker_started:
             report["worker_start_pending"] = True
         return report
+
+    def defer_request(self, scope: str) -> None:
+        """Keep a committed write's failed mark for the next ordinary save attempt."""
+        with self._persist_guard, self._cond:
+            self._enqueue(scope, uuid4().hex)
+            self._pending_dirty = True
+
+    def _enqueue(self, scope: str, mark: str) -> bool:
+        if self._closed:
+            raise RuntimeError("auto-consolidation scheduler is closed")
+        coalesced = scope in self._queue or self._running == scope
+        queued = self._queue.get(scope, _QueuedPass())
+        self._queue[scope] = _QueuedPass(
+            ready_at=queued.ready_at,
+            requested_at=queued.requested_at if queued.requested_at is not None else self._clock(),
+        )
+        self._desired[scope] = mark
+        return coalesced
 
     def retry_pending(self) -> None:
         """Recover unread pending work, retry saves or restart a missing worker.

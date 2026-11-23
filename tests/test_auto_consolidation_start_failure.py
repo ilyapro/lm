@@ -211,7 +211,7 @@ def test_pending_save_failure_recovers_on_ordinary_write(seeded, monkeypatch, ca
     assert edges == ([(trace_id, original)] if tool == "memory_teach" else [])
     assert pending is None
     assert result["auto_consolidation"] is None
-    assert "could not schedule post-commit auto-consolidation" in caplog.text
+    assert "could not record consolidation request" in caplog.text
     assert "pending save fault" in caplog.text
     assert mcp.auto_consolidation.status()["passes_completed"] == 0
     assert starts == []

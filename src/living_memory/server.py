@@ -2095,7 +2095,7 @@ def _record_auto_consolidation_if_due(
         logging.getLogger(__name__).warning(
             "could not record consolidation request for %s", scope, exc_info=True,
         )
-        return trace_count, None  # Retry through ordinary scheduling after commit.
+        return trace_count, None
     return trace_count, last_trace_id
 
 
@@ -2108,6 +2108,9 @@ def _schedule_auto_consolidation(
             scheduler.retry_pending()
             return None
         trace_count, mark = due
+        if mark is None:
+            scheduler.defer_request(scope)
+            return None
         return scheduler.request(scope, trace_count=trace_count, committed_mark=mark)
     except Exception:
         logging.getLogger(__name__).warning(

@@ -303,7 +303,7 @@ def test_public_write_commits_feedback_and_recovers_live_admission(
         result, trace_id = write(SECOND, used=[original])
         assert result["auto_consolidation"] is None
         assert result["feedback_marks"]["accepted"] == 1
-        assert "could not schedule post-commit auto-consolidation" in caplog.text
+        assert "could not record consolidation request" in caplog.text
         assert "pending save fault" in caplog.text
         assert not store.connection.in_transaction
         with sqlite3.connect(path) as reader:
