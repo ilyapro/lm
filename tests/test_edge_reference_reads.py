@@ -154,7 +154,7 @@ def test_reference_writer_still_validates_selected_endpoints(tmp_path, monkeypat
         assert store.list_connections() == []
 
 
-@pytest.mark.parametrize("fault", [None, "read", "write"])
+@pytest.mark.parametrize("fault", [None, "read", "write", "decay"])
 def test_native_remember_reads_endpoints_under_guard_after_required_commit(
     tmp_path, monkeypatch, fault,
 ):
@@ -167,10 +167,12 @@ def test_native_remember_reads_endpoints_under_guard_after_required_commit(
     store = mcp.memory_store
     try:
         target = store.append_trace("Source " + "b" * 131072, {"procedure": "p" * 131072})
+        count = 4 if fault == "write" else 20
+        targets = [target.id] + [store.append_trace(f"Reference target {i}").id for i in range(1, count)]
         stale = store.append_trace("Retired source")
         store.soft_delete_node(stale.id)
         read, materialize = store.get_node_endpoints, storage._node_from_row
-        observations, materialized = [], []
+        observations, materialized, statements = [], [], []
 
         def observed(ids):
             observations.append((guard._is_owned(), store.connection.in_transaction))
@@ -179,7 +181,13 @@ def test_native_remember_reads_endpoints_under_guard_after_required_commit(
                     sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_READ
                     and table == "nodes" and column == "decayed" else sqlite3.SQLITE_OK)
             try:
-                return read(ids)
+                facts = read(ids)
+                if len(observations) == 1:
+                    if fault == "decay":
+                        with storage.MemoryStore(tmp_path / "memory.sqlite3") as other:
+                            other.soft_delete_node(target.id)
+                    store.connection.set_trace_callback(statements.append)
+                return facts
             finally:
                 store.connection.set_authorizer(None)
 
@@ -190,24 +198,35 @@ def test_native_remember_reads_endpoints_under_guard_after_required_commit(
         monkeypatch.setattr(store, "get_node_endpoints", observed)
         monkeypatch.setattr(storage, "_node_from_row", counted)
         if fault == "write":
-            store.connection.execute("""CREATE TRIGGER reject_edge BEFORE INSERT ON connections
+            store.connection.execute(f"""CREATE TRIGGER reject_edge BEFORE INSERT ON connections
+                WHEN NEW.target_id = '{targets[2]}'
                 BEGIN SELECT RAISE(ABORT, 'edge fault'); END""")
 
         async def scenario():
             async with Client(mcp) as client:
                 result = await client.call_tool("memory_remember", {
-                    "content": f"Reference {target.id} {stale.id} {target.id} {MISSING}",
+                    "content": "Reference " + " ".join([*targets, stale.id, target.id, MISSING]),
                 })
                 assert not result.is_error
-                return result.data["node"]["id"]
+                return result.data["node"]
 
-        node_id = asyncio.run(scenario())
-        assert observations == [(True, False)]
-        assert target.id not in materialized and stale.id not in materialized
-        assert edge_tuples(store.list_connections(source_id=node_id)) == (
-            expected_edges(node_id, [target.id]) if fault is None else []
+        receipt = asyncio.run(scenario())
+        store.connection.set_trace_callback(None)
+        node_id = receipt["id"]
+        node = store.get_node(node_id)
+        assert receipt == {
+            "id": node.id, "level": "trace", "scope": node.scope, "created_at": node.created_at,
+            "prior_recall_count": 0, "source_trace_count": 0,
+        }
+        assert observations == ([(True, False)] if fault == "read" else [(True, False), (True, True)])
+        batches = int(fault != "read")
+        assert statements.count("BEGIN IMMEDIATE") == statements.count("COMMIT") == batches
+        assert stale.id not in materialized
+        assert set(targets[1:]).isdisjoint(materialized)
+        expected = {"read": [], "write": targets[:2], "decay": targets[1:], None: targets}[fault]
+        assert sorted(edge_tuples(store.list_connections(source_id=node_id))) == sorted(
+            expected_edges(node_id, expected)
         )
-        assert store.get_node(node_id) is not None
         assert not store.connection.in_transaction
     finally:
         mcp.auto_consolidation.close()
