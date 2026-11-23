@@ -110,7 +110,7 @@ def test_full_ordered_recall_and_reads_match_source_oracle(tmp_path, monkeypatch
                     candidates["target"].source_graph_score = 0.6
                 if depth in (2, 3, "causal"):
                     middle = {"strong", "weak", "join", "later"}
-                    reads.append(("get_recall_node_ids", middle | {"dead", "foreign"}, None))
+                    reads.append(("get_recall_node_ids", middle, None))
                     reads.append(("list_recall_connections", middle, True))
                     short_path = (0.1 * 0.45) * (0.7 * 0.85) * 0.72
                     candidates["target"].source_graph_score = short_path

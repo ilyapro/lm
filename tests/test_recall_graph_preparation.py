@@ -105,9 +105,9 @@ def test_hub_bound_precedes_materialization_and_traversal_filters(tmp_path, monk
         store.connection.set_trace_callback(None)
         ids = {r["node"]["id"] for r in delivered + residual}
         assert counts == {"objects": 200, "traversals": 200, "adjacency_queries": 1}
-        assert "leaf-199" in ids
-        assert not {"leaf-000", "leaf-001", "leaf-200"} & ids
-        assert len(ids) == 199
+        assert {"leaf-199", "leaf-200", "leaf-201"} <= ids
+        assert not {"leaf-000", "leaf-001", "leaf-202"} & ids
+        assert len(ids) == 201
 
 
 @pytest.mark.parametrize("second_connection", [False, True])

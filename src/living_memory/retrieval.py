@@ -1844,7 +1844,7 @@ class MemoryRecallService:
             key = source_only, tuple(node_ids)
             if key not in observations:
                 connections = self.store.list_recall_connections(
-                    node_ids, limit=MAX_NEIGHBORS_PER_NODE, source_only=source_only,
+                    node_ids, limit=MAX_NEIGHBORS_PER_NODE, source_only=source_only, plan=plan,
                 )
                 neighbors = {node_id: [] for node_id in connections}
                 for node_id, edges in connections.items():

@@ -896,6 +896,17 @@ _TASK_PATTERN_BACKFILL_PREDICATE = f"""
 """
 
 
+def _recall_node_predicate(plan: ScopePlan) -> tuple[str, tuple[str, ...]]:
+    """SQL admission for a row of nodes, before reading bodies or ranking edges."""
+    if not plan.restricted:
+        return "decayed = 0", ()
+    scopes = plan.named_scopes
+    if not scopes:
+        return "0", ()
+    placeholders = ",".join("?" for _ in scopes)
+    return f"decayed = 0 AND scope IN ({placeholders})", scopes
+
+
 def _node_read_batches(
     node_ids: Iterable[str], *, batch_size: int = 999,
 ) -> Iterator[list[str]]:
@@ -1727,15 +1738,13 @@ class MemoryStore:
         self, node_ids: Iterable[str], plan: ScopePlan, *, columns: str,
     ) -> Iterator[sqlite3.Row]:
         """Stream admitted rows; consumers must close this iterator on exit."""
-        scopes = plan.named_scopes if plan.restricted else ()
+        predicate, scopes = _recall_node_predicate(plan)
         if plan.restricted and not scopes:
             return
-        scope_filter = f" AND scope IN ({','.join('?' for _ in scopes)})" if scopes else ""
         for chunk in _node_read_batches(node_ids):
             placeholders = ",".join("?" for _ in chunk)
             with closing(self._conn.execute(
-                f"SELECT {columns} FROM nodes WHERE id IN ({placeholders}) AND decayed = 0"
-                f"{scope_filter} ORDER BY id", (*chunk, *scopes),
+                f"SELECT {columns} FROM nodes WHERE id IN ({placeholders}) AND {predicate} ORDER BY id", (*chunk, *scopes),
             )) as rows:
                 yield from rows
 
@@ -2517,6 +2526,7 @@ class MemoryStore:
 
     def list_recall_connections(
         self, node_ids: Iterable[str], *, limit: int, source_only: bool = False,
+        plan: ScopePlan | None = None,
     ) -> dict[str, list[Connection]]:
         """Bound each adjacency before decoding connections and their metadata.
 
@@ -2534,12 +2544,23 @@ class MemoryStore:
         remaining = len(ids)
         seen: set[str] = set()
         weight = checked_weight_sql(source_only=source_only)
+        admission = ""
+        scopes: tuple[str, ...] = ()
+        if plan is not None:
+            predicate, scopes = _recall_node_predicate(plan)
+            # Either endpoint may be a frontier node, including in another batch.
+            # Only edges between two live, visible nodes can serve a recall walk.
+            admission = (
+                f" AND EXISTS (SELECT 1 FROM nodes WHERE id = connections.source_id AND {predicate})"
+                f" AND EXISTS (SELECT 1 FROM nodes WHERE id = connections.target_id AND {predicate})"
+            )
         for i in range(0, len(ids), 400):
             chunk = ids[i : i + 400]
             placeholders = ",".join("?" for _ in chunk)
             cursor = self._conn.execute(
-                f"SELECT *, {weight} AS checked_weight FROM connections WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders})) AND {semantic_relation_sql()} ORDER BY checked_weight DESC, created_at DESC",
-                chunk + chunk,
+                f"SELECT *, {weight} AS checked_weight FROM connections WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders})) AND {semantic_relation_sql()}"
+                f"{admission} ORDER BY checked_weight DESC, created_at DESC",
+                (*chunk, *chunk, *scopes, *scopes),
             )
             try:
                 for row in cursor:
