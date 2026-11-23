@@ -136,7 +136,8 @@ def test_knowledge_preserves_delivery_and_validity_without_diagnostics() -> None
 
 @pytest.mark.parametrize("view", ["knowledge", "full"])
 @pytest.mark.parametrize("first_level", ["trace", "schema"])
-def test_mcp_schema_twins_share_one_complete_offer(tmp_path, view, first_level):
+@pytest.mark.parametrize("replace_twin", [False, True])
+def test_mcp_schema_twins_share_one_complete_offer(tmp_path, view, first_level, replace_twin):
     mcp = create_mcp_server(tmp_path / "memory.sqlite3")
     store = mcp.memory_store
     text = (
@@ -148,11 +149,14 @@ def test_mcp_schema_twins_share_one_complete_offer(tmp_path, view, first_level):
     scope = "project:gauges"
     levels = [first_level, "trace" if first_level == "schema" else "schema"]
     strong = {"confidence": 1., "usefulness_score": 1., "access_count": 20}
-    weak = {"confidence": .01, "usefulness_score": 0., "access_count": 0}
+    weak = {"confidence": .85, "usefulness_score": 0., "access_count": 14}
     ids = [store.create_node(level=level, content=text, context={"scope": scope}, stats=stats).id
            for level, stats in zip(levels, (strong, weak), strict=True)]
+    fact = "Maintenance records mention the gauge with the serial number."
+    extra = store.create_node(level="trace", content=fact, context={"scope": scope},
+                              stats={"confidence": .02}) if replace_twin else None
     query = {"query": "silver dial calibration sequence gauge reading", "scope": scope,
-             "depth": 0, "view": view}
+             "depth": 0, "view": view, "max_results": 2}
 
     async def scenario():
         async with Client(mcp) as client:
@@ -161,24 +165,32 @@ def test_mcp_schema_twins_share_one_complete_offer(tmp_path, view, first_level):
                 single = _structured(await client.call_tool("memory_recall", {**query, "max_results": 1}))
                 assert single["results"][0]["delivery"] == "snippet"
             response = _structured(await client.call_tool("memory_recall", query))
-            bearer, twin = response["results"]
-            nodes = [item.get("node", item) for item in (bearer, twin)]
-            assert [node["id"] for node in nodes] == ids
-            assert [node["level"] for node in nodes] == levels
+            bearer, second = response["results"]
+            nodes = [item.get("node", item) for item in (bearer, second)]
+            expected_ids = [ids[0], extra.id] if extra else ids
+            assert [node["id"] for node in nodes] == expected_ids
+            assert [node["level"] for node in nodes] == ([levels[0], "trace"] if extra else levels)
             assert bearer["delivery"] == "full" and nodes[0]["content"] == text
-            assert twin["delivery"] == "twin_duplicate" and nodes[1]["content"] != text
-            assert twin["content_ref"]["duplicate_of"] == ids[0]
-            assert twin["content_ref"]["node_id"] == ids[1]
-            digest = hashlib.sha256(text.encode()).hexdigest()
+            if extra:
+                assert second["delivery"] == "full" and nodes[1]["content"] == fact
+            else:
+                assert second["delivery"] == "twin_duplicate" and nodes[1]["content"] != text
+                assert second["content_ref"]["duplicate_of"] == ids[0]
+                assert second["content_ref"]["node_id"] == ids[1]
+
+            def full_record(body):
+                digest = hashlib.sha256(body.encode()).hexdigest()
+                return {"kind": "full", "content_sha256": digest, "delivered_sha256": digest}
+
             event = store.get_recall_event(response["recall_event_id"])
-            assert event.result_ids == ids
+            assert event.result_ids == expected_ids
             assert [r["delivery"] for r in event.results] == [
-                {"kind": "full", "content_sha256": digest, "delivered_sha256": digest},
-                {"kind": "twin_duplicate"},
+                full_record(text), full_record(fact) if extra else {"kind": "twin_duplicate"},
             ]
-            repeat = _structured(await client.call_tool("memory_recall", query))
+            repeat = _structured(await client.call_tool("memory_recall", {**query, "used": expected_ids}))
+            assert repeat["feedback_marks"]["accepted"] == 2
             assert [item["delivery"] for item in repeat["results"]] == [
-                "session_duplicate", "twin_duplicate",
+                "session_duplicate", "session_duplicate" if extra else "twin_duplicate",
             ]
             lookup = _structured(await client.call_tool("memory_lookup", {"node_ids": ids}))
             assert {item["id"]: item["content"] for item in lookup["results"]} == dict.fromkeys(ids, text)

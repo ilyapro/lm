@@ -184,6 +184,29 @@ def test_partial_replacement_keeps_a_later_intentional_session_repeat():
     assert residual == [twin]
 
 
+@pytest.mark.parametrize("schema_status", ["residual", "withheld", "superseded", "decayed", "other_source"])
+def test_only_current_admitted_schema_can_expand_a_twin(schema_status):
+    text = "Gauge adjustment procedure. " * 180
+    trace, twin, schema = [row(name, text) for name in ("trace", "twin", "schema")]
+    schema.node.level = "schema"
+    fact = row("fact", "Gauge serial number.")
+    if schema_status == "withheld":
+        schema = replace(schema, withheld="below_threshold")
+    elif schema_status == "superseded":
+        schema = replace(schema, superseded=True)
+    elif schema_status == "decayed":
+        schema.node.decayed = True
+    elif schema_status == "other_source":
+        schema.node.source_traces = ["independent"]
+    if schema_status == "residual":
+        limited, residual = [trace, twin], [schema, fact]
+    else:
+        limited, residual = [trace, schema], [fact]
+    selected, _ = _select_distinct_results(limited, residual, 2, DeliveryHistory())
+    assert selected[0].node_id == trace.node_id
+    assert shape(selected)[0]["delivery"] == "snippet"
+
+
 @pytest.mark.parametrize("view", ["knowledge", "full"])
 @pytest.mark.parametrize("gate", ["off", "0.35"])
 @pytest.mark.parametrize("form", ["drop", "stub"])
