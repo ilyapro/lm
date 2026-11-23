@@ -6,7 +6,6 @@ import json
 import pytest
 from fastmcp import Client
 
-from living_memory import storage
 from living_memory.server import create_mcp_server
 
 
@@ -49,7 +48,6 @@ async def graph_response(path, *, count, reverse, broad):
 @pytest.mark.parametrize("reverse", [False, True])
 def test_scoped_causal_response_ignores_foreign_edges(tmp_path, monkeypatch, reverse):
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
-    monkeypatch.setattr(storage, "_utc_now", lambda: "2025-01-01T00:00:00Z")
     responses = [asyncio.run(graph_response(tmp_path / f"{count}.db", count=count,
                                             reverse=reverse, broad=False))
                  for count in (0, 199, 200)]
