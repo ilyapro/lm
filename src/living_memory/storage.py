@@ -3025,24 +3025,6 @@ class MemoryStore:
                 ids.append(int(cursor.lastrowid))
         return ids
 
-    def set_feedback_marks_source(self, mark_ids: Iterable[int], source_id: str) -> None:
-        """Fill ``source_id`` on marks recorded before their carrier existed.
-
-        memory_recall and memory_teach record marks before the recall event /
-        corrective trace that carried them is written (a mark must be
-        resolved against *earlier* deliveries and must precede implicit
-        feedback), then stamp the id here.
-        """
-
-        ids = [int(mark_id) for mark_id in mark_ids]
-        if not ids or not source_id:
-            return
-        with self.transaction():
-            self._conn.executemany(
-                f"UPDATE {RECALL_FEEDBACK_MARKS_TABLE} SET source_id = ? WHERE id = ?",
-                [(str(source_id), mark_id) for mark_id in ids],
-            )
-
     def irrelevant_marked_node_ids(self, recall_event_id: str) -> set[str]:
         """Nodes whose latest accepted mark for this event is ``irrelevant``."""
 

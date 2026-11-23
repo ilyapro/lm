@@ -226,14 +226,13 @@ def test_required_endpoint_error_rolls_back_teach(mcp, monkeypatch, stage, colum
     assert_outcome(mcp, ids, event_id, teach(mcp, ids))
 
 
-@pytest.mark.parametrize("stage", ["marks", "credit", "source"])
+@pytest.mark.parametrize("stage", ["marks", "credit"])
 def test_optional_feedback_failure_keeps_correction(mcp, stage):
     ids, event_id = seed(mcp)
     store = mcp.memory_store
     faults = {
         "marks": "BEFORE INSERT ON recall_feedback_marks",
         "credit": "BEFORE INSERT ON recall_explicit_credit",
-        "source": "BEFORE UPDATE OF source_id ON recall_feedback_marks WHEN NEW.mark='irrelevant'",
     }
     store.connection.execute(f"""CREATE TRIGGER reject_optional {faults[stage]}
         BEGIN SELECT RAISE(ABORT, 'optional teach fault'); END""")
@@ -245,7 +244,38 @@ def test_optional_feedback_failure_keeps_correction(mcp, stage):
         assert reader.execute("SELECT feedback_trace_id FROM recall_events WHERE id=?", (event_id,)).fetchone() == (trace_id,)
         assert reader.execute("SELECT source_id, target_id FROM connections WHERE type='supersedes'").fetchall() == [(trace_id, ids[0])]
         marks = reader.execute("SELECT source_id FROM recall_feedback_marks").fetchall()
-    assert marks == ([] if stage == "marks" else [("",), ("",)] if stage == "source" else [(trace_id,), (trace_id,)])
+    assert marks == ([] if stage == "marks" else [(trace_id,), (trace_id,)])
+
+
+def test_teach_inserts_marks_with_their_corrective_source(mcp):
+    ids, _ = seed(mcp)
+    store = mcp.memory_store
+    updates = []
+
+    def authorize(action, table, column, *_):
+        if action == sqlite3.SQLITE_UPDATE and table == "recall_feedback_marks" and column == "source_id":
+            updates.append(column)
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    store.connection.set_authorizer(authorize)
+    try:
+        result = mcp.tools["memory_teach"](
+            ids[0], CORRECTION, context=CONTEXT, used=[ids[0], "missing"], irrelevant=ids[1:],
+        )
+    finally:
+        store.connection.set_authorizer(None)
+    trace_id = result["corrective_trace"]["id"]
+    with sqlite3.connect(store.db_path) as reader:
+        assert reader.execute("SELECT content FROM nodes WHERE id=?", (trace_id,)).fetchone() == (CORRECTION,)
+        assert reader.execute(
+            "SELECT node_id, mark, accepted, source_id FROM recall_feedback_marks ORDER BY id"
+        ).fetchall() == [
+            (ids[0], "used", 1, trace_id),
+            ("missing", "used", 0, trace_id),
+            (ids[1], "irrelevant", 1, trace_id),
+        ]
+    assert not updates
 
 
 @pytest.mark.parametrize("invalid", ["missing", "empty", "confidence"])

@@ -922,10 +922,10 @@ def test_marks_table_rejects_unknown_mark_kinds(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "check.sqlite3") as store:
         with pytest.raises(sqlite3.IntegrityError):
             store.record_feedback_marks([{"node_id": "N", "mark": "maybe", "via_tool": "t"}])
-        ids = store.record_feedback_marks(
-            [{"node_id": "N", "mark": "used", "via_tool": "memory_recall", "accepted": True}]
+        store.record_feedback_marks(
+            [{"node_id": "N", "mark": "used", "via_tool": "memory_recall", "accepted": True,
+              "source_id": "SRC"}]
         )
-        store.set_feedback_marks_source(ids, "SRC")
         row = _marks(store)[0]
         assert (row["source_id"], row["recall_event_id"], row["accepted"]) == ("SRC", "", 1)
 

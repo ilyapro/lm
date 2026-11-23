@@ -1143,8 +1143,8 @@ def _register_tools(
     ) -> dict[str, Any]:
         """Commit the correction, provenance and accompanying marks together.
 
-        Explicit marks precede implicit feedback and receive the corrective
-        source before commit. Their own failures remain nonfatal. Optional
+        Explicit marks use the reserved corrective ID and precede implicit
+        feedback. Their own failures remain nonfatal. Optional
         consolidation scheduling runs only after the knowledge commit.
         Corrective trace chunks are prepared from normalized text before the
         store lock. Derived digest/chunk preparation also runs outside it; the
@@ -1179,7 +1179,7 @@ def _register_tools(
                                 used,
                                 irrelevant,
                                 via_tool="memory_teach",
-                                source_id="",
+                                source_id=preparation.corrective_id,
                                 context=context,
                                 transport_session_id=_context_transport(context),
                                 agent=_ambient_text(context, "agent"),
@@ -1193,13 +1193,6 @@ def _register_tools(
                             preparation=preparation,
                         )
                         indexing = _index_written_traces(store, [taught.corrective_trace], prepared)
-                        if marks is not None:
-                            try:
-                                store.set_feedback_marks_source(
-                                    marks.mark_ids, taught.corrective_trace.id
-                                )
-                            except Exception:
-                                pass
                     response = _teach_result_to_dict(taught)
                     # The corrective trace counts toward the scope's cadence like any
                     # write; the pass it makes due is scheduled, never run here.

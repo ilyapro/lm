@@ -169,8 +169,8 @@ after committing the required formed response, with that new event as
 `source_id`. Required passage/correction reads or shaping failures leave no
 current consumption event or marks. Earlier eligible events remain available;
 optional map or delivery-receipt failure does not remove their eligibility.
-`memory_teach` writes marks before its corrective trace and fills `source_id`
-with `MemoryStore.set_feedback_marks_source` in the same required transaction.
+`memory_teach` inserts each mark with the reserved corrective trace ID as
+`source_id`, then writes that trace in the same transaction.
 A teach that fails on its arguments (unknown `trace_id`, empty correction)
 records nothing.
 
