@@ -342,7 +342,7 @@ def soft_delete_expired(
                 node = store.soft_delete_node(node_id, reason)
             retired.append(node)
             if coverage_rule and node.level in _COVERING_LEVELS:
-                removed_sources.update(node.source_traces)
+                removed_sources.update(_source_ids(node.source_traces))
         else:
             break
     return retired
@@ -422,6 +422,10 @@ def _json_list(raw: Any) -> list[str]:
         parsed = json.loads(raw)
     except (TypeError, ValueError):
         return []
+    return _source_ids(parsed)
+
+
+def _source_ids(parsed: Any) -> list[str]:
     if not isinstance(parsed, list):
         return []
     return [str(item) for item in parsed if item]
