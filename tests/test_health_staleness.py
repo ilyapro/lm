@@ -203,3 +203,46 @@ def test_health_date_cursor_closes_on_success_and_failure(
         with pytest.raises(sqlite3.ProgrammingError, match="closed cursor"):
             cursors[0].fetchone()
         assert list(conn.iterdump()) == before
+
+
+def test_native_health_reads_one_trace_population(tmp_path, monkeypatch, frozen_clock):
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    path = tmp_path / "health.sqlite3"
+    server = create_mcp_server(config=MemoryConfig(db_path=path), expose_operator_tools=True)
+    scope = "project:alpha"
+    args = {"level": "trace", "content": "same", "context": {"scope": scope}}
+    with server.memory_store as reader, MemoryStore(path) as writer:
+        reader.create_node(node_id="first", timestamp="2026-10-28T12:00:00Z", **args)
+        assert reader.connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        reader.connection.execute("PRAGMA query_only = ON")
+        committed = []
+        storage_transactions = []
+
+        def interleave(sql):
+            if "SELECT id, timestamp, last_accessed FROM nodes" in sql and not committed:
+                node = writer.create_node(node_id="second", timestamp="2026-10-27T12:00:00Z", **args)
+                committed.append(node.id)
+            if sql == "PRAGMA page_count":
+                storage_transactions.append(reader.connection.in_transaction)
+
+        reader.connection.set_trace_callback(interleave)
+
+        async def check():
+            async with Client(server) as client:
+                for ids in (["first"], ["second", "first"]):
+                    response = await client.call_tool("memory_health", {"scope": scope})
+                    report = response.data
+                    assert committed == ["second"]
+                    assert (
+                        report["dedup"]["total_traces"],
+                        report["counts"]["by_level"]["trace"]["active"],
+                        [row["id"] for row in report["staleness"]["top_stale"]],
+                    ) == (len(ids), len(ids), ids)
+                    assert report["activity"]["remember_in_window"] == len(ids)
+                    assert report["access"]["active_traces"]["total"] == len(ids)
+                    assert report["dedup"]["duplicate_excess"] == len(ids) - 1
+                    assert report["staleness"]["age_seconds_p50"] == 86400
+                    assert report["staleness"]["age_seconds_p90"] == len(ids) * 86400
+
+        asyncio.run(check())
+        assert storage_transactions == [False, False]
