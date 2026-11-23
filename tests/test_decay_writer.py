@@ -1,4 +1,4 @@
-"""TTL admission through the time-based maintenance sweep on a shared WAL."""
+"""Decay admission through the time-based maintenance sweep on a shared WAL."""
 
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -148,3 +148,108 @@ def test_retiring_covering_owner_invalidates_its_source_in_same_sweep(tmp_path):
             ("owner", decay.TTL_EXPIRED_REASON),
         ]
         assert not store.get_node("source").decayed
+
+
+@pytest.mark.parametrize("change, expected", [
+    ("stable", "superseded"),
+    ("forget-original", "manual"),
+    ("forget-correction", None),
+    ("second-correction", "superseded"),
+    ("reclassify", None),
+])
+def test_sweep_admits_current_supersession(tmp_path, monkeypatch, change, expected):
+    db = tmp_path / "memory.sqlite3"
+    ids = ("original", "correction", "other", "unrelated")
+    with MemoryStore(db) as store, MemoryStore(db) as peer:
+        assert peer.connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        for node_id in ids:
+            store.create_node(level="trace", node_id=node_id, content=node_id)
+        store.create_connection("correction", "original", "supersedes")
+        store.create_connection("other", "original", "supersedes", metadata=(
+            {} if change == "second-correction" else {"kind": "duplicate_content"}
+        ))
+        transaction = store.transaction
+        reservations = 0
+
+        @contextmanager
+        def interleave(*, immediate=False):
+            nonlocal reservations
+            if immediate:
+                reservations += 1
+                if reservations == 1:
+                    if change == "forget-original":
+                        decay.memory_forget(peer, "original", "manual")
+                    elif change in {"forget-correction", "second-correction"}:
+                        decay.memory_forget(peer, "correction", "manual")
+                    elif change == "reclassify":
+                        with peer.transaction():
+                            peer.connection.execute("""
+                                UPDATE connections SET metadata='{"kind":"duplicate_content"}'
+                                WHERE source_id='correction'
+                            """)
+            with transaction(immediate=immediate):
+                yield
+
+        monkeypatch.setattr(store, "transaction", interleave)
+        scans = []
+        store.connection.set_trace_callback(lambda sql: scans.append(store.connection.in_transaction)
+                                            if "FROM connections c" in sql else None)
+        result = _decay_sweep_if_due(store, now=NOW)
+        count = int(expected == "superseded")
+        assert result["decayed_count"] == result["superseded_count"] == count
+        assert scans == [False] * (1 if change == "stable" else 2)
+        for node_id in ids:
+            node = peer.get_node(node_id)
+            reason = expected if node_id == "original" else None
+            if node_id == "correction" and change in {"forget-correction", "second-correction"}:
+                reason = "manual"
+            assert (node.content, node.decayed, node.decay_reason) == (node_id, reason is not None, reason)
+        assert peer.connection.execute("SELECT count(*) FROM connections").fetchone()[0] == 2
+
+
+@pytest.mark.parametrize("interruption", ["none", "unrelated", "manual", "repeated", "failure"])
+def test_sweep_keeps_its_own_supersession_basis_and_committed_prefix(tmp_path, monkeypatch, interruption):
+    db = tmp_path / "memory.sqlite3"
+    with MemoryStore(db) as store, MemoryStore(db) as peer:
+        # Either first retirement takes the other candidate's only live basis.
+        for node_id in ("left", "right", "unrelated"):
+            store.create_node(level="trace", node_id=node_id, content=node_id)
+        store.create_connection("left", "right", "supersedes")
+        store.create_connection("right", "left", "supersedes")
+        transaction = store.transaction
+        reservations = 0
+
+        @contextmanager
+        def interleave(*, immediate=False):
+            nonlocal reservations
+            if immediate:
+                reservations += 1
+                if reservations == 2:
+                    retired, = [i for i in ("left", "right") if peer.get_node(i).decayed]
+                    if interruption == "manual":
+                        decay.memory_forget(peer, retired, "manual")
+                    elif interruption == "failure":
+                        peer.connection.execute("""
+                            CREATE TRIGGER fail_retirement BEFORE UPDATE OF decayed ON nodes
+                            BEGIN SELECT RAISE(ABORT, 'failed retirement'); END
+                        """)
+                if reservations >= 2 and interruption in {"unrelated", "repeated"}:
+                    if reservations == 2 or interruption == "repeated":
+                        peer.set_kv("unrelated-change", str(reservations))
+            with transaction(immediate=immediate):
+                yield
+
+        monkeypatch.setattr(store, "transaction", interleave)
+        if interruption == "failure":
+            with pytest.raises(sqlite3.IntegrityError, match="failed retirement"):
+                _decay_sweep_if_due(store, now=NOW)
+            assert peer.get_kv(_DECAY_SWEEP_KV_KEY) is None
+        else:
+            result = _decay_sweep_if_due(store, now=NOW)
+            assert result["superseded_count"] == (1 if interruption in {"manual", "repeated"} else 2)
+        reasons = [peer.get_node(i).decay_reason for i in ("left", "right")]
+        if interruption in {"none", "unrelated"}:
+            assert reasons == ["superseded", "superseded"]
+        else:
+            assert set(reasons) == {None, "manual" if interruption == "manual" else "superseded"}
+        assert not peer.get_node("unrelated").decayed
