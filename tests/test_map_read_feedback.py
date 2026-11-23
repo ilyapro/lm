@@ -213,19 +213,87 @@ def test_recall_rechecks_version_after_resolving_earlier_event(runtime, monkeypa
     asyncio.run(scenario())
 
 
-def test_unconfirmed_audit_write_does_not_report_or_apply_map_credit(runtime):
+@pytest.mark.parametrize("delivery", ["ordinary", "map", "both"])
+@pytest.mark.parametrize("fault", ["none", "audit_abort", "audit_ignore", "credit"])
+@pytest.mark.parametrize("carrier", ["recall", "remember"])
+def test_public_feedback_matches_stored_audit(runtime, delivery, fault, carrier):
     mcp, store, _ = runtime
 
     async def scenario():
         async with Client(mcp) as client:
             shown = await recall(client)
-            read = await call(client, "memory_lookup", node_id=member(shown),
-                              map_event_id=shown["recall_event_id"])
-            store.connection.execute("""CREATE TEMP TRIGGER refuse_mark BEFORE INSERT ON recall_feedback_marks
-                                        BEGIN SELECT RAISE(ABORT, 'unavailable'); END""")
-            marked = await recall(client, "amber", used=[read["results"][0]["feedback_ref"]])
-            assert marked["feedback_marks"] == {
+            event = shown["recall_event_id"]
+            ids, refs = [], []
+            if delivery in ("ordinary", "both"):
+                ids.append(shown["results"][0]["id"])
+                refs.append(ids[-1])
+            if delivery in ("map", "both"):
+                ids.append(member(shown))
+                read = await call(client, "memory_lookup", node_id=ids[-1], map_event_id=event)
+                refs.append(read["results"][0]["feedback_ref"])
+
+            if fault.startswith("audit_"):
+                action = "IGNORE" if fault == "audit_ignore" else "ABORT, 'unavailable'"
+                store.connection.execute(f"""CREATE TEMP TRIGGER refuse_mark BEFORE INSERT
+                    ON recall_feedback_marks WHEN NEW.accepted = 0
+                    BEGIN SELECT RAISE({action}); END""")
+            elif fault == "credit":
+                store.connection.execute("""CREATE TEMP TRIGGER refuse_credit BEFORE INSERT
+                    ON recall_explicit_credit BEGIN SELECT RAISE(ABORT, 'unavailable'); END""")
+
+            used = [*refs, refs[0]]
+            if carrier == "recall":
+                result = await recall(client, "amber", used=used)
+                source = result["recall_event_id"]
+                assert result["results"]
+                assert store.get_recall_event(source).query == "amber"
+            else:
+                result = await call(client, "memory_remember", content="Synthetic new fact.",
+                                    context={"scope": SCOPE}, used=used)
+                source = result["node"]["id"]
+                assert store.get_node(source).content == "Synthetic new fact."
+
+            accepted = 0 if fault.startswith("audit_") else len(ids)
+            reasons = {"duplicate": 1}
+            if not accepted:
+                reasons["unconfirmed"] = len(ids)
+            assert result["feedback_marks"] == {
+                "accepted": accepted, "dropped": len(used) - accepted, "by_reason": reasons,
+            }
+            with sqlite3.connect(store.db_path) as reader:
+                audits = reader.execute("""SELECT node_id, accepted, reject_reason, recall_event_id,
+                    source_id FROM recall_feedback_marks ORDER BY id""").fetchall()
+                assert audits == ([(target, 1, None, event, source) for target in ids]
+                                  + [(ids[0], 0, "duplicate", "", source)] if accepted else [])
+                claims = reader.execute(
+                    "SELECT node_id, recall_event_id FROM recall_explicit_credit ORDER BY node_id"
+                ).fetchall()
+                assert claims == (sorted((target, event) for target in ids) if fault == "none" else [])
+
+    asyncio.run(scenario())
+
+
+def test_unconfirmed_audit_acknowledgement_is_not_retried(runtime, monkeypatch):
+    mcp, store, _ = runtime
+    record = store.record_feedback_marks
+
+    def lose_acknowledgement(rows):
+        record(rows)
+        raise RuntimeError("audit acknowledgement unavailable")
+
+    async def scenario():
+        async with Client(mcp) as client:
+            shown = await recall(client)
+            target = shown["results"][0]["id"]
+            monkeypatch.setattr(store, "record_feedback_marks", lose_acknowledgement)
+            result = await recall(client, "amber", used=[target])
+            assert result["feedback_marks"] == {
                 "accepted": 0, "dropped": 1, "by_reason": {"unconfirmed": 1},
             }
-            assert not store.connection.execute("SELECT * FROM recall_explicit_credit").fetchall()
+            with sqlite3.connect(store.db_path) as reader:
+                assert reader.execute(
+                    "SELECT node_id, accepted FROM recall_feedback_marks"
+                ).fetchall() == [(target, 1)]
+                assert not reader.execute("SELECT * FROM recall_explicit_credit").fetchall()
+
     asyncio.run(scenario())
