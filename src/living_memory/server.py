@@ -1048,8 +1048,8 @@ def _register_tools(
         Optional explicit marks run before implicit feedback and roll back
         with a failed required write; their own failures remain nonfatal.
         Due requests are recorded with the knowledge. Edge derivation and
-        worker admission are nonfatal post-commit work. This does not make retries after response loss
-        exactly-once.
+        worker admission are nonfatal post-commit work. A retry after response
+        loss can append another trace.
         """
 
         alternatives = (
@@ -2042,7 +2042,8 @@ def _auto_consolidation_due(
     Trace rows retain admitted knowledge, including replacements and soft
     deletions. SQLite serializes inserts and assigns increasing rowids.
     Count through this transaction's last inserted trace, so later commits
-    cannot shift its interval. The covering-index count includes alternatives in the same write.
+    cannot shift its interval. The covering-index count includes alternatives
+    in the same write.
     """
 
     row = store.connection.execute(

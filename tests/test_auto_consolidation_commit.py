@@ -82,6 +82,9 @@ def test_cold_server_observes_knowledge_boundary(tmp_path, monkeypatch, tool, pr
 
     with sqlite3.connect(path) as reader:
         assert reader.execute("SELECT COUNT(*) FROM nodes WHERE level='trace'").fetchone() == (committed,)
+        active, = reader.execute(
+            "SELECT COUNT(*) FROM nodes WHERE level='trace' AND scope=? AND decayed=0", (SCOPE,),
+        ).fetchone()
         row = reader.execute("SELECT value FROM kv WHERE key=?", (PENDING_KV_KEY,)).fetchone()
         assert set(json.loads(row[0]) if row else {}) == ({SCOPE} if due else set())
 
@@ -91,7 +94,7 @@ def test_cold_server_observes_knowledge_boundary(tmp_path, monkeypatch, tool, pr
         assert scheduler.wait_idle(30, include_retries=True)
         assert scheduler.status()["passes_completed"] == int(due)
         if due:
-            assert scheduler.last_result(SCOPE)["summary"]["traces_considered"] >= 4
+            assert scheduler.last_result(SCOPE)["summary"]["traces_considered"] == active
             assert cold.memory_store.get_kv(PENDING_KV_KEY) == "{}"
         next_write = cold.tools["memory_remember"](f"{TOPIC} after restart", CONTEXT)
         assert bool(next_write["auto_consolidation"]) == (committed == 4)
