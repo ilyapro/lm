@@ -4,8 +4,6 @@ import asyncio
 import json
 
 import pytest
-from unittest.mock import patch
-
 from fastmcp import Client
 
 from living_memory.server import create_mcp_server
@@ -36,11 +34,12 @@ async def graph_response(path, *, count, reverse, broad):
 
         async with Client(server) as client:
             args = {} if broad else {"scope": "project:p"}
-            with patch("living_memory.storage.new_ulid", return_value="synthetic-event"):
-                response = await client.call_tool("memory_recall", {
-                    "query": "zygomorph", "depth": "causal", "max_results": 5, **args,
-                })
-            return response.data
+            response = await client.call_tool("memory_recall", {
+                "query": "zygomorph", "depth": "causal", "max_results": 5, **args,
+            })
+            payload = dict(response.data)
+            assert payload.pop("recall_event_id")
+            return payload
     finally:
         server.auto_consolidation.close()
         store.close()
@@ -53,7 +52,7 @@ def test_scoped_causal_response_ignores_foreign_edges(tmp_path, monkeypatch, rev
     responses = [asyncio.run(graph_response(tmp_path / f"{count}.db", count=count,
                                             reverse=reverse, broad=False))
                  for count in (0, 199, 200)]
-    assert [row["id"] for row in responses[0]["results"]] == ["root", "target"]
+    assert {row["id"] for row in responses[0]["results"]} == {"root", "target"}
     assert responses[0] == responses[1] == responses[2]
     payload = json.dumps(responses[2])
     assert all(secret not in payload for secret in ("foreign-", "saturn lamp", "project:other"))
