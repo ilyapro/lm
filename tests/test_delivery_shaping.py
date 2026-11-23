@@ -9,6 +9,7 @@ full-node diet, provenance compaction, stats trim, sparse entries).
 
 import copy
 import json
+import tracemalloc
 from typing import Any
 
 import pytest
@@ -35,6 +36,7 @@ from living_memory.delivery import (
     SNIPPET_LADDER_ENV,
     SPARSE_ENV,
     STATS_COMPACTION_ENV,
+    _one_line_preview,
     context_value_max_chars_from_env,
     full_node_diet_enabled_from_env,
     provenance_value_max_chars_from_env,
@@ -470,11 +472,25 @@ def test_preview_long_first_line_cut_at_sentence() -> None:
     ("字" * PREVIEW_MAX_CHARS + "\u2007" * 4096 + "\nrest", "字" * PREVIEW_MAX_CHARS),
     ("字" * PREVIEW_MAX_CHARS + "\u2007" * 4096 + "Z", "字" * (PREVIEW_MAX_CHARS - 1) + ELLIPSIS),
     ("x" + "\u2003" * 4096 + "z\nrest", "x" + ELLIPSIS),
-])
+], ids=["blank", "literal-lf", "padded-limit", "past-limit", "internal-padding"])
 def test_preview_uses_trimmed_first_literal_line(content: str, expected: str) -> None:
     shaped = shape([make_result(make_node("n1", content))], delivered={"n1"})
 
     assert shaped[0]["node"]["content"] == expected
+
+
+@pytest.mark.parametrize("separator", ["\n", ""])
+def test_preview_does_not_allocate_the_discarded_text(separator: str) -> None:
+    content = "First" + separator + "x" * (1 << 20) + "\n"
+    tracemalloc.start()
+    try:
+        preview = _one_line_preview(content)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert len(preview) <= PREVIEW_MAX_CHARS
+    assert peak < len(content) // 8
 
 
 def test_preview_never_contains_newline() -> None:
