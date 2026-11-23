@@ -346,6 +346,8 @@ FILTER_TAG_WITHHELD = "w"
 FILTER_TAG_DROPPED = "d"
 
 _WHITESPACE_RE = re.compile(r"\s+")
+# Python str.splitlines() boundaries, including its Unicode separators.
+_FIRST_LINE_RE = re.compile(r"[^\n\r\v\f\x1c-\x1e\x85\u2028\u2029]*")
 _TERM_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
 _HEX_DIGITS = frozenset("0123456789abcdef")
 _VOWELS = frozenset("aeiouyаеёиоуыэюя")
@@ -658,13 +660,12 @@ class _SelectionLedger:
         self.excluded[reason] += 1
         if reason not in _SAMPLEABLE_REASONS or node is None:
             return
-        gist = _selection_gist(node)
-        if not gist:
-            return
-        self.sampleable += 1
-        self.first_samples.setdefault(
-            reason, SelectionSample(reason=reason, gist=gist, ordinal=ordinal)
-        )
+        needs_sample = reason not in self.first_samples
+        gist = _selection_gist(node, SELECTION_SAMPLE_GIST_CHARS if needs_sample else 1)
+        if gist:
+            self.sampleable += 1
+            if needs_sample:
+                self.first_samples[reason] = SelectionSample(reason=reason, gist=gist, ordinal=ordinal)
 
     def freeze(self, admitted: int) -> SelectionAccounting:
         """Close the ledger into the canonical, trimmed accounting.
@@ -990,13 +991,9 @@ def _ballast_reason(
     if not isinstance(content, str):
         return None
 
-    if content.startswith("[file-chunk]"):
-        suffix = content[len("[file-chunk]") :]
-        separator = suffix[:1]
-        header = ""
-        if separator in {" ", "\t"}:
-            lines = suffix.lstrip(" \t").splitlines()
-            header = lines[0].strip() if lines else ""
+    first_line = _FIRST_LINE_RE.match(content).group()
+    if first_line.startswith(("[file-chunk] ", "[file-chunk]\t")):
+        header = first_line[len("[file-chunk]"):].strip()
         try:
             envelope = json.loads(header)
         except (TypeError, ValueError):
@@ -1017,8 +1014,7 @@ def _ballast_reason(
             except (AttributeError, TypeError, ValueError):
                 continue
             kind_values.add(str(value or "").strip().lower().replace("-", "_"))
-    first_line = content.splitlines()[:1]
-    marker = (first_line[0] if first_line else "").strip().lower().replace("-", "_")
+    marker = first_line.strip().lower().replace("-", "_")
     if kind_values & _JOURNAL_KINDS or marker in {
         "[supervision_journal]",
         "[monitoring_journal]",
@@ -1093,14 +1089,22 @@ def _below_usefulness(node: Any, floor: float) -> bool:
     return score < floor
 
 
-def _selection_gist(node: Any) -> str:
-    """An identity-free, compact content example for selection forensics."""
+def _selection_gist(node: Any, limit: int) -> str:
+    """Return a bounded identity-free gist; one character suffices to count it."""
 
-    content = _collapse(getattr(node, "content", ""))
-    node_id = getattr(node, "id", None)
-    if isinstance(node_id, str) and node_id:
-        content = _collapse(content.replace(node_id, ""))
-    return _shorten(content, SELECTION_SAMPLE_GIST_CHARS)
+    text = str(getattr(node, "content", ""))
+    identity = getattr(node, "id", None)
+    node_id = identity if isinstance(identity, str) else ""
+    probe = 2 * (limit + len(node_id) + 1)
+    content = _collapse(text[:probe])
+    # Enough normalized lookahead rules out even an ID crossing the cut.
+    if len(text) > probe and (
+        len(content) <= limit + len(node_id) or (node_id and node_id in content)
+    ):
+        content = _collapse(text)
+    if node_id:
+        content = content.replace(node_id, "")
+    return _shorten(content, limit)
 
 
 def _terms(text: str) -> list[str]:
