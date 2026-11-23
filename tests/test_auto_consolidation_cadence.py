@@ -296,16 +296,17 @@ def test_fastmcp_cadence_follows_committing_writer(
     earlier, later = create_mcp_server(path), create_mcp_server(path)
     source = seed(earlier.memory_store, initial)[0]
     committed, resume = Event(), Event()
-    schedule = server._schedule_auto_consolidation_if_due
+    schedule = server._schedule_auto_consolidation
 
-    def pause_earlier(store, *args, **kwargs):
-        if store is earlier.memory_store:
+    def pause_earlier(scheduler, *args, **kwargs):
+        if scheduler is earlier.auto_consolidation:
+            store = earlier.memory_store
             assert not store.connection.in_transaction
             committed.set()
             assert resume.wait(30)
-        return schedule(store, *args, **kwargs)
+        return schedule(scheduler, *args, **kwargs)
 
-    monkeypatch.setattr(server, "_schedule_auto_consolidation_if_due", pause_earlier)
+    monkeypatch.setattr(server, "_schedule_auto_consolidation", pause_earlier)
 
     async def write(instance, kind, label, count=0):
         args = {"context": CONTEXT}

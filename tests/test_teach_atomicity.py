@@ -111,7 +111,7 @@ def test_one_commit_is_visible_before_scheduling(mcp, monkeypatch):
             ).fetchone() == (CORRECTION,)
         scheduled.append(True)
 
-    monkeypatch.setattr(server, "_schedule_auto_consolidation_if_due", schedule)
+    monkeypatch.setattr(server, "_schedule_auto_consolidation", schedule)
     store.connection.set_trace_callback(
         lambda statement: statements.append((statement, store.connection.total_changes))
     )
@@ -178,7 +178,7 @@ def test_required_failure_rolls_back_marks_and_retry_succeeds(mcp, monkeypatch, 
     ids, event_id = seed(mcp)
     store = mcp.memory_store
     scheduled = []
-    monkeypatch.setattr(server, "_schedule_auto_consolidation_if_due", lambda *a, **kw: scheduled.append(True))
+    monkeypatch.setattr(server, "_schedule_auto_consolidation", lambda *a, **kw: scheduled.append(True))
     store.connection.execute(f"CREATE TRIGGER reject_teach {FAULTS[stage]}")
     before = snapshot(store.db_path)
     with pytest.raises(sqlite3.IntegrityError, match="required teach fault"):

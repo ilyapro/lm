@@ -134,7 +134,23 @@ class AutoConsolidationScheduler:
 
     # -- write-path side -------------------------------------------------
 
-    def request(self, scope: str, *, trace_count: int | None = None) -> dict[str, Any]:
+    def record_request(self, scope: str, mark: str) -> None:
+        """Write a request in the caller's knowledge transaction, without admitting it.
+
+        The caller holds the store guard through commit and local admission.
+        Replace only marks this instance owns. A peer settling an older mark
+        must leave this write pending.
+        """
+        with self._persist_guard, self._cond:
+            self._load_and_merge_pending()
+            current = _read_pending(self._load_pending())
+            previous = {scope: self._saved[scope]} if scope in self._saved else {}
+            pending = _merge_pending(current, previous, {scope: mark})
+            self._save_pending(json.dumps(pending, sort_keys=True))
+
+    def request(
+        self, scope: str, *, trace_count: int | None = None, committed_mark: str | None = None,
+    ) -> dict[str, Any]:
         """Schedule a pass for ``scope`` and return at once.
 
         The returned dict is what the write reports: the pass is scheduled,
@@ -157,12 +173,14 @@ class AutoConsolidationScheduler:
                     queued.requested_at if queued.requested_at is not None else self._clock()
                 ),
             )
-            # A peer may already be running a pass for our previous mark.
-            self._desired[scope] = uuid4().hex
-            # Save coalesced requests too: an earlier save may have failed.
-            # Let failure reach the nonfatal post-commit boundary; no durable
-            # scheduling confirmation can be made in that case.
-            self._save_and_admit()
+            if committed_mark is not None:
+                self._saved[scope] = self._desired[scope] = committed_mark
+            else:
+                self._desired[scope] = uuid4().hex
+            if committed_mark is None or self._pending_dirty:
+                self._save_and_admit()
+            else:
+                self._admit_requests()
             worker_started = self._ensure_worker()
             self._cond.notify_all()
         report: dict[str, Any] = {
@@ -418,6 +436,9 @@ class AutoConsolidationScheduler:
                 self._save_pending(json.dumps(pending, sort_keys=True))
             self._saved = self._desired.copy()
         self._pending_dirty = False
+        self._admit_requests()
+
+    def _admit_requests(self) -> None:
         for scope, queued in self._queue.items():
             if queued.requested_at is not None:
                 # A saved due request overrides backoff and starts a fresh pass.

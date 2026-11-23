@@ -1047,8 +1047,8 @@ def _register_tools(
         knowledge write and reports the affected ids as indexing deferred.
         Optional explicit marks run before implicit feedback and roll back
         with a failed required write; their own failures remain nonfatal.
-        Edge derivation, instruction refresh and scheduling are nonfatal
-        post-commit work. This does not make retries after response loss
+        Due requests are recorded with the knowledge. Edge derivation and
+        worker admission are nonfatal post-commit work. This does not make retries after response loss
         exactly-once.
         """
 
@@ -1105,17 +1105,18 @@ def _register_tools(
                     store, node, preparation=feedback_preparation,
                 )
                 node = implicit_feedback.trace
+                due = _record_auto_consolidation_if_due(
+                    store, auto_consolidation, node.scope,
+                    rejected_nodes[-1].id if rejected_nodes else node.id,
+                    admitted_traces=1 + len(rejected_nodes),
+                )
             # Reference and provenance derivation follows the required write.
             # A derivation failure must never lose the remembered trace.
             try:
                 derive_edges_for_new_trace(store, node)
             except Exception:
                 pass
-            scheduled = _schedule_auto_consolidation_if_due(
-                store, auto_consolidation, node.scope,
-                rejected_nodes[-1].id if rejected_nodes else node.id,
-                admitted_traces=1 + len(rejected_nodes),
-            )
+            scheduled = _schedule_auto_consolidation(auto_consolidation, node.scope, due)
             response = {
                 "node": _remember_node_confirmation(node),
                 "implicit_feedback": _implicit_feedback_to_dict(implicit_feedback),
@@ -1144,8 +1145,8 @@ def _register_tools(
         """Commit the correction, provenance and accompanying marks together.
 
         Explicit marks use the reserved corrective ID and precede implicit
-        feedback. Their own failures remain nonfatal. Optional
-        consolidation scheduling runs only after the knowledge commit.
+        feedback. Their own failures remain nonfatal. A due
+        consolidation request commits with the correction before worker admission.
         Corrective trace chunks are prepared from normalized text before the
         store lock. Derived digest/chunk preparation also runs outside it; the
         writer checks its inputs against the current graph before using it.
@@ -1193,12 +1194,15 @@ def _register_tools(
                             preparation=preparation,
                         )
                         indexing = _index_written_traces(store, [taught.corrective_trace], prepared)
+                        scope = taught.corrective_trace.scope
+                        due = _record_auto_consolidation_if_due(
+                            store, auto_consolidation, scope, taught.corrective_trace.id,
+                        )
                     response = _teach_result_to_dict(taught)
                     # The corrective trace counts toward the scope's cadence like any
                     # write; the pass it makes due is scheduled, never run here.
-                    response["auto_consolidation"] = _schedule_auto_consolidation_if_due(
-                        store, auto_consolidation, taught.corrective_trace.scope,
-                        taught.corrective_trace.id,
+                    response["auto_consolidation"] = _schedule_auto_consolidation(
+                        auto_consolidation, scope, due,
                     )
                     if marks is not None:
                         response["feedback_marks"] = marks.summary()
@@ -2038,8 +2042,7 @@ def _auto_consolidation_due(
     Trace rows retain admitted knowledge, including replacements and soft
     deletions. SQLite serializes inserts and assigns increasing rowids.
     Count through this transaction's last inserted trace, so later commits
-    cannot shift its interval. This covering-index read stays outside the
-    write lock, including for a remember with multiple alternatives.
+    cannot shift its interval. The covering-index count includes alternatives in the same write.
     """
 
     row = store.connection.execute(
@@ -2074,33 +2077,38 @@ def _auto_consolidation_due(
     return int(row["count"]) or None
 
 
-def _schedule_auto_consolidation_if_due(
-    store: MemoryStore,
-    scheduler: AutoConsolidationScheduler,
-    scope: str,
-    last_trace_id: str,
-    *,
-    admitted_traces: int = 1,
-) -> dict[str, Any] | None:
-    """Schedule newly due work or continue an existing pending queue.
-
-    The write path answers at write time: the report says the pass is
-    ``scheduled`` (``coalesced`` when it joins one already queued or
-    running), and the pass's own summary lands in the scheduler's
-    ``last_result(scope)`` when the worker finishes it.
-
-    A non-boundary write retries unread pending state, saves or a missing worker
-    without requesting another pass or returning a new scheduling report. Both
-    write tools call this after their required transaction commits.
-    Optional scheduling failures are logged and cannot replace that outcome.
-    """
-
+def _record_auto_consolidation_if_due(
+    store: MemoryStore, scheduler: AutoConsolidationScheduler, scope: str,
+    last_trace_id: str, admitted_traces: int = 1,
+) -> tuple[int, str | None] | None:
+    """Record only crossed intervals, using the trace identity as the pending mark."""
     try:
         trace_count = _auto_consolidation_due(store, scope, last_trace_id, admitted_traces)
         if trace_count is None:
+            return None
+    except Exception:
+        logging.getLogger(__name__).warning("could not check consolidation cadence", exc_info=True)
+        return None
+    try:
+        scheduler.record_request(scope, last_trace_id)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "could not record consolidation request for %s", scope, exc_info=True,
+        )
+        return trace_count, None  # Retry through ordinary scheduling after commit.
+    return trace_count, last_trace_id
+
+
+def _schedule_auto_consolidation(
+    scheduler: AutoConsolidationScheduler, scope: str, due: tuple[int, str | None] | None,
+) -> dict[str, Any] | None:
+    """Admit a committed request or retry outstanding work after a knowledge write."""
+    try:
+        if due is None:
             scheduler.retry_pending()
             return None
-        return scheduler.request(scope, trace_count=trace_count)
+        trace_count, mark = due
+        return scheduler.request(scope, trace_count=trace_count, committed_mark=mark)
     except Exception:
         logging.getLogger(__name__).warning(
             "could not schedule post-commit auto-consolidation for %s", scope, exc_info=True
