@@ -5700,6 +5700,12 @@ class MemoryStore:
         ).fetchone()
         return row[0] if row else None
 
+    def live_anchor_scopes(self) -> list[str]:
+        """Enumerate broad index partitions without fetching question text."""
+        return [row[0] for row in self._conn.execute(
+            "SELECT DISTINCT scope FROM query_anchors WHERE decayed = 0"
+        )]
+
     def iter_foreign_anchor_queries(
         self, encoder_id: str, scopes: Sequence[str] | None,
     ) -> Iterator[tuple[str, str]]:

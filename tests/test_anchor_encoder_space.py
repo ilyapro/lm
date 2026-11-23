@@ -262,11 +262,14 @@ def test_historical_index_reads_and_nominees_match_full_scan(tmp_path, monkeypat
                     assert result and result == actual
             assert observed[0] and observed[0] == observed[1]
 
-        check(None, 12, 12)
+        check("global", 6, 6)
+        check("project:absent", 0, 6)
+        check(None, 6, 12)
         insert(12, "active", "global")
         check(None, 0, 12)
-        check("global", 6, 6)
-        check(None, 12, 12)
+        check("global", 0, 6)
+        check("project:other", 0, 12)
+        check(None, 0, 12)
         check(None, 0, 12)
         model.encoder = "previous"
         check(None, 9, 9)

@@ -18,7 +18,7 @@ import logging
 import os
 import re
 from bisect import bisect_left
-from collections import Counter, OrderedDict, defaultdict, deque
+from collections import ChainMap, Counter, OrderedDict, defaultdict, deque
 from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
@@ -354,13 +354,33 @@ class _AnchorTextIndex:
                 self.postings[term].append(anchor_id)
             self.postings["=" + " ".join(text.split())].append(anchor_id)
 
-    def nearest(self, query: str, limit: int) -> list[str]:
-        terms = set(tokenize(query, evidence=True))
+    def scores(self, terms: set[str], exact: str) -> dict[str, float]:
         overlap = Counter(key for term in terms for key in self.postings.get(term, ()))
         scores = {key: count / (len(terms) + self.term_counts[key]) for key, count in overlap.items()}
         # Exact text also covers punctuation and stopword-only queries.
-        scores.update((key, 1.0) for key in self.postings.get("=" + " ".join(query.split()), ()))
-        return nsmallest(limit, scores, key=lambda key: (-scores[key], key))
+        scores.update((key, 1.0) for key in self.postings.get(exact, ()))
+        return scores
+
+
+@dataclass
+class _AnchorTextCache:
+    encoder: str
+    revision: int | tuple[int, int]
+    by_scope: dict[str, _AnchorTextIndex] = field(default_factory=dict)
+    complete: bool = False
+
+    def indexes(self, store: MemoryStore, scopes: tuple[str, ...] | None) -> list[_AnchorTextIndex]:
+        if scopes is None and self.complete:
+            return list(self.by_scope.values())
+        requested = store.live_anchor_scopes() if scopes is None else scopes
+        for scope in requested:
+            if scope not in self.by_scope and not self.complete:
+                index = _AnchorTextIndex(store.iter_foreign_anchor_queries(self.encoder, (scope,)))
+                if index.texts:
+                    self.by_scope[scope] = index
+        if scopes is None:
+            self.complete = True
+        return [self.by_scope[scope] for scope in requested if scope in self.by_scope]
 
 
 _AnchorBlockKey = tuple[int, tuple[str | None, bool] | None]
@@ -502,9 +522,7 @@ class MemoryRecallService:
         self._chunk_gathers: dict[int, _ChunkGatherPlan] = {}
         self._anchor_vectors: _AnchorVectorCache | None = None
         self._unlabelled_vectors: _AnchorVectorCache | None = None
-        self._anchor_text_index: tuple[
-            str, tuple[str, ...] | None, int | tuple[int, int], _AnchorTextIndex
-        ] | None = None
+        self._anchor_text_cache: _AnchorTextCache | None = None
         self._anchor_encodings: OrderedDict[tuple[str, str], Sequence[float]] = OrderedDict()
         self._store_embedder_shared = False
         self._unavailable_legacy_chunks: set[str] = set()
@@ -540,19 +558,22 @@ class MemoryRecallService:
                     "PRAGMA data_version"
                 ).fetchone()[0]
                 revision = (source.revision, data_version)
-        cached = self._anchor_text_index
-        if revision is not None and cached is not None and cached[:3] == (encoder, scopes, revision):
-            index = cached[3]
+        if revision is None:
+            indexes = [_AnchorTextIndex(self.store.iter_foreign_anchor_queries(encoder, scopes))]
         else:
-            index = _AnchorTextIndex(self.store.iter_foreign_anchor_queries(encoder, scopes))
-            if revision is not None:
-                self._anchor_text_index = (encoder, scopes, revision, index)
-        if len(index.texts) <= ANCHOR_MATCH_LIMIT:
-            return index.texts
+            cache = self._anchor_text_cache
+            if cache is None or (cache.encoder, cache.revision) != (encoder, revision):
+                cache = self._anchor_text_cache = _AnchorTextCache(encoder, revision)
+            indexes = cache.indexes(self.store, scopes)
+        if sum(len(index.texts) for index in indexes) <= ANCHOR_MATCH_LIMIT:
+            return {key: text for index in indexes for key, text in index.texts.items()}
 
         # Neither a lexical hit nor a historical cosine contributes a score.
         # The two shortlists cover changed spaces and unlabelled compatible rows.
-        candidates = index.nearest(query.text, ANCHOR_MATCH_LIMIT)
+        terms = set(tokenize(query.text, evidence=True))
+        exact = "=" + " ".join(query.text.split())
+        ranked = ((-score, key) for index in indexes for key, score in index.scores(terms, exact).items())
+        candidates = [key for _, key in nsmallest(ANCHOR_MATCH_LIMIT, ranked)]
         if isinstance(source, _AnchorVectorCache):
             read_revision = self.store.unlabelled_anchor_vector_revision
             vector_revision = read_revision()
@@ -569,7 +590,8 @@ class MemoryRecallService:
             limit=ANCHOR_MATCH_LIMIT, space=(None, True),
         )
         candidates.extend(anchor_id for anchor_id, _score in nominations)
-        return {anchor_id: index.texts[anchor_id] for anchor_id in candidates if anchor_id in index.texts}
+        texts = ChainMap(*(index.texts for index in indexes))
+        return {anchor_id: texts[anchor_id] for anchor_id in candidates if anchor_id in texts}
 
     def prepare_anchor_history(
         self, query: _PreparedQuery, *, scope: str | None, ambient_context: dict[str, Any] | None,
