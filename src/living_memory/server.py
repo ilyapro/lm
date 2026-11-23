@@ -2150,6 +2150,7 @@ def _build_auto_consolidation(
         load_pending=load_pending,
         save_pending=save_pending,
         persist_guard=runtime_lock,
+        pending_transaction=lambda: store.transaction(immediate=True),
     )
     scheduler.resume()
     return scheduler

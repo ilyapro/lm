@@ -1,7 +1,7 @@
 """Background runner for the consolidation pass a write makes due.
 
 The write path only schedules; one worker thread per server runs the passes.
-Pending scopes are loaded and merged before replacement saves and admission.
+Durable requests are merged before admission and settled after completion.
 A later committed write retries failed reads, snapshot saves or startup;
 server start resumes durable pending work.
 
@@ -23,9 +23,11 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Iterable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 __all__ = [
     "PENDING_KV_KEY",
@@ -40,6 +42,40 @@ _LOG = logging.getLogger(__name__)
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+# A single mark also covers the original scope -> timestamp representation.
+_Pending = dict[str, str | list[str]]
+
+
+def _read_pending(raw: str | None) -> _Pending:
+    pending = json.loads(raw) if raw is not None else {}
+    if not isinstance(pending, dict) or not all(
+        isinstance(value, str)
+        or (isinstance(value, list) and value and all(isinstance(mark, str) for mark in value))
+        for value in pending.values()
+    ):
+        raise ValueError("invalid pending auto-consolidation marks")
+    return pending
+
+
+def _marks(value: str | list[str]) -> set[str]:
+    return {value} if isinstance(value, str) else set(value)
+
+
+def _merge_pending(current: _Pending, previous: _Pending, desired: _Pending) -> _Pending:
+    """Apply only this scheduler's changes to the marks still in the store."""
+
+    for scope in previous.keys() | desired.keys():
+        if previous.get(scope) == desired.get(scope):
+            continue
+        marks = _marks(current.get(scope, [])) - _marks(previous.get(scope, []))
+        marks.update(_marks(desired.get(scope, [])))
+        if marks:
+            current[scope] = marks.pop() if len(marks) == 1 else sorted(marks)
+        else:
+            current.pop(scope, None)
+    return current
 
 
 @dataclass(frozen=True)
@@ -58,7 +94,8 @@ class AutoConsolidationScheduler:
     through the server's lock); either may be ``None`` for an in-memory queue.
     ``persist_guard`` is held around the initial read and every save, snapshot
     included, so pending state cannot be overwritten before it is loaded or
-    saves land out of order; pass the store's lock so it is always taken first.
+    saves land out of order. Shared stores supply a write transaction around
+    the read, merge and save across independent connections.
     """
 
     def __init__(
@@ -68,12 +105,14 @@ class AutoConsolidationScheduler:
         load_pending: Callable[[], str | None] | None = None,
         save_pending: Callable[[str], None] | None = None,
         persist_guard: Any | None = None,
+        pending_transaction: Callable[[], AbstractContextManager] = nullcontext,
         retry_delays: Iterable[float] = DEFAULT_RETRY_DELAYS,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._run_pass = run_pass
         self._load_pending = load_pending
         self._save_pending = save_pending
+        self._pending_transaction = pending_transaction
         self._pending_loaded = load_pending is None
         self._persist_guard = persist_guard if persist_guard is not None else threading.RLock()
         self._retry_delays = tuple(float(delay) for delay in retry_delays)
@@ -81,8 +120,9 @@ class AutoConsolidationScheduler:
         self._cond = threading.Condition()
         # Accepted readiness and unsaved request time; insertion order is FIFO.
         self._queue: dict[str, _QueuedPass] = {}
-        # scope -> first request time (ISO) of the not-yet-completed pass.
-        self._persisted: dict[str, str] = {}
+        # Local desired marks and the last successfully loaded or saved local view.
+        self._persisted: _Pending = {}
+        self._saved: _Pending = {}
         # The current snapshot still needs saving, including completed removals.
         self._pending_dirty = False
         self._attempts: dict[str, int] = {}
@@ -117,7 +157,8 @@ class AutoConsolidationScheduler:
                     queued.requested_at if queued.requested_at is not None else self._clock()
                 ),
             )
-            self._persisted.setdefault(scope, _utc_now())
+            # A peer may already be running a pass for our previous mark.
+            self._persisted[scope] = uuid4().hex
             # Save coalesced requests too: an earlier save may have failed.
             # Let failure reach the nonfatal post-commit boundary; no durable
             # scheduling confirmation can be made in that case.
@@ -355,14 +396,10 @@ class AutoConsolidationScheduler:
 
         if self._pending_loaded:
             return
-        raw = self._load_pending()
-        stored = json.loads(raw) if raw is not None else {}
-        if not isinstance(stored, dict) or any(not isinstance(value, str) for value in stored.values()):
-            raise ValueError("pending auto-consolidation scopes must map scopes to timestamp strings")
-        # Validate the entire payload before changing state. Durable timestamps
-        # precede requests retained in memory while the read was unavailable.
-        self._persisted.update(stored)
-        for scope in stored:
+        stored = _read_pending(self._load_pending())
+        self._saved = stored
+        for scope, marks in stored.items():
+            self._persisted.setdefault(scope, marks)
             self._queue.setdefault(scope, _QueuedPass(requested_at=self._clock()))
         self._pending_loaded = True
 
@@ -372,7 +409,14 @@ class AutoConsolidationScheduler:
         self._pending_dirty = True
         self._load_and_merge_pending()
         if self._save_pending is not None:
-            self._save_pending(json.dumps(self._persisted, sort_keys=True))
+            with self._pending_transaction():
+                pending = self._persisted
+                if self._load_pending is not None:
+                    pending = _merge_pending(
+                        _read_pending(self._load_pending()), self._saved, self._persisted
+                    )
+                self._save_pending(json.dumps(pending, sort_keys=True))
+            self._saved = self._persisted.copy()
         self._pending_dirty = False
         for scope, queued in self._queue.items():
             if queued.requested_at is not None:
