@@ -2031,7 +2031,7 @@ class MemoryStore:
             params.extend((field, value))
 
         params.append(int(limit))
-        rows = self._conn.execute(
+        with closing(self._conn.execute(
             f"""
             SELECT *
             FROM nodes
@@ -2040,8 +2040,8 @@ class MemoryStore:
             LIMIT ?
             """,
             params,
-        ).fetchall()
-        return [decode(row) for row in rows]
+        )) as rows:
+            return [decode(row) for row in rows]
 
     def update_node(
         self,
