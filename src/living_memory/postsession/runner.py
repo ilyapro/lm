@@ -146,18 +146,18 @@ def _parse_instant(value: Any) -> datetime | None:
     return parsed
 
 
-def _load_json(path: Path) -> tuple[dict[str, Any] | None, str]:
+def _load_json(path: Path) -> tuple[dict[str, Any] | None, bytes, str]:
     try:
-        raw = path.read_text(encoding="utf-8")
+        raw = path.read_bytes()
     except OSError as exc:
-        return None, f"cannot read {path}: {exc}"
+        return None, b"", f"cannot read {path}: {exc}"
     try:
-        data = json.loads(raw)
+        data = json.loads(raw.decode("utf-8"))
     except ValueError as exc:
-        return None, f"{path} is not valid JSON: {exc}"
+        return None, b"", f"{path} is not valid JSON: {exc}"
     if not isinstance(data, dict):
-        return None, f"{path} does not hold a JSON object"
-    return data, ""
+        return None, b"", f"{path} does not hold a JSON object"
+    return data, raw, ""
 
 
 @dataclass(frozen=True)
@@ -258,7 +258,7 @@ def evaluate_gate(
         "max_age_days": max_age_days,
     }
 
-    baseline, problem = _load_json(baseline_path)
+    baseline, _, problem = _load_json(baseline_path)
     if baseline is None:
         return GateDecision("MISSING", reasons=(f"pre-registered bar: {problem}",), details=details)
     bar = baseline.get("pre_registered_bar")
@@ -292,12 +292,10 @@ def evaluate_gate(
         }
     )
 
-    verdict, problem = _load_json(verdict_path)
+    verdict, verdict_bytes, problem = _load_json(verdict_path)
     if verdict is None:
         return GateDecision("MISSING", reasons=(f"gate verdict: {problem}",), details=details)
-    details["verdict_sha256"] = hashlib.sha256(
-        verdict_path.read_bytes()
-    ).hexdigest()
+    details["verdict_sha256"] = hashlib.sha256(verdict_bytes).hexdigest()
 
     meta = verdict.get("meta") or {}
     if meta.get("artifact") != "counterfactual_consumption":
@@ -389,7 +387,7 @@ def evaluate_gate(
             ),
             details,
         )
-    control, problem = _load_json(control_path)
+    control, _, problem = _load_json(control_path)
     if control is None:
         return GateDecision(
             "MISSING", "extracted_vs_control", (f"organic control: {problem}",), details

@@ -18,6 +18,7 @@ Layers:
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -131,6 +132,17 @@ def test_gate_missing_verdict_is_not_authorized(tmp_path: Path) -> None:
     assert decision.status == "MISSING"
     assert not decision.authorized
     assert any("absent.json" in reason for reason in decision.reasons)
+
+
+@pytest.mark.parametrize("raw", [b"{", b"[]", b"\xff", b"\xef\xbb\xbf{}", "{}".encode("utf-16")])
+def test_gate_invalid_verdict_is_not_authorized(tmp_path: Path, raw: bytes) -> None:
+    verdict = tmp_path / "verdict.json"
+    verdict.write_bytes(raw)
+    decision = evaluate_gate(BASELINE, verdict, now=NOW)
+    assert decision.status == "MISSING"
+    assert not decision.authorized
+    assert str(verdict) in decision.reasons[0]
+    assert "verdict_sha256" not in decision.details
 
 
 def test_gate_missing_baseline_is_not_authorized(tmp_path: Path) -> None:
@@ -560,9 +572,29 @@ def test_cli_halts_exit3_and_writes_nothing_when_verdict_missing(
     assert not (state / "ledger.jsonl").exists()
 
 
-def test_cli_dry_run_is_the_default_and_reports(tmp_path: Path) -> None:
+@pytest.mark.parametrize("replace_verdict", [False, True])
+def test_cli_dry_run_is_the_default_and_reports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replace_verdict: bool
+) -> None:
     cli = _load_cli()
     out = tmp_path / "report.json"
+    verdict = write_verdict(tmp_path / "verdict.json", rate=0.12)
+    original = verdict.read_bytes() + b"\r\n"
+    verdict.write_bytes(original)
+    replacement = write_verdict(tmp_path / "replacement.json", rate=0.13)
+    path_open = Path.open
+    verdict_opens = 0
+
+    def open_path(path, *args, **kwargs):
+        nonlocal verdict_opens
+        stream = path_open(path, *args, **kwargs)
+        if path == verdict:
+            verdict_opens += 1
+            if replace_verdict and verdict_opens == 1:
+                replacement.replace(verdict)
+        return stream
+
+    monkeypatch.setattr(Path, "open", open_path)
     code = cli.main(
         [
             "--transcript",
@@ -572,7 +604,7 @@ def test_cli_dry_run_is_the_default_and_reports(tmp_path: Path) -> None:
             "--baseline",
             str(BASELINE),
             "--gate-verdict",
-            str(SELFCHECK),
+            str(verdict),
             "--max-verdict-age-days",
             "100000",  # the artifact ages; this test must not
             "--state-dir",
@@ -587,6 +619,10 @@ def test_cli_dry_run_is_the_default_and_reports(tmp_path: Path) -> None:
     report = json.loads(out.read_text())
     assert report["mode"] == "dry-run"
     assert report["gate"]["status"] == "PASS"
+    assert report["gate"]["authorized"]
+    assert report["gate"]["details"]["organic_rate"] == 0.12
+    assert report["gate"]["details"]["verdict_sha256"] == hashlib.sha256(original).hexdigest()
+    assert verdict_opens == 1
     assert report["written_nodes"] == []
     assert report["sessions"], "the fixture session was read"
     assert set(report["sessions"][0]["stages"]) == {"insights", "corrections", "attest"}
