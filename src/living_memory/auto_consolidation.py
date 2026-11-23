@@ -105,7 +105,7 @@ class AutoConsolidationScheduler:
         load_pending: Callable[[], str | None] | None = None,
         save_pending: Callable[[str], None] | None = None,
         persist_guard: Any | None = None,
-        pending_transaction: Callable[[], AbstractContextManager] = nullcontext,
+        pending_transaction: Callable[[], AbstractContextManager[None]] = nullcontext,
         retry_delays: Iterable[float] = DEFAULT_RETRY_DELAYS,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -121,7 +121,7 @@ class AutoConsolidationScheduler:
         # Accepted readiness and unsaved request time; insertion order is FIFO.
         self._queue: dict[str, _QueuedPass] = {}
         # Local desired marks and the last successfully loaded or saved local view.
-        self._persisted: _Pending = {}
+        self._desired: _Pending = {}
         self._saved: _Pending = {}
         # The current snapshot still needs saving, including completed removals.
         self._pending_dirty = False
@@ -158,7 +158,7 @@ class AutoConsolidationScheduler:
                 ),
             )
             # A peer may already be running a pass for our previous mark.
-            self._persisted[scope] = uuid4().hex
+            self._desired[scope] = uuid4().hex
             # Save coalesced requests too: an earlier save may have failed.
             # Let failure reach the nonfatal post-commit boundary; no durable
             # scheduling confirmation can be made in that case.
@@ -352,7 +352,7 @@ class AutoConsolidationScheduler:
             persist = False
             if scope not in self._queue:
                 # Only a pass that started after the last request settles it.
-                persist = self._persisted.pop(scope, None) is not None
+                persist = self._desired.pop(scope, None) is not None
                 if persist:
                     self._pending_dirty = True
         if persist:
@@ -399,7 +399,7 @@ class AutoConsolidationScheduler:
         stored = _read_pending(self._load_pending())
         self._saved = stored
         for scope, marks in stored.items():
-            self._persisted.setdefault(scope, marks)
+            self._desired.setdefault(scope, marks)
             self._queue.setdefault(scope, _QueuedPass(requested_at=self._clock()))
         self._pending_loaded = True
 
@@ -410,13 +410,13 @@ class AutoConsolidationScheduler:
         self._load_and_merge_pending()
         if self._save_pending is not None:
             with self._pending_transaction():
-                pending = self._persisted
+                pending = self._desired
                 if self._load_pending is not None:
                     pending = _merge_pending(
-                        _read_pending(self._load_pending()), self._saved, self._persisted
+                        _read_pending(self._load_pending()), self._saved, self._desired
                     )
                 self._save_pending(json.dumps(pending, sort_keys=True))
-            self._saved = self._persisted.copy()
+            self._saved = self._desired.copy()
         self._pending_dirty = False
         for scope, queued in self._queue.items():
             if queued.requested_at is not None:

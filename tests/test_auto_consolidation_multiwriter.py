@@ -36,7 +36,8 @@ def check_recovery(path, scope, expected_count, latest):
         assert scheduler.status()["passes_completed"] == 1
         summary = scheduler.last_result(scope)["summary"]
         assert summary["traces_considered"] == expected_count
-        concepts = [recovered.memory_store.get_node(node) for node in summary["concepts_created"]]
+        materialized = summary["concepts_created"] + summary["concepts_updated"]
+        concepts = [recovered.memory_store.get_node(node) for node in materialized]
         assert any(latest in concept.source_traces for concept in concepts)
         assert recovered.memory_store.get_kv(PENDING_KV_KEY) == "{}"
         idle_write = recovered.tools["memory_remember"]("Fresh harbor observation", {"scope": scope})
@@ -107,12 +108,13 @@ def test_peer_resuming_an_older_request_cannot_settle_a_followup(tmp_path, monke
         assert writer.auto_consolidation.wait_idle(timeout=5)
         real_pass = consolidation.memory_consolidate
 
-        def wait_then_run(*args, **kwargs):
+        def wait_before_settlement(*args, **kwargs):
+            result = real_pass(*args, **kwargs)
             entered.set()
             assert release.wait(15)
-            return real_pass(*args, **kwargs)
+            return result
 
-        monkeypatch.setattr(consolidation, "memory_consolidate", wait_then_run)
+        monkeypatch.setattr(consolidation, "memory_consolidate", wait_before_settlement)
         peer = open_server(stack, path)
         stack.callback(release.set)
         assert entered.wait(5)
@@ -124,10 +126,4 @@ def test_peer_resuming_an_older_request_cannot_settle_a_followup(tmp_path, monke
         assert scope in json.loads(writer.memory_store.get_kv(PENDING_KV_KEY))
         monkeypatch.setattr(consolidation, "memory_consolidate", real_pass)
 
-    with ExitStack() as stack:
-        recovered = open_server(stack, path)
-        assert recovered.auto_consolidation.wait_idle(timeout=30, include_retries=True)
-        assert recovered.auto_consolidation.last_result(scope)["status"] == "completed"
-        assert recovered.auto_consolidation.status()["passes_completed"] == 1
-        assert recovered.memory_store.get_node(result["node"]["id"])
-        assert recovered.memory_store.get_kv(PENDING_KV_KEY) == "{}"
+    check_recovery(path, scope, 10, result["node"]["id"])
