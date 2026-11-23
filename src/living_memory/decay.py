@@ -230,6 +230,18 @@ def concept_coverage(
     return coverage
 
 
+def _data_version(store: MemoryStore) -> int:
+    return store.connection.execute("PRAGMA main.data_version").fetchone()[0]
+
+
+def _retire_if_current(store: MemoryStore, version: int, node_id: str, reason: str) -> Node | None:
+    """Apply one selected decision while its external database version still holds."""
+    with store.transaction(immediate=True):
+        if _data_version(store) != version:
+            return None
+        return store.soft_delete_node(node_id, reason)
+
+
 def soft_delete_expired(
     store: MemoryStore,
     *,
@@ -308,13 +320,10 @@ def soft_delete_expired(
                 if reference is not None and reference < cutoff:
                     yield (reference, node_id, TTL_EXPIRED_REASON)
 
-    def data_version() -> int:
-        return store.connection.execute("PRAGMA main.data_version").fetchone()[0]
-
     retired: list[Node] = []
     retried = False
     while not cap or len(retired) < cap:
-        version = data_version()
+        version = _data_version(store)
         # Oldest parsed reference first, with stable ID ties even when
         # levels repeat. A finite sweep retains only its remaining budget.
         if cap:
@@ -330,16 +339,15 @@ def soft_delete_expired(
             # Its removal can change the opt-in reason for a later source.
             if node_id in removed_sources:
                 break
-            with store.transaction(immediate=True):
-                if data_version() != version:
-                    # Rebuild the ordered selection with the remaining budget
-                    # outside the writer. Under sustained contention defer the
-                    # remaining TTL work to the next sweep.
-                    if retried:
-                        return retired
-                    retried = True
-                    break
-                node = store.soft_delete_node(node_id, reason)
+            node = _retire_if_current(store, version, node_id, reason)
+            if node is None:
+                # Rebuild the ordered selection with the remaining budget
+                # outside the writer. Under sustained contention defer the
+                # remaining TTL work to the next sweep.
+                if retried:
+                    return retired
+                retried = True
+                break
             retired.append(node)
             if coverage_rule and node.level in _COVERING_LEVELS:
                 removed_sources.update(_source_ids(node.source_traces))
@@ -356,30 +364,43 @@ def soft_delete_superseded(store: MemoryStore, *, scope: str | None = None) -> l
     because a concept cites it keeps outranking the correction in recall.
     """
 
-    clauses = [
-        correction_sql("c"),
-        "target.decayed = 0",
-        "source.decayed = 0",
-    ]
+    clauses = [correction_sql("c"), "target.decayed = 0"]
     params: list[str] = []
     if scope is not None:
         clauses.append("target.scope = ?")
         params.append(scope)
 
-    rows = store.connection.execute(
-        f"""
-        SELECT DISTINCT target.id
-        FROM connections c
-        JOIN nodes source ON source.id = c.source_id
-        JOIN nodes target ON target.id = c.target_id
-        WHERE {' AND '.join(clauses)}
-        """,
-        params,
-    ).fetchall()
-
     decayed: list[Node] = []
-    for row in rows:
-        decayed.append(store.soft_delete_node(str(row["id"]), "superseded"))
+    source_clause = "source.decayed = 0"
+    for attempt in range(2):
+        version = _data_version(store)
+        edges = store.connection.execute(
+            f"""
+            SELECT c.id, c.source_id, c.target_id
+            FROM connections c
+            JOIN nodes source ON source.id = c.source_id
+            JOIN nodes target ON target.id = c.target_id
+            WHERE {' AND '.join(clauses)} AND ({source_clause})
+            """,
+            params,
+        ).fetchall()
+        for node_id in dict.fromkeys(edge["target_id"] for edge in edges):
+            node = _retire_if_current(store, version, node_id, "superseded")
+            if node is None:
+                break
+            decayed.append(node)
+        else:
+            break
+
+        if attempt == 0 and decayed:
+            # A chain still has its original basis when our own write retired
+            # its middle node. On rescan, admit only its previously live edges
+            # that still qualify and whose source still bears our reason.
+            retired_ids = {node.id for node in decayed}
+            retained_edges = [edge["id"] for edge in edges if edge["source_id"] in retired_ids]
+            source_clause += """ OR (source.decay_reason = 'superseded'
+                                     AND c.id IN (SELECT value FROM json_each(?)))"""
+            params.append(json.dumps(retained_edges))
     return decayed
 
 
