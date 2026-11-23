@@ -210,9 +210,9 @@ def test_native_health_reads_one_trace_population(tmp_path, monkeypatch, frozen_
     path = tmp_path / "health.sqlite3"
     server = create_mcp_server(config=MemoryConfig(db_path=path), expose_operator_tools=True)
     scope = "project:alpha"
-    args = {"level": "trace", "content": "same", "context": {"scope": scope}}
+    args = {"level": "trace", "context": {"scope": scope}}
     with server.memory_store as reader, MemoryStore(path) as writer:
-        reader.create_node(node_id="first", timestamp="2026-10-28T12:00:00Z", **args)
+        reader.create_node(node_id="first", content="first", timestamp="2026-10-28T12:00:00Z", **args)
         assert reader.connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         reader.connection.execute("PRAGMA query_only = ON")
         committed = []
@@ -220,7 +220,7 @@ def test_native_health_reads_one_trace_population(tmp_path, monkeypatch, frozen_
 
         def interleave(sql):
             if "SELECT id, timestamp, last_accessed FROM nodes" in sql and not committed:
-                node = writer.create_node(node_id="second", timestamp="2026-10-27T12:00:00Z", **args)
+                node = writer.create_node(node_id="second", content="second", timestamp="2026-10-27T12:00:00Z", **args)
                 committed.append(node.id)
             if sql == "PRAGMA page_count":
                 storage_transactions.append(reader.connection.in_transaction)
@@ -240,7 +240,7 @@ def test_native_health_reads_one_trace_population(tmp_path, monkeypatch, frozen_
                     ) == (len(ids), len(ids), ids)
                     assert report["activity"]["remember_in_window"] == len(ids)
                     assert report["access"]["active_traces"]["total"] == len(ids)
-                    assert report["dedup"]["duplicate_excess"] == len(ids) - 1
+                    assert report["dedup"]["distinct_contents"] == len(ids)
                     assert report["staleness"]["age_seconds_p50"] == 86400
                     assert report["staleness"]["age_seconds_p90"] == len(ids) * 86400
 
