@@ -5698,7 +5698,7 @@ class MemoryStore:
         """Probe only this scope's counters, excluding the encoder used by the reader."""
         return self._conn.execute(
             """WITH partition(prefix) AS (SELECT ? || hex(?))
-               SELECT COALESCE(SUM(value), 0) FROM metadata, partition
+               SELECT COALESCE(SUM(value), 0) FROM partition CROSS JOIN metadata
                WHERE key >= prefix || ':' AND key < prefix || ';' AND key != prefix || '::' || ?""",
             (_ANCHOR_TEXT_SCOPED, scope, encoder),
         ).fetchone()[0]

@@ -369,16 +369,16 @@ class _AnchorTextCache:
     encoder: str
     scoped_revisions: bool
     by_scope: dict[str, tuple[int | tuple[int, int], _AnchorTextIndex]] = field(default_factory=dict)
-    complete_at: tuple[int, int] | None = None
+    checked_at: tuple[int, int] | None = None
+    checked_scopes: tuple[str, ...] | None = None
 
     def indexes(
         self, store: MemoryStore, scopes: tuple[str, ...] | None, corpus: tuple[int, int],
     ) -> list[_AnchorTextIndex]:
-        if self.complete_at == corpus:
+        if self.checked_at == corpus and (self.checked_scopes is None or scopes == self.checked_scopes):
             requested = self.by_scope if scopes is None else scopes
             return [self.by_scope[s][1] for s in requested if s in self.by_scope]
 
-        self.complete_at = None
         requested = store.live_anchor_scopes() if scopes is None else scopes
         selected = {}
         for scope in requested:
@@ -388,13 +388,15 @@ class _AnchorTextCache:
                 entry = (identity, _AnchorTextIndex(store.iter_foreign_anchor_queries(self.encoder, (scope,))))
             if entry[1].texts:
                 selected[scope] = entry
-            else:
-                self.by_scope.pop(scope, None)
         if scopes is None:
             self.by_scope = selected
-            self.complete_at = corpus
         else:
+            for scope in scopes:
+                if scope not in selected:
+                    self.by_scope.pop(scope, None)
             self.by_scope.update(selected)
+        self.checked_at = corpus
+        self.checked_scopes = scopes
         return [index for _, index in selected.values()]
 
 
@@ -567,7 +569,9 @@ class MemoryRecallService:
         if isinstance(source, _AnchorVectorCache):
             cache = self._anchor_text_cache
             if cache is None or cache.encoder != encoder:
-                cache = self._anchor_text_cache = _AnchorTextCache(encoder, self.store.has_scoped_anchor_text_revisions())
+                cache = self._anchor_text_cache = _AnchorTextCache(
+                    encoder, self.store.has_scoped_anchor_text_revisions(),
+                )
             # Older read-only schemas may lack a trigger for query edits.
             data_version = 0 if cache.scoped_revisions else self.store.connection.execute(
                 "PRAGMA data_version"
