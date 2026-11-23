@@ -266,6 +266,8 @@ def soft_delete_expired(
     moment = now or datetime.now(UTC)
     cutoff = moment - timedelta(days=ttl)
 
+    levels = tuple(levels)
+
     def eligible_candidates() -> Iterable[tuple[datetime, str, str]]:
         coverage = None
         for level in levels:
@@ -312,16 +314,43 @@ def soft_delete_expired(
     # Both selectors exhaust eligibility before any mutation. A finite cap
     # retains only O(cap) candidates; the key keeps exact ties stable without
     # comparing reasons, including repeated visits through duplicated levels.
-    if cap:
-        candidates = nsmallest(
-            cap, eligible_candidates(), key=lambda candidate: (candidate[0], candidate[1])
-        )
-    else:
-        candidates = sorted(
-            eligible_candidates(), key=lambda candidate: (candidate[0], candidate[1])
-        )
+    def data_version() -> int:
+        return store.connection.execute("PRAGMA main.data_version").fetchone()[0]
 
-    return [store.soft_delete_node(node_id, reason) for _, node_id, reason in candidates]
+    retired: list[Node] = []
+    retried = False
+    while not cap or len(retired) < cap:
+        version = data_version()
+        remaining = cap - len(retired)
+        if cap:
+            candidates = nsmallest(
+                remaining, eligible_candidates(), key=lambda item: (item[0], item[1])
+            )
+        else:
+            candidates = sorted(eligible_candidates(), key=lambda item: (item[0], item[1]))
+
+        removed_sources: set[str] = set()
+        for _, node_id, reason in candidates:
+            # Custom levels may retire a covering owner in this very pass.
+            # Its removal can change the opt-in reason for a later source.
+            if node_id in removed_sources:
+                break
+            with store.transaction(immediate=True):
+                if data_version() != version:
+                    # Rebuild the ordered selection with the remaining budget
+                    # outside the writer. Under sustained contention defer the
+                    # remaining TTL work to the next sweep.
+                    if retried:
+                        return retired
+                    retried = True
+                    break
+                node = store.soft_delete_node(node_id, reason)
+            retired.append(node)
+            if coverage_rule and node.level in _COVERING_LEVELS:
+                removed_sources.update(node.source_traces)
+        else:
+            break
+    return retired
 
 
 def soft_delete_superseded(store: MemoryStore, *, scope: str | None = None) -> list[Node]:
