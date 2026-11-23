@@ -599,14 +599,13 @@ def _mine_resolved_failures(
             if not _same_work(command, tool_command(later), min_jaccard=config.rerun_min_jaccard):
                 continue
             later_text = later.result_text or ""
+            if FAILURE_MARKERS.search(later_text) or later.ok is False:
+                continue
             if record.source == "codex":
                 if later.outcome_span is None or later.ok is not True:
                     continue
-            else:
-                if FAILURE_MARKERS.search(later_text) or later.ok is False:
-                    continue
-                if not (SUCCESS_MARKERS.search(later_text) or later.ok is True):
-                    continue
+            elif not (SUCCESS_MARKERS.search(later_text) or later.ok is True):
+                continue
             failure_quote = (
                 quote_window(
                     text,

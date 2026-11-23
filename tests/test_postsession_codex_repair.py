@@ -52,6 +52,7 @@ RUNNING = "Process running with session ID 17\nOutput:\n1 passed\nProcess exited
     ({"success": True, "status": "declined"}, GREEN, True, False, []),
     ({}, GREEN, True, False, []),
     ({"success": True}, "Output:\n1 passed\nProcess exited with code 0", None, True, []),
+    ({"success": True}, GREEN + "FAILED test_one", True, True, []),
     ({"success": True}, "Exit code: 3\nOutput:\n1 passed", False, True, []),
 ])
 def test_red_patch_rerun(tmp_path, status, response, ok, changed, kinds):

@@ -1100,6 +1100,8 @@ class _CodexCalls:
                     return
         if call is None or call.name not in _CODEX_SHELL or call.server not in {None, "functions"}:
             return
+        if payload.get("source", "agent") not in ("agent", "unified_exec_startup"):
+            return
         code = payload.get("exit_code")
         if type(code) is not int:
             return
