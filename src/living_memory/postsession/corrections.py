@@ -52,6 +52,7 @@ from .judge import (
     default_redactor,
     sha256_text,
 )
+from .operator_input import operator_passages
 from .session import (
     RECALL_TOOL,
     TEACH_TOOL,
@@ -339,8 +340,6 @@ _INJECTED_TURN = re.compile(
     re.IGNORECASE,
 )
 
-_OPERATOR_ROLES = frozenset({"user", "operator", "human"})
-
 # A Living Memory round trip, however the session spelled it. ``ToolCall.server``
 # only catches the calls the host recorded *as* MCP calls; a large part of this
 # corpus reaches the same server from inside a script tool instead --
@@ -494,21 +493,23 @@ def observations(
         )
 
     for turn in record.turns:
-        if turn.role not in _OPERATOR_ROLES:
-            continue
-        text = (turn.text or "").strip()
-        if not text or _INJECTED_TURN.match(text):
-            continue
-        found.append(
-            Observation(
-                kind="operator_message",
-                locator=_observation_span(record, turn.span, f"turns[{turn.index}].text"),
-                label="operator message",
-                text=text[: config.max_observation_chars],
-                record_index=turn.span.record_index,
-                ordinal=turn.index,
+        for offset, passage in operator_passages(turn):
+            text = passage.strip()
+            if not text or _INJECTED_TURN.match(text):
+                continue
+            field = f"turns[{turn.index}].text"
+            if offset:
+                field += f"[{offset}:{offset + len(passage)}]"
+            found.append(
+                Observation(
+                    kind="operator_message",
+                    locator=_observation_span(record, turn.span, field),
+                    label="operator message",
+                    text=text[: config.max_observation_chars],
+                    record_index=turn.span.record_index,
+                    ordinal=turn.index,
+                )
             )
-        )
 
     found.sort(key=lambda item: (item.record_index, item.kind, item.ordinal))
     return found

@@ -52,6 +52,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from .operator_input import operator_passages
 from .session import (
     Evidence,
     FileMutation,
@@ -967,45 +968,42 @@ def _mine_operator_corrections(
         [_at(item) for item in record.file_mutations]
         + [_at(call) for call in record.tool_calls if not call.is_memory_tool]
     )
-    turns = record.turns
-    for position_index, turn in enumerate(turns):
-        if turn.role != "user":
+    prior = None
+    for turn in record.turns:
+        if turn.role == "assistant":
+            prior = turn
             continue
-        text = turn.text or ""
-        hit = CORRECTION_MARKERS.search(text)
-        if hit is None:
-            continue
-        prior = next(
-            (item for item in reversed(turns[:position_index]) if item.role == "assistant"),
-            None,
-        )
         if prior is None:
             continue
         start = _at(turn)
         if not any(start < point <= start + config.lookahead_records for point in after_points):
             continue
-        correction = quote_window(
-            text, hit.start(), hit.end(), before=config.quote_before, after=config.quote_after
-        )
-        prior_text = prior.text or ""
-        claim = prior_text[-config.quote_after :].strip()
-        yield Candidate(
-            kind="operator_correction",
-            session_key=record.session_key,
-            ordinal=0,
-            span=_turn_span(turn),
-            evidence=(
-                _evidence(_turn_span(prior), claim or "(empty assistant turn)"),
-                _evidence(_turn_span(turn), correction),
-            ),
-            identifiers=hard_identifiers(f"{claim}\n{correction}"),
-            signals={
-                "correction_marker": hit.group(0).strip()[:80],
-                "prior_turn_index": prior.index,
-            },
-            at=turn.at,
-            position=_position(record, start),
-        )
+        for _, text in operator_passages(turn):
+            hit = CORRECTION_MARKERS.search(text)
+            if hit is None:
+                continue
+            correction = quote_window(
+                text, hit.start(), hit.end(), before=config.quote_before, after=config.quote_after
+            )
+            prior_text = prior.text or ""
+            claim = prior_text[-config.quote_after :].strip()
+            yield Candidate(
+                kind="operator_correction",
+                session_key=record.session_key,
+                ordinal=0,
+                span=_turn_span(turn),
+                evidence=(
+                    _evidence(_turn_span(prior), claim or "(empty assistant turn)"),
+                    _evidence(_turn_span(turn), correction),
+                ),
+                identifiers=hard_identifiers(f"{claim}\n{correction}"),
+                signals={
+                    "correction_marker": hit.group(0).strip()[:80],
+                    "prior_turn_index": prior.index,
+                },
+                at=turn.at,
+                position=_position(record, start),
+            )
 
 
 _MINERS: tuple[tuple[str, Any], ...] = (
