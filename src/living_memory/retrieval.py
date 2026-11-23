@@ -367,28 +367,36 @@ class _AnchorTextCache:
     """Keep one postings list per term and scope in a committed foreign corpus."""
 
     encoder: str
-    revision: int | tuple[int, int]
-    by_scope: dict[str, _AnchorTextIndex] = field(default_factory=dict)
-    complete: bool = False
-    empty_scopes: set[str] = field(default_factory=set)
+    by_scope: dict[str, tuple[int | tuple[int, int], _AnchorTextIndex]] = field(default_factory=dict)
+    complete_at: tuple[int, int] | None = None
 
-    def indexes(self, store: MemoryStore, scopes: tuple[str, ...] | None) -> list[_AnchorTextIndex]:
-        if self.complete:
-            if scopes is None:
-                return list(self.by_scope.values())
-            return [self.by_scope[scope] for scope in scopes if scope in self.by_scope]
+    def indexes(
+        self, store: MemoryStore, scopes: tuple[str, ...] | None, corpus: tuple[int, int],
+    ) -> list[_AnchorTextIndex]:
+        if self.complete_at == corpus:
+            requested = self.by_scope if scopes is None else scopes
+            return [self.by_scope[s][1] for s in requested if s in self.by_scope]
 
+        self.complete_at = None
         requested = store.live_anchor_scopes() if scopes is None else scopes
+        selected = {}
         for scope in requested:
-            if scope in self.by_scope or scope in self.empty_scopes:
-                continue
-            index = _AnchorTextIndex(store.iter_foreign_anchor_queries(self.encoder, (scope,)))
-            if index.texts:
-                self.by_scope[scope] = index
-        self.complete = scopes is None
-        # Bound negative entries even if callers repeatedly name nonexistent scopes.
-        self.empty_scopes = set(scopes or ()).difference(self.by_scope)
-        return [self.by_scope[scope] for scope in requested if scope in self.by_scope]
+            revision = store.foreign_anchor_text_revision(self.encoder, scope)
+            # Read-only predecessors may also lack a trigger for query edits.
+            identity = corpus if revision is None else revision
+            entry = self.by_scope.get(scope)
+            if entry is None or entry[0] != identity:
+                entry = (identity, _AnchorTextIndex(store.iter_foreign_anchor_queries(self.encoder, (scope,))))
+            if entry[1].texts:
+                selected[scope] = entry
+            else:
+                self.by_scope.pop(scope, None)
+        if scopes is None:
+            self.by_scope = selected
+            self.complete_at = corpus
+        else:
+            self.by_scope.update(selected)
+        return [index for _, index in selected.values()]
 
 
 _AnchorBlockKey = tuple[int, tuple[str | None, bool] | None]
@@ -557,22 +565,14 @@ class MemoryRecallService:
         encoder = query.encoder_id
         assert encoder is not None
         scopes = plan.scopes if plan.restricted else None
-        revision: int | tuple[int, int] | None = None
         if isinstance(source, _AnchorVectorCache):
-            revision = self.store.foreign_anchor_text_revision(encoder)
-            if revision is None:
-                # Older read-only schemas may also lack a trigger for query edits.
-                data_version = 0 if self.store._anchor_has_encoder() else self.store.connection.execute(
-                    "PRAGMA data_version"
-                ).fetchone()[0]
-                revision = (source.revision, data_version)
-        if revision is None:
-            indexes = [_AnchorTextIndex(self.store.iter_foreign_anchor_queries(encoder, scopes))]
-        else:
             cache = self._anchor_text_cache
-            if cache is None or (cache.encoder, cache.revision) != (encoder, revision):
-                cache = self._anchor_text_cache = _AnchorTextCache(encoder, revision)
-            indexes = cache.indexes(self.store, scopes)
+            if cache is None or cache.encoder != encoder:
+                cache = self._anchor_text_cache = _AnchorTextCache(encoder)
+            data_version = self.store.connection.execute("PRAGMA data_version").fetchone()[0]
+            indexes = cache.indexes(self.store, scopes, (source.revision, data_version))
+        else:
+            indexes = [_AnchorTextIndex(self.store.iter_foreign_anchor_queries(encoder, scopes))]
         if sum(len(index.texts) for index in indexes) <= ANCHOR_MATCH_LIMIT:
             return {key: text for index in indexes for key, text in index.texts.items()}
 
