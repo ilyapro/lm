@@ -413,3 +413,56 @@ def test_scope_policy_is_fresh_at_each_transaction(sources, monkeypatch):
                for event in events)
     assert all(store.credited_node_ids(event.id) == {nodes[0].id} for event in events)
     assert len(store.list_query_anchor_edges()) == len(events)
+
+
+def test_reconciled_source_scope_refreshes_numeric_policy(sources, monkeypatch):
+    mcp, nodes = sources
+    store = mcp.memory_store
+    monkeypatch.setenv("LM_RETRIEVAL_TUNING_POLICY", "adaptive")
+    scope = "project:population"
+    for i in range(9):
+        store.append_trace(f"population {i}", {"scope": scope})
+    moving = store.create_node(level="trace", content=CONTENT, context={"scope": scope},
+                               embedding=[1.0, 0.0])
+    store.create_connection(moving.id, nodes[0].id, "caused")
+    # update_node uses the stored context when it encounters inconsistent columns.
+    with store.transaction():
+        store.connection.execute("UPDATE nodes SET scope = ? WHERE id = ?", ("global", moving.id))
+    for source in (moving, nodes[0]):
+        store.record_recall_event(
+            query="scope transition", scope=scope, requested_scope=CONTEXT["scope"],
+            ambient_context=CONTEXT, results=[{"node_id": source.id, "bm25_score": 1.0}],
+        )
+
+    mcp.tools["memory_remember"](CONTENT, CONTEXT)
+    assert store.get_node(moving.id).scope == scope
+    weights = store.get_retrieval_weights(scope)
+    assert weights.learning_rate == 0.1
+    assert weights.vector >= 0.1 and weights.graph >= 0.05
+
+
+def test_direct_feedback_without_transaction_observes_intervening_write(sources, monkeypatch):
+    mcp, nodes = sources
+    store = mcp.memory_store
+    monkeypatch.setenv("LM_RETRIEVAL_TUNING_POLICY", "adaptive")
+    scope = CONTEXT["scope"]
+    trace = store.append_trace(CONTENT, CONTEXT)
+    for i in range(5):
+        store.append_trace(f"population {i}", CONTEXT)
+    for i in range(2):
+        store.record_recall_event(query=f"event {i}", scope=scope, ambient_context=CONTEXT,
+                                  results=[{"node_id": nodes[0].id, "bm25_score": 1.0}])
+    close = store.mark_recall_event_feedback
+    rates = []
+
+    def observe(event_id, *args, **kwargs):
+        result = close(event_id, *args, **kwargs)
+        rates.append(store.get_retrieval_weights(scope).learning_rate)
+        if len(rates) == 1:
+            assert not store.connection.in_transaction
+            store.append_trace("tenth active trace", CONTEXT)
+        return result
+
+    monkeypatch.setattr(store, "mark_recall_event_feedback", observe)
+    feedback.apply_pending_recall_feedback(store, trace)
+    assert rates == [0.2, 0.1]

@@ -397,7 +397,12 @@ def apply_retrieval_feedback(
         if signed_signal > 0.0:
             increment *= _positive_reinforcement_gain(node)
         updated_usefulness = max(-1.0, min(1.0, node.usefulness_score + increment))
+        previous_scope = node.scope
         node = store.update_node(node.id, stats={"usefulness_score": updated_usefulness})
+        if prepared_scopes is not None and previous_scope != node.scope:
+            # Updating a row can reconcile its scope column with stored context.
+            prepared_scopes.pop(previous_scope, None)
+            prepared_scopes.pop(node.scope, None)
 
     target_scope = scope or (node.scope if node is not None else "global")
     if prepared_scopes is None or target_scope not in prepared_scopes:
@@ -518,7 +523,6 @@ def apply_pending_recall_feedback(
         if reinforce_results and policy != "all" else None
     )
 
-    # Only numeric state and event bookkeeping change inside this loop.
     # Reuse scope policy only while the caller holds the knowledge transaction.
     prepared_scopes = {} if store.connection.in_transaction else None
     for event_index, event in enumerate(events):
