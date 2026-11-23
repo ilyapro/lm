@@ -575,8 +575,10 @@ versions from these same records; shaping also checks the offered excerpt.
 Changed source content is eligible again, including in-place derived-node
 updates. A different query or snippet budget can offer a different excerpt,
 which is eligible unless this version's complete content was already included.
-When a selected schema shares an exact twin group, the highest-ranked bearer
-offers the complete recipe regardless of its own level. Access timestamps and other
+When the selected cut includes a current schema, its highest-ranked exact twin
+bearer offers the complete recipe, even if an independent result takes the
+schema's slot. A schema seen only among residual candidates cannot expand the
+bearer's offer. Access timestamps and other
 bookkeeping do not define a content version. Expired evidence permits delivery
 again; no corpus rewrite or separate persistent cache is needed.
 

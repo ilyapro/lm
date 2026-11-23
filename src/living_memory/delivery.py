@@ -374,14 +374,17 @@ def shape_recall_results(
     if view not in ("knowledge", "full"):
         raise ValueError("view must be 'knowledge' or 'full'")
 
-    eligible = [result.node for result in results if not getattr(result, "withheld", None)]
+    eligible = [result for result in results if not result.withheld]
     twins: dict[str, str] = {}
     recipe_bearers = set()
-    for node, bearer in zip(eligible, duplicate_bearers(eligible), strict=True):
+    for result, bearer in zip(eligible, duplicate_bearers([r.node for r in eligible]), strict=True):
+        node = result.node
         if bearer is not None:
             twins[node.id] = bearer
-        if node.level == "schema":
+        if result.current_schema or result.has_recipe_twin:
             recipe_bearers.add(bearer or node.id)
+        elif node.level == "schema" and bearer is None:
+            recipe_bearers.add(node.id)
     shaped: list[dict[str, Any]] = []
     bearer_position = 0
     for result in results:

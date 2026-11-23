@@ -1884,6 +1884,7 @@ def _select_distinct_results(
     selected: list[Any] = []
     bearers = duplicate_bearers([result.node for result in pool if not result.withheld])
     selected_groups: set[str] = set()
+    recipe_bearers: set[str] = set()
     for index, result in enumerate(pool):
         node = result.node
         bearer = None if result.withheld else next(bearers)
@@ -1899,6 +1900,8 @@ def _select_distinct_results(
             group in selected_groups
             and not delivery_history.has_content(node)
         ):
+            if index < len(limited) and result.current_schema:
+                recipe_bearers.add(group)
             continue
         selected.append(result)
         if not result.withheld:
@@ -1913,6 +1916,9 @@ def _select_distinct_results(
         selected = [result for result in pool if result.node.id in selected_ids]
     if selected_ids == {result.node.id for result in limited}:
         return limited, residual
+    if recipe_bearers:
+        selected = [replace(result, has_recipe_twin=True) if result.node_id in recipe_bearers else result
+                    for result in selected]
     return selected, [result for result in limited + residual if result.node.id not in selected_ids]
 
 

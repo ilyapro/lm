@@ -191,6 +191,13 @@ class RecallResult:
     # Transient qualification evidence, not a learned ranking channel.
     lexical_score: float = 0.0
 
+    # An admitted exact schema twin released its slot during distinct selection.
+    has_recipe_twin: bool = False
+
+    @property
+    def current_schema(self) -> bool:
+        return self.node.level == "schema" and not self.superseded and not self.node.decayed
+
     @property
     def node_id(self) -> str:
         return self.node.id
