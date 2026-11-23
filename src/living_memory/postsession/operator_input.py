@@ -1,6 +1,8 @@
 """Operator evidence within a user-role turn, in source-text coordinates."""
 
 from collections.abc import Iterator
+import hashlib
+import json
 import re
 
 from .session import Turn
@@ -53,13 +55,25 @@ def operator_passages(turn: Turn) -> Iterator[tuple[int, str]]:
         if not header:
             return
         start = header.end()
+        # The rendered label comes from the producer. Its bound digest also
+        # lets us tell a real next section from one quoted in this body.
+        metadata = {}
         if text.startswith("<!-- ae-augment ", start):
             end = text.find("\n", start)
-            if end < 0 or not text.startswith(" -->", end - 4):
+            if end < 0 or text[end - 4:end] != " -->":
+                return
+            try:
+                metadata = json.loads(text[start + len("<!-- ae-augment "):end - 4])
+            except (ValueError, RecursionError):
                 return
             start = end + 1
         boundary = _BOUNDARY.search(text, start)
         if not boundary:
             return
-        yield start, text[start:boundary.start()]
+        passage = text[start:boundary.start()]
+        yield start, passage
+        if not isinstance(metadata, dict) or metadata.get("text_sha256") != hashlib.sha256(
+            passage.encode("utf-8", errors="surrogatepass")
+        ).hexdigest():
+            return
         start = boundary.start()

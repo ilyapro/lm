@@ -49,7 +49,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from .operator_input import operator_passages
@@ -978,7 +978,7 @@ def _mine_operator_corrections(
         start = _at(turn)
         if not any(start < point <= start + config.lookahead_records for point in after_points):
             continue
-        for _, text in operator_passages(turn):
+        for offset, text in operator_passages(turn):
             hit = CORRECTION_MARKERS.search(text)
             if hit is None:
                 continue
@@ -987,14 +987,17 @@ def _mine_operator_corrections(
             )
             prior_text = prior.text or ""
             claim = prior_text[-config.quote_after :].strip()
+            span = _turn_span(turn)
+            if offset:
+                span = replace(span, field=f"{span.field}[{offset}:{offset + len(text)}]")
             yield Candidate(
                 kind="operator_correction",
                 session_key=record.session_key,
                 ordinal=0,
-                span=_turn_span(turn),
+                span=span,
                 evidence=(
                     _evidence(_turn_span(prior), claim or "(empty assistant turn)"),
-                    _evidence(_turn_span(turn), correction),
+                    _evidence(span, correction),
                 ),
                 identifiers=hard_identifiers(f"{claim}\n{correction}"),
                 signals={
