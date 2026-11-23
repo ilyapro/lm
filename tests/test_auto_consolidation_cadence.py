@@ -272,3 +272,119 @@ def test_fastmcp_write_tools_keep_cadence_and_correction_links(tmp_path, monkeyp
     finally:
         mcp.auto_consolidation.close()
         store.close()
+
+
+@pytest.mark.parametrize("initial,first,second,alternatives,first_due", [
+    (4, "remember", "remember", 0, True),
+    (3, "remember", "remember", 0, False),
+    (4, "teach", "remember", 0, True),
+    (3, "teach", "teach", 0, False),
+    (2, "remember", "teach", 2, True),
+])
+def test_fastmcp_cadence_follows_committing_writer(
+    tmp_path, monkeypatch, initial, first, second, alternatives, first_due,
+):
+    from threading import Event
+
+    from fastmcp import Client
+    from living_memory import server
+
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "adaptive")
+    path = tmp_path / "writers.sqlite3"
+    earlier, later = create_mcp_server(path), create_mcp_server(path)
+    source = seed(earlier.memory_store, initial)[0]
+    committed, resume = Event(), Event()
+    schedule = server._schedule_auto_consolidation_if_due
+
+    def pause_earlier(store, *args, **kwargs):
+        if store is earlier.memory_store:
+            assert not store.connection.in_transaction
+            committed.set()
+            assert resume.wait(30)
+        return schedule(store, *args, **kwargs)
+
+    monkeypatch.setattr(server, "_schedule_auto_consolidation_if_due", pause_earlier)
+
+    async def write(instance, kind, label, count=0):
+        args = {"context": CONTEXT}
+        if kind == "teach":
+            args.update(trace_id=source.id, correction=label)
+        else:
+            args["content"] = label
+            if count:
+                args["alternatives_considered"] = [
+                    {"approach": f"alternative {i}", "rejected_because": "fixture"}
+                    for i in range(count)
+                ]
+        async with Client(instance) as client:
+            result = await client.call_tool(f"memory_{kind}", args)
+            return result.structured_content
+
+    async def scenario():
+        pending = asyncio.create_task(asyncio.to_thread(
+            asyncio.run, write(earlier, first, "earlier", alternatives),
+        ))
+        try:
+            assert await asyncio.to_thread(committed.wait, 30)
+            assert later.memory_store.trace_count() == initial + alternatives + 1
+            other = await write(later, second, "later")
+            assert later.auto_consolidation.wait_idle(timeout=30)
+        finally:
+            resume.set()
+            own = await pending
+        assert earlier.auto_consolidation.wait_idle(timeout=30)
+        assert bool(own["auto_consolidation"]) == first_due
+        assert bool(other["auto_consolidation"]) != first_due
+        assert earlier.auto_consolidation.status()["passes_completed"] == int(first_due)
+        assert later.auto_consolidation.status()["passes_completed"] == int(not first_due)
+        assert later.memory_store.trace_count() == initial + alternatives + 2
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        for instance in (earlier, later):
+            instance.auto_consolidation.close()
+            instance.memory_store.close()
+
+
+@pytest.mark.parametrize("kind", ["remember", "teach"])
+def test_failed_fastmcp_write_leaves_boundary_for_next_writer(tmp_path, monkeypatch, kind):
+    from fastmcp import Client
+
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "adaptive")
+    instance = create_mcp_server(tmp_path / "rollback.sqlite3")
+    store = instance.memory_store
+    source = seed(store, 4)[0]
+    store.connection.execute("""
+        CREATE TRIGGER reject_edge BEFORE INSERT ON connections
+        BEGIN SELECT RAISE(ABORT, 'injected edge rejection'); END
+    """)
+
+    async def scenario():
+        async with Client(instance) as client:
+            args = {"context": CONTEXT}
+            if kind == "remember":
+                args.update(content="failed", alternatives_considered=[
+                    {"approach": "alternative", "rejected_because": "fixture"},
+                ])
+            else:
+                args.update(trace_id=source.id, correction="failed")
+            result = await client.call_tool(f"memory_{kind}", args, raise_on_error=False)
+            assert result.is_error
+            assert "injected edge rejection" in result.content[0].text
+            assert store.trace_count() == 4
+            assert instance.auto_consolidation.wait_idle(timeout=30)
+            assert instance.auto_consolidation.status()["passes_completed"] == 0
+            store.connection.execute("DROP TRIGGER reject_edge")
+            result = await client.call_tool("memory_remember", {"content": "fifth", "context": CONTEXT})
+            assert result.structured_content["auto_consolidation"]["trace_count"] == 5
+            assert instance.auto_consolidation.wait_idle(timeout=30)
+            assert instance.auto_consolidation.status()["passes_completed"] == 1
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        instance.auto_consolidation.close()
+        store.close()
