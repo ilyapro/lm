@@ -83,6 +83,7 @@ from typing import Any, Callable, Iterable, Iterator, Sequence
 from .session import SessionRecord
 from .transcripts import (
     ADAPTERS,
+    IndexedPrefix,
     Roots,
     TranscriptRef,
     _JsonMemberScanner,
@@ -1178,13 +1179,14 @@ def ref_for(entry: SessionEntry) -> TranscriptRef:
         session_key=entry.session_key,
         cli_session_id=entry.cli_session_id,
         linked_session_ids=entry.linked_session_ids,
+        indexed=IndexedPrefix(entry.bytes, entry.sha256, entry.model, entry.cwd),
     )
 
 
 def load_session(entry: SessionEntry) -> SessionRecord:
     """Parse the transcript behind one index row, pinned to its hash."""
 
-    return load_transcript(ref_for(entry), sha256=entry.sha256)
+    return load_transcript(ref_for(entry))
 
 
 def recovery_stats(records: Iterable[SessionRecord]) -> dict[str, Any]:

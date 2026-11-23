@@ -56,6 +56,7 @@ import json
 import os
 from pathlib import Path
 import re
+import tempfile
 from typing import Any, Iterable, Iterator
 
 from .session import (
@@ -569,6 +570,16 @@ class Roots:
 
 
 @dataclass(frozen=True, slots=True)
+class IndexedPrefix:
+    """Byte identity and AE sidecar metadata captured by the indexer."""
+
+    size: int
+    sha256: str
+    model: str | None
+    cwd: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class TranscriptRef:
     """A discovered transcript, before it is parsed.
 
@@ -585,6 +596,7 @@ class TranscriptRef:
     session_key: str
     cli_session_id: str | None = None
     linked_session_ids: tuple[str, ...] = ()
+    indexed: IndexedPrefix | None = None
 
 
 # --------------------------------------------------------------------------
@@ -601,7 +613,32 @@ class TranscriptAdapter:
     def discover(self, roots: Roots) -> Iterator[TranscriptRef]:  # pragma: no cover
         raise NotImplementedError
 
-    def load(self, ref: TranscriptRef, *, sha256: str | None = None) -> SessionRecord:  # pragma: no cover
+    def load(self, ref: TranscriptRef, *, sha256: str | None = None) -> SessionRecord:
+        prefix = ref.indexed
+        if prefix is None:
+            return self._parse(ref, ref.path, sha256)
+        if prefix.size < 0 or (sha256 is not None and sha256 != prefix.sha256):
+            raise ValueError(f"{ref.session_key}: invalid indexed prefix")
+
+        # Some adapters make several passes. Give them one immutable input
+        # while keeping the original path in the record and all source spans.
+        with tempfile.NamedTemporaryFile() as snapshot:
+            digest = hashlib.sha256()
+            remaining = prefix.size
+            with ref.path.open("rb", buffering=0) as source:
+                while remaining:
+                    chunk = source.read(min(remaining, 1 << 20))
+                    if not chunk:
+                        raise ValueError(f"{ref.session_key}: shorter than indexed {prefix.size} bytes")
+                    digest.update(chunk)
+                    snapshot.write(chunk)
+                    remaining -= len(chunk)
+            if digest.hexdigest() != prefix.sha256:
+                raise ValueError(f"{ref.session_key}: indexed prefix SHA-256 mismatch")
+            snapshot.flush()
+            return self._parse(ref, Path(snapshot.name), prefix.sha256)
+
+    def _parse(self, ref: TranscriptRef, path: Path, sha256: str | None) -> SessionRecord:  # pragma: no cover
         raise NotImplementedError
 
     # -- shared record assembly -------------------------------------------
@@ -752,12 +789,12 @@ class ClaudeAdapter(TranscriptAdapter):
                     linked_session_ids=(parent,),
                 )
 
-    def load(self, ref: TranscriptRef, *, sha256: str | None = None) -> SessionRecord:
+    def _parse(self, ref: TranscriptRef, path: Path, sha256: str | None) -> SessionRecord:
         record = self._new_record(ref, sha256)
         pending: dict[str, dict[str, Any]] = {}
         turn_index = 0
         count = 0
-        for index, entry in iter_jsonl(ref.path):
+        for index, entry in iter_jsonl(path):
             count = index + 1
             kind = entry.get("type")
             if entry.get("sessionId") and not record.cli_session_id:
@@ -780,7 +817,9 @@ class ClaudeAdapter(TranscriptAdapter):
                     )
                     turn_index += 1
             elif kind == "user":
-                consumed = self._read_user(record, entry, index, pending, turn_index)
+                consumed = self._read_user(
+                    record, entry, index, pending, turn_index, allow_sidecars=ref.indexed is None
+                )
                 if not consumed:
                     text = _first_text((entry.get("message") or {}).get("content"))
                     if text:
@@ -839,6 +878,8 @@ class ClaudeAdapter(TranscriptAdapter):
         index: int,
         pending: dict[str, dict[str, Any]],
         turn_index: int,
+        *,
+        allow_sidecars: bool,
     ) -> bool:
         """Handle a tool-result-bearing ``user`` record. Returns True if consumed."""
 
@@ -857,7 +898,7 @@ class ClaudeAdapter(TranscriptAdapter):
                 continue
             call: ToolCall = info["call"]
             call.ok = not block.get("is_error")
-            payload, channel = self._structured_content(entry, block, record.path)
+            payload, channel = self._structured_content(entry, block, allow_sidecars=allow_sidecars)
             text, truncated = _clip(
                 block.get("content") if isinstance(block.get("content"), str) else None
             )
@@ -881,7 +922,7 @@ class ClaudeAdapter(TranscriptAdapter):
         return consumed
 
     def _structured_content(
-        self, entry: dict[str, Any], block: dict[str, Any], transcript_path: str
+        self, entry: dict[str, Any], block: dict[str, Any], *, allow_sidecars: bool
     ) -> tuple[Any, str]:
         """Recover the untruncated MCP response and say which channel gave it.
 
@@ -908,7 +949,7 @@ class ClaudeAdapter(TranscriptAdapter):
                         return decoded, "message.content.text"
         if isinstance(content, str):
             match = _PERSISTED_RE.search(content)
-            if match:
+            if match and allow_sidecars:
                 spilled = read_spilled_json(match.group(1))
                 if isinstance(spilled, dict):
                     return spilled, "tool-results-sidecar"
@@ -981,12 +1022,12 @@ class CodexAdapter(TranscriptAdapter):
                     linked_session_ids=(session_id,),
                 )
 
-    def load(self, ref: TranscriptRef, *, sha256: str | None = None) -> SessionRecord:
+    def _parse(self, ref: TranscriptRef, path: Path, sha256: str | None) -> SessionRecord:
         record = self._new_record(ref, sha256)
         turn_index = 0
         count = 0
         pending_patches: dict[str, int] = {}
-        for index, entry in iter_jsonl(ref.path):
+        for index, entry in iter_jsonl(path):
             count = index + 1
             stamp = entry.get("timestamp")
             if stamp:
@@ -1209,12 +1250,12 @@ class GigacodeAdapter(TranscriptAdapter):
                 linked_session_ids=(session_id,),
             )
 
-    def load(self, ref: TranscriptRef, *, sha256: str | None = None) -> SessionRecord:
+    def _parse(self, ref: TranscriptRef, path: Path, sha256: str | None) -> SessionRecord:
         record = self._new_record(ref, sha256)
         pending: dict[str, dict[str, Any]] = {}
         turn_index = 0
         count = 0
-        for index, entry in iter_jsonl(ref.path):
+        for index, entry in iter_jsonl(path):
             count = index + 1
             stamp = entry.get("timestamp")
             if stamp:
@@ -1239,7 +1280,8 @@ class GigacodeAdapter(TranscriptAdapter):
                     self._read_call(record, part["functionCall"], index, stamp, pending)
                 elif "functionResponse" in part:
                     self._read_response(
-                        record, part["functionResponse"], index, pending, turn_index
+                        record, part["functionResponse"], index, pending, turn_index,
+                        allow_sidecars=ref.indexed is None,
                     )
             text = "\n".join(part for part in texts if part)
             if text:
@@ -1287,7 +1329,7 @@ class GigacodeAdapter(TranscriptAdapter):
             }
 
     @staticmethod
-    def _structured(response: dict[str, Any]) -> Any:
+    def _structured(response: dict[str, Any], *, allow_sidecars: bool) -> Any:
         """Recover the server response from gigacode's ``{"output": "<json>"}``.
 
         This host neither forwards ``structuredContent`` nor keeps content
@@ -1305,7 +1347,7 @@ class GigacodeAdapter(TranscriptAdapter):
         output = response.get("output")
         if isinstance(output, str):
             match = _PERSISTED_RE.search(output)
-            if match:
+            if match and allow_sidecars:
                 spilled = read_spilled_json(match.group(1))
                 if isinstance(spilled, dict):
                     return spilled
@@ -1321,6 +1363,8 @@ class GigacodeAdapter(TranscriptAdapter):
         index: int,
         pending: dict[str, dict[str, Any]],
         turn_index: int,
+        *,
+        allow_sidecars: bool,
     ) -> None:
         if not isinstance(payload, dict):
             return
@@ -1335,7 +1379,7 @@ class GigacodeAdapter(TranscriptAdapter):
         call.result_truncated = truncated
         if info["server"] != MEMORY_SERVER or not isinstance(response, dict):
             return
-        structured = self._structured(response)
+        structured = self._structured(response, allow_sidecars=allow_sidecars)
         if not isinstance(structured, dict):
             return
         self._record_memory_call(
@@ -1384,9 +1428,9 @@ class DeepseekAdapter(TranscriptAdapter):
                 linked_session_ids=(session_id,),
             )
 
-    def load(self, ref: TranscriptRef, *, sha256: str | None = None) -> SessionRecord:
+    def _parse(self, ref: TranscriptRef, path: Path, sha256: str | None) -> SessionRecord:
         record = self._new_record(ref, sha256)
-        with _JsonMemberScanner(ref.path) as scanner:
+        with _JsonMemberScanner(path) as scanner:
             metadata = scanner.value("metadata")
         if isinstance(metadata, dict):
             record.model = metadata.get("model")
@@ -1398,7 +1442,7 @@ class DeepseekAdapter(TranscriptAdapter):
         pending: dict[str, dict[str, Any]] = {}
         turn_index = 0
         count = 0
-        with _JsonMemberScanner(ref.path) as scanner:
+        with _JsonMemberScanner(path) as scanner:
             for index, message in enumerate(scanner.array("messages")):
                 count = index + 1
                 if not isinstance(message, dict):
@@ -1595,12 +1639,14 @@ class AeChatAdapter(TranscriptAdapter):
             linked.add(session["token"])
         return tuple(sorted(linked))
 
-    def load(self, ref: TranscriptRef, *, sha256: str | None = None) -> SessionRecord:
+    def _parse(self, ref: TranscriptRef, path: Path, sha256: str | None) -> SessionRecord:
         record = self._new_record(ref, sha256)
         meta_path = ref.path.parent / "meta.json"
         meta: dict[str, Any] = {}
         try:
-            if meta_path.is_file():
+            if ref.indexed is not None:
+                meta = {"model": ref.indexed.model, "workspace": ref.indexed.cwd}
+            elif meta_path.is_file():
                 with open(meta_path, "r", encoding="utf-8", errors="replace") as handle:
                     loaded = json.load(handle)
                 meta = loaded if isinstance(loaded, dict) else {}
@@ -1611,7 +1657,7 @@ class AeChatAdapter(TranscriptAdapter):
         count = 0
         pending: dict[str, dict[str, Any]] = {}
         turn_cli: str | None = None
-        for index, entry in iter_jsonl(ref.path):
+        for index, entry in iter_jsonl(path):
             count = index + 1
             stamp = self._stamp(entry.get("ts"))
             if stamp:
@@ -1849,15 +1895,15 @@ class AeNodeResultAdapter(TranscriptAdapter):
         except OSError:
             return {}
 
-    def load(self, ref: TranscriptRef, *, sha256: str | None = None) -> SessionRecord:
+    def _parse(self, ref: TranscriptRef, path: Path, sha256: str | None) -> SessionRecord:
         record = self._new_record(ref, sha256)
-        header = self._read_header(ref.path)
+        header = self._read_header(path)
         record.model = header.get("model")
         record.cwd = header.get("workdir")
         record.cli_session_id = header.get("session id") or ref.cli_session_id
         tail: deque[tuple[int, str]] = deque(maxlen=RESULT_TAIL_LINES)
         count = 0
-        for index, line in iter_text_lines(ref.path):
+        for index, line in iter_text_lines(path):
             count = index + 1
             tail.append((index, line))
         record.record_count = count
