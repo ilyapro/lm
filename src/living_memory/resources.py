@@ -379,6 +379,29 @@ def memory_health(
         raise ValueError("top_stale must be >= 0")
 
     normalized_scope = normalize_scope(scope) if scope else None
+    with store.read_snapshot():
+        report = _health_population(store, normalized_scope, window_hours, top_stale)
+    report.update(
+        {
+            "storage": storage_metrics(store),
+            "latency": hot_recall_latency(
+                store,
+                scope=normalized_scope,
+                samples=latency_samples,
+                query=latency_query,
+            ),
+            "instructions": instructions_metrics(
+                instructions_text,
+                default_scope=store.config.default_scope,
+            ),
+        }
+    )
+    return report
+
+
+def _health_population(
+    store: MemoryStore, normalized_scope: str | None, window_hours: int, top_stale: int,
+) -> dict[str, Any]:
     now = datetime.now(UTC)
     window_cutoff = (now - timedelta(hours=window_hours)).isoformat().replace("+00:00", "Z")
 
@@ -463,7 +486,7 @@ def memory_health(
     decay_rate = (trace_counts["decayed"] / decay_pool) if decay_pool > 0 else 0.0
 
     policy_scope = normalized_scope or "global"
-    report: dict[str, Any] = {
+    return {
         "scope": normalized_scope or "all",
         "window_hours": window_hours,
         "generated_at": now.isoformat().replace("+00:00", "Z"),
@@ -498,26 +521,11 @@ def memory_health(
             store,
             scope=normalized_scope,
             window_hours=window_hours,
+            cutoff=window_cutoff,
         ),
+        "feedback": feedback,
+        "access": access_metrics(store, scope=normalized_scope),
     }
-    report.update(
-        {
-            "feedback": feedback,
-            "access": access_metrics(store, scope=normalized_scope),
-            "storage": storage_metrics(store),
-            "latency": hot_recall_latency(
-                store,
-                scope=normalized_scope,
-                samples=latency_samples,
-                query=latency_query,
-            ),
-            "instructions": instructions_metrics(
-                instructions_text,
-                default_scope=store.config.default_scope,
-            ),
-        }
-    )
-    return report
 
 
 def retrieval_skew_metrics(
@@ -561,6 +569,7 @@ def feedback_closure_metrics(
     *,
     scope: str | None = None,
     window_hours: int,
+    cutoff: str | None = None,
 ) -> dict[str, Any]:
     """Windowed feedback-closure ratio partitioned by recall identity class.
 
@@ -576,7 +585,7 @@ def feedback_closure_metrics(
         raise ValueError("window_hours must be >= 1")
 
     normalized_scope = normalize_scope(scope) if scope else None
-    cutoff = (
+    cutoff = cutoff or (
         (datetime.now(UTC) - timedelta(hours=window_hours))
         .isoformat()
         .replace("+00:00", "Z")

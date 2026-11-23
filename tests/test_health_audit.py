@@ -1077,7 +1077,7 @@ def test_native_health_closure_scope_cutoff_and_unicode_identity(tmp_path, monke
 
 
 @pytest.mark.parametrize("failure", [False, True])
-def test_native_health_closure_releases_snapshot_before_next_read(tmp_path, monkeypatch, failure):
+def test_native_health_closure_and_access_share_snapshot(tmp_path, monkeypatch, failure):
     from fastmcp import Client
     from living_memory.server import create_mcp_server
 
@@ -1111,7 +1111,7 @@ def test_native_health_closure_releases_snapshot_before_next_read(tmp_path, monk
                     assert not response.structured_content
                 else:
                     assert response.data["feedback_closure"]["recall_events_in_window"] == 3
-                    assert response.data["access"]["active_traces"]["never_accessed"] == 0
+                    assert response.data["access"]["active_traces"]["never_accessed"] == 1
         asyncio.run(check())
         assert len(cursors) == 1
         assert cursors[0].closes == 1
