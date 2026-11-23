@@ -27,6 +27,13 @@ if DEPS_DIR.exists():
         sys.path.insert(insert_at, deps)
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--postsession-corpus", nargs=2, type=Path, metavar=("MANIFEST", "INDEX"),
+        help="Check indexed evidence against this sealed manifest and local index.",
+    )
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _clear_lm_policy_env() -> Iterator[None]:
     """Use built-in policy defaults before module fixtures start their probes.

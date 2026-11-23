@@ -15,20 +15,10 @@ or the idempotency of retroactive grounded credit:
 * **redaction** -- a bounded evidence document leaves the machine, so the
   redactor must run before the caps are measured;
 * **bounds** -- what the caps drop has to be reported, because a silent
-  truncation reads as "we submitted everything";
-* **a real session** -- fixtures prove the rules, a real train-split transcript
-  proves the rules fire on transcripts nobody wrote for this test.
-
-The last one reads the *sealed* corpus and only ``train`` rows. It never opens
-a ``holdout`` session: that split is reserved for the final field measurement,
-and a test that peeks at it spends the only unbiased sample the project has.
+  truncation reads as "we submitted everything".
 """
 
 from __future__ import annotations
-
-from datetime import datetime
-from pathlib import Path
-import os
 
 import pytest
 
@@ -39,7 +29,6 @@ from living_memory.attestation import (
     EVIDENCE_MAX_TOTAL_CHARS,
     canonical_evidence,
 )
-from living_memory.postsession import corpus as corpus_mod
 from living_memory.postsession import evidence as evidence_mod
 from living_memory.postsession.evidence import (
     CATEGORIES,
@@ -59,23 +48,6 @@ from living_memory.postsession.session import (
     SourceSpan,
     ToolCall,
     Turn,
-)
-
-ROOT_DIR = Path(__file__).resolve().parent.parent
-TRACKED_MANIFEST = ROOT_DIR / "artifacts" / "post-session" / "corpus.json"
-
-#: Where a locally built session index may be found, in lookup order: an
-#: explicit override, the gitignored path beside the manifest, then a machine
-#: cache outside the repository. The index holds thousands of absolute home
-#: paths, so it is never committed; a machine that has not run
-#: ``scripts/postsession_corpus.py --build`` skips the real-session tests
-#: rather than inventing a substitute for real transcripts.
-INDEX_ENV = "LM_POSTSESSION_INDEX"
-CACHED_INDEX = (
-    Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
-    / "living-memory"
-    / "post-session"
-    / "corpus-index.jsonl"
 )
 
 # --------------------------------------------------------------------------
@@ -684,127 +656,3 @@ def test_a_session_without_artifacts_proposes_nothing() -> None:
     assert bundle.texts == ()
     assert bundle.evidence_sha256 == canonical_evidence(())[1]
     assert proposed_attestations(empty, bundle=bundle) == []
-
-
-# --------------------------------------------------------------------------
-# (f) a real train-split session
-# --------------------------------------------------------------------------
-
-
-def _train_entries() -> list[corpus_mod.SessionEntry]:
-    """Sealed ``train`` rows that are safe to read, or skip the test.
-
-    Two filters beyond ``split == "train"``, both about the seal rather than
-    about speed:
-
-    * ``group_size == 1`` -- a session's split is bucketed by its *group's*
-      union-find root, and a locally rebuilt index sees transcripts recorded
-      after the seal. Groups only ever grow, so a session that is alone now was
-      alone then, and its split cannot have moved;
-    * modified before the manifest's ``generated_at`` -- the session existed
-      when the corpus was sealed, so it is a row of the sealed train split and
-      not a newcomer the seal never saw.
-
-    Together they make "never a holdout session" hold even against an index
-    that is newer than the manifest.
-    """
-
-    if not TRACKED_MANIFEST.is_file():
-        pytest.skip("no tracked corpus manifest")
-    candidates = [
-        Path(path)
-        for path in (
-            os.environ.get(INDEX_ENV),
-            corpus_mod.index_path_for(TRACKED_MANIFEST),
-            CACHED_INDEX,
-        )
-        if path
-    ]
-    index_path = next((path for path in candidates if path.is_file()), None)
-    if index_path is None:
-        pytest.skip(
-            f"no local session index; build one with "
-            f"'scripts/postsession_corpus.py --build' or point {INDEX_ENV} at it"
-        )
-    manifest = corpus_mod.read_manifest(TRACKED_MANIFEST)
-    sealed_at = datetime.fromisoformat(
-        str(manifest["generated_at"]).replace("Z", "+00:00")
-    ).timestamp()
-    entries = []
-    for entry in corpus_mod.iter_index(index_path):
-        if entry.split != "train" or entry.group_size != 1:
-            continue
-        if not (20_000 < entry.bytes < 4_000_000):
-            continue
-        path = Path(entry.path)
-        try:
-            if not path.is_file() or path.stat().st_mtime >= sealed_at:
-                continue
-        except OSError:  # pragma: no cover - a transcript vanishing mid-run
-            continue
-        entries.append(entry)
-    if not entries:
-        pytest.skip("the local index holds no readable sealed train session")
-    entries.sort(key=lambda item: item.session_key)
-    return entries
-
-
-def test_a_real_train_session_produces_evidence() -> None:
-    """Fixtures prove the rules; a real transcript proves they fire."""
-
-    entries = _train_entries()
-    splits_read: set[str] = set()
-    produced: list[tuple[corpus_mod.SessionEntry, object]] = []
-    for entry in entries[:40]:
-        splits_read.add(entry.split)
-        record = corpus_mod.load_session(entry)
-        bundle = assemble_evidence(record)
-        if bundle:
-            produced.append((entry, bundle))
-        if len(produced) >= 3:
-            break
-
-    assert splits_read == {"train"}, "holdout and eval sessions are off limits"
-    assert produced, "no real train session produced any evidence"
-
-    for entry, bundle in produced:
-        where = entry.session_key
-        assert bundle.texts, where
-        assert len(bundle.items) <= EVIDENCE_MAX_ITEMS, where
-        assert all(len(text) <= EVIDENCE_MAX_ITEM_CHARS for text in bundle.texts), where
-        assert bundle.chars <= EVIDENCE_MAX_TOTAL_CHARS, where
-        canonical, digest = canonical_evidence(bundle.texts)
-        assert canonical == bundle.texts, where
-        assert digest == bundle.evidence_sha256, where
-        assert {item.category for item in bundle.items} <= set(CATEGORIES), where
-        # Reloaded from disk and reassembled: the ledger key must not move.
-        reloaded = assemble_evidence(corpus_mod.load_session(entry))
-        assert reloaded.evidence_sha256 == bundle.evidence_sha256, where
-        assert reloaded.texts == bundle.texts, where
-        summary = bundle.summary()
-        assert summary["excluded"]["turns"] >= 0
-        assert sum(summary["kept"].values()) == len(bundle.items), where
-
-
-def test_a_real_session_leaks_no_home_path_and_no_memory_result() -> None:
-    """Redaction and the memory-tool exclusion, checked on real bytes."""
-
-    entries = _train_entries()
-    checked = 0
-    for entry in entries[:40]:
-        record = corpus_mod.load_session(entry)
-        bundle = assemble_evidence(record)
-        if not bundle:
-            continue
-        joined = "\n".join(bundle.texts)
-        assert "/home/" not in joined, entry.session_key
-        assert "/Users/" not in joined, entry.session_key
-        for call in record.tool_calls:
-            if not call.is_memory_tool or not call.result_text:
-                continue
-            body = (call.result_text or "").strip()
-            assert body not in joined, entry.session_key
-        checked += 1
-        if checked >= 3:
-            break
-    assert checked, "no real train session produced any evidence"
