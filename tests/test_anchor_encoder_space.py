@@ -317,6 +317,13 @@ def test_historical_index_reads_and_nominees_match_full_scan(tmp_path, monkeypat
         check("global", 3, 3)
         check(None, 1, 6)
 
+        # An id conflict also invalidates the displaced row's scope.
+        with writer.transaction():
+            writer.connection.execute("DELETE FROM query_anchor_edges WHERE anchor_id IN ('5', '10')")
+            writer.connection.execute("UPDATE OR REPLACE query_anchors SET id='10' WHERE id='5'")
+        check("global", 0, 3)
+        check(None, 2, 5)
+
 
 def test_unlabelled_nomination_matrix_follows_committed_rows(tmp_path, monkeypatch):
     class Model:
