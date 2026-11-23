@@ -357,7 +357,7 @@ def test_scope_policy_is_fresh_at_each_transaction(sources, monkeypatch):
     first, second = "project:first", "project:second"
     context = {**CONTEXT, "session_id": "policy-test"}
     first_nodes = [store.append_trace(f"first {i}", {"scope": first}) for i in range(9)]
-    store.create_connection(first_nodes[0].id, first_nodes[1].id, "related")
+    edge = store.create_connection(first_nodes[0].id, first_nodes[1].id, "related")
     second_nodes = [store.append_trace(f"second {i}", {"scope": second}) for i in range(10)]
     store.update_node(second_nodes[0].id, embedding=[1.0, 0.0])
     events = []
@@ -403,7 +403,7 @@ def test_scope_policy_is_fresh_at_each_transaction(sources, monkeypatch):
 
     store.append_trace("first at boundary", {"scope": first})
     store.update_node(first_nodes[0].id, embedding=[1.0, 0.0])
-    store.delete_connection(store.list_connections(source_id=first_nodes[0].id)[0].id)
+    store.delete_connection(edge.id)
     store.soft_delete_node(second_nodes[0].id)
     store.create_connection(second_nodes[1].id, second_nodes[2].id, "related")
     probes.clear()

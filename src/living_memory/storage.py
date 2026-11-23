@@ -5346,7 +5346,7 @@ class MemoryStore:
         bm25_signal: float = 0.0,
         vector_signal: float = 0.0,
         graph_signal: float = 0.0,
-        applicable_floors: RetrievalPolicyFloors | None = None,
+        scope_floors: Mapping[str, RetrievalPolicyFloors | None] | None = None,
     ) -> RetrievalWeights:
         current = self.get_retrieval_weights(scope)
         updated = RetrievalWeights(
@@ -5357,9 +5357,10 @@ class MemoryStore:
             learning_rate=current.learning_rate,
             updated_at=current.updated_at,
         ).normalized()
-        if applicable_floors is None:
-            applicable_floors = self.applicable_retrieval_weight_floors(scope)
-        updated = self._apply_applicable_floors(scope, updated, applicable_floors)
+        if scope_floors is None:
+            updated = self.apply_retrieval_weight_floors(scope, updated)
+        else:
+            updated = self._apply_applicable_floors(scope, updated, scope_floors[scope])
         return self.set_retrieval_weights(
             scope,
             bm25=updated.bm25,

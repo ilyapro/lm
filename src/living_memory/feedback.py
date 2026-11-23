@@ -382,7 +382,11 @@ def apply_retrieval_feedback(
     scope: str | None = None,
     prepared_scopes: dict[str, RetrievalPolicyFloors | None] | None = None,
 ) -> FeedbackUpdate:
-    """Update node usefulness and nudge weights by each method's evidence share."""
+    """Update node usefulness and nudge weights by each method's evidence share.
+
+    prepared_scopes belongs to one transaction's numeric feedback loop. Each
+    entry records the applicable floors after tuning that scope's learning rate.
+    """
 
     magnitude = max(0.0, min(abs(float(signal)), 5.0))
     signed_signal = magnitude if useful else -magnitude
@@ -406,7 +410,7 @@ def apply_retrieval_feedback(
         bm25_signal=method_signals["bm25"],
         vector_signal=method_signals["vector"],
         graph_signal=method_signals["graph"],
-        applicable_floors=prepared_scopes[target_scope] if prepared_scopes is not None else None,
+        scope_floors=prepared_scopes,
     )
     return FeedbackUpdate(node=node, weights=weights)
 
