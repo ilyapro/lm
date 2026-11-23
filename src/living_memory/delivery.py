@@ -374,9 +374,14 @@ def shape_recall_results(
     if view not in ("knowledge", "full"):
         raise ValueError("view must be 'knowledge' or 'full'")
 
-    bearers = duplicate_bearers([
-        result.node for result in results if not getattr(result, "withheld", None)
-    ])
+    eligible = [result.node for result in results if not getattr(result, "withheld", None)]
+    twins: dict[str, str] = {}
+    recipe_bearers = set()
+    for node, bearer in zip(eligible, duplicate_bearers(eligible), strict=True):
+        if bearer is not None:
+            twins[node.id] = bearer
+        if node.level == "schema":
+            recipe_bearers.add(bearer or node.id)
     shaped: list[dict[str, Any]] = []
     bearer_position = 0
     for result in results:
@@ -389,7 +394,7 @@ def shape_recall_results(
         validity = validity_fields(result.superseded, (correction_refs or {}).get(node_id, ()))
 
         withheld = getattr(result, "withheld", None)
-        twin_of = None if withheld else next(bearers)
+        twin_of = twins.get(node_id)
 
         # The bearer named on a stub's content_ref, if this result is one.
         stub_bearer: str | None = None
@@ -402,9 +407,7 @@ def shape_recall_results(
             node_dict["content"] = _one_line_preview(content)
         else:
             budget = _bearer_budget(bearer_position, snippet_ladder, snippet_max_chars)
-            # Preserve the whole schema recipe so no step or condition is lost.
-            # Case records can instead be excerpted for the current task.
-            if result.node.level != "schema" and LADDER_COMPLETE < budget < full_chars:
+            if node_id not in recipe_bearers and LADDER_COMPLETE < budget < full_chars:
                 if session_dedup:
                     offered = delivery_history.uncovered_excerpt(
                         result.node, budget, query, result.semantic_passage,

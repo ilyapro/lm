@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
@@ -131,6 +132,61 @@ def test_knowledge_preserves_delivery_and_validity_without_diagnostics() -> None
     assert knowledge[2]["content_ref"]["duplicate_of"] == "snippet"
     assert "duplicate_of" not in knowledge[4]["content_ref"]
     assert knowledge[5]["content"] == ""
+
+
+@pytest.mark.parametrize("view", ["knowledge", "full"])
+@pytest.mark.parametrize("first_level", ["trace", "schema"])
+def test_mcp_schema_twins_share_one_complete_offer(tmp_path, view, first_level):
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3")
+    store = mcp.memory_store
+    text = (
+        "Calibrate the silver dial in sequence.\n"
+        + "\n".join(f"Inspect each of the individual gauge teeth and log its reading, stage {i}."
+                    for i in range(100))
+        + "\nStop if the final pin is absent."
+    )
+    scope = "project:gauges"
+    levels = [first_level, "trace" if first_level == "schema" else "schema"]
+    strong = {"confidence": 1., "usefulness_score": 1., "access_count": 20}
+    weak = {"confidence": .01, "usefulness_score": 0., "access_count": 0}
+    ids = [store.create_node(level=level, content=text, context={"scope": scope}, stats=stats).id
+           for level, stats in zip(levels, (strong, weak), strict=True)]
+    query = {"query": "silver dial calibration sequence gauge reading", "scope": scope,
+             "depth": 0, "view": view}
+
+    async def scenario():
+        async with Client(mcp) as client:
+            if first_level == "trace":
+                # A prior excerpt for this bearer cannot suppress the complete recipe.
+                single = _structured(await client.call_tool("memory_recall", {**query, "max_results": 1}))
+                assert single["results"][0]["delivery"] == "snippet"
+            response = _structured(await client.call_tool("memory_recall", query))
+            bearer, twin = response["results"]
+            nodes = [item.get("node", item) for item in (bearer, twin)]
+            assert [node["id"] for node in nodes] == ids
+            assert [node["level"] for node in nodes] == levels
+            assert bearer["delivery"] == "full" and nodes[0]["content"] == text
+            assert twin["delivery"] == "twin_duplicate" and nodes[1]["content"] != text
+            assert twin["content_ref"]["duplicate_of"] == ids[0]
+            assert twin["content_ref"]["node_id"] == ids[1]
+            digest = hashlib.sha256(text.encode()).hexdigest()
+            event = store.get_recall_event(response["recall_event_id"])
+            assert event.result_ids == ids
+            assert [r["delivery"] for r in event.results] == [
+                {"kind": "full", "content_sha256": digest, "delivered_sha256": digest},
+                {"kind": "twin_duplicate"},
+            ]
+            repeat = _structured(await client.call_tool("memory_recall", query))
+            assert [item["delivery"] for item in repeat["results"]] == [
+                "session_duplicate", "twin_duplicate",
+            ]
+            lookup = _structured(await client.call_tool("memory_lookup", {"node_ids": ids}))
+            assert {item["id"]: item["content"] for item in lookup["results"]} == dict.fromkeys(ids, text)
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        store.close()
 
 
 def test_mcp_read_lookup_feedback_and_diagnostic_access(tmp_path: Path) -> None:
