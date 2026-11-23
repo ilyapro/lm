@@ -42,7 +42,7 @@ from living_memory.consolidation import (
     prepare_forget,
     prepare_teach,
 )
-from living_memory.decay import apply_decay
+from living_memory.decay import apply_decay_counts
 from living_memory.delivery import (
     DELIVERY_SNIPPET,
     DeliveryHistory,
@@ -1987,7 +1987,7 @@ def _decay_sweep_if_due(
                 return None
 
     started = _time.perf_counter()
-    result = apply_decay(store, scope=None, now=current)
+    expired, superseded = apply_decay_counts(store, now=current)
     duration_ms = int((_time.perf_counter() - started) * 1000)
 
     timestamp_iso = current.astimezone(timezone.utc).isoformat(
@@ -1997,9 +1997,9 @@ def _decay_sweep_if_due(
 
     return {
         "swept": True,
-        "decayed_count": len(result.expired) + len(result.superseded),
-        "expired_count": len(result.expired),
-        "superseded_count": len(result.superseded),
+        "decayed_count": expired + superseded,
+        "expired_count": expired,
+        "superseded_count": superseded,
         "duration_ms": duration_ms,
         "last_decay_sweep_at": timestamp_iso,
     }

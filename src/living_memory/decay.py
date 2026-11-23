@@ -34,7 +34,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from heapq import nsmallest
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 from living_memory.relations import correction_sql
 from living_memory.models import NODE_LEVELS, Node
@@ -119,21 +119,20 @@ def apply_decay(
     environment", which is what the server's sweep does.
     """
 
-    result = DecayResult()
-    result.expired.extend(
-        soft_delete_expired(
-            store,
-            scope=scope,
-            now=now,
-            ttl_days=ttl_days,
-            ttl_anchor=ttl_anchor,
-            decay_concept_covered=decay_concept_covered,
-            max_expired=max_expired,
-        )
+    return DecayResult(
+        expired=soft_delete_expired(
+            store, scope=scope, now=now, ttl_days=ttl_days, ttl_anchor=ttl_anchor,
+            decay_concept_covered=decay_concept_covered, max_expired=max_expired,
+        ),
+        superseded=soft_delete_superseded(store, scope=scope) if include_superseded else [],
     )
-    if include_superseded:
-        result.superseded.extend(soft_delete_superseded(store, scope=scope))
-    return result
+
+
+def apply_decay_counts(store: MemoryStore, *, now: datetime) -> tuple[int, int]:
+    """Count committed TTL and supersession retirements across all scopes."""
+    expired = sum(1 for _ in _iter_expired(store, now=now))
+    superseded = sum(1 for _ in _iter_superseded(store))
+    return expired, superseded
 
 
 def resolve_ttl_anchor() -> str:
@@ -261,6 +260,24 @@ def soft_delete_expired(
     coverage can decay; a covered trace still being read falls through to TTL.
     """
 
+    return list(_iter_expired(
+        store, scope=scope, now=now, ttl_days=ttl_days, levels=levels,
+        ttl_anchor=ttl_anchor, decay_concept_covered=decay_concept_covered,
+        max_expired=max_expired,
+    ))
+
+
+def _iter_expired(
+    store: MemoryStore,
+    *,
+    scope: str | None = None,
+    now: datetime | None = None,
+    ttl_days: int | None = None,
+    levels: Iterable[str] = ("trace",),
+    ttl_anchor: str | None = None,
+    decay_concept_covered: bool | None = None,
+    max_expired: int | None = None,
+) -> Iterator[Node]:
     ttl = store.config.trace_ttl_days if ttl_days is None else int(ttl_days)
     if ttl < 0:
         raise ValueError("ttl_days must be non-negative")
@@ -320,15 +337,15 @@ def soft_delete_expired(
                 if reference is not None and reference < cutoff:
                     yield (reference, node_id, TTL_EXPIRED_REASON)
 
-    retired: list[Node] = []
+    retired_count = 0
     retried = False
-    while not cap or len(retired) < cap:
+    while not cap or retired_count < cap:
         version = _data_version(store)
         # Oldest parsed reference first, with stable ID ties even when
         # levels repeat. A finite sweep retains only its remaining budget.
         if cap:
             candidates = nsmallest(
-                cap - len(retired), eligible_candidates(), key=lambda item: (item[0], item[1])
+                cap - retired_count, eligible_candidates(), key=lambda item: (item[0], item[1])
             )
         else:
             candidates = sorted(eligible_candidates(), key=lambda item: (item[0], item[1]))
@@ -345,15 +362,15 @@ def soft_delete_expired(
                 # outside the writer. Under sustained contention defer the
                 # remaining TTL work to the next sweep.
                 if retried:
-                    return retired
+                    return
                 retried = True
                 break
-            retired.append(node)
+            retired_count += 1
             if coverage_rule and node.level in _COVERING_LEVELS:
                 removed_sources.update(_source_ids(node.source_traces))
+            yield node
         else:
             break
-    return retired
 
 
 def soft_delete_superseded(store: MemoryStore, *, scope: str | None = None) -> list[Node]:
@@ -364,13 +381,17 @@ def soft_delete_superseded(store: MemoryStore, *, scope: str | None = None) -> l
     because a concept cites it keeps outranking the correction in recall.
     """
 
+    return list(_iter_superseded(store, scope=scope))
+
+
+def _iter_superseded(store: MemoryStore, *, scope: str | None = None) -> Iterator[Node]:
     clauses = [correction_sql("c"), "target.decayed = 0"]
     params: list[str] = []
     if scope is not None:
         clauses.append("target.scope = ?")
         params.append(scope)
 
-    decayed: list[Node] = []
+    retired_ids: set[str] = set()
     source_clause = "source.decayed = 0"
     for attempt in range(2):
         version = _data_version(store)
@@ -388,20 +409,20 @@ def soft_delete_superseded(store: MemoryStore, *, scope: str | None = None) -> l
             node = _retire_if_current(store, version, node_id, "superseded")
             if node is None:
                 break
-            decayed.append(node)
+            if attempt == 0:
+                retired_ids.add(node.id)
+            yield node
         else:
             break
 
-        if attempt == 0 and decayed:
+        if attempt == 0 and retired_ids:
             # A chain still has its original basis when our own write retired
             # its middle node. On rescan, admit only its previously live edges
             # that still qualify and whose source still bears our reason.
-            retired_ids = {node.id for node in decayed}
             retained_edges = [edge["id"] for edge in edges if edge["source_id"] in retired_ids]
             source_clause += """ OR (source.decay_reason = 'superseded'
                                      AND c.id IN (SELECT value FROM json_each(?)))"""
             params.append(json.dumps(retained_edges))
-    return decayed
 
 
 def _ttl_reference(row: Any, anchor: str) -> datetime | None:

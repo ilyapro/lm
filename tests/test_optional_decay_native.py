@@ -79,7 +79,7 @@ def test_optional_outcome_and_ordinary_recovery(
 ):
     r = runtime
     gate_calls, apply_calls, observations = [], [], []
-    sweep, apply = server._decay_sweep_if_due, server.apply_decay
+    sweep, apply = server._decay_sweep_if_due, server.apply_decay_counts
     failure_active = True
 
     def checked_sweep(store, **kwargs):
@@ -117,7 +117,7 @@ def test_optional_outcome_and_ordinary_recovery(
                 reject_marker(r)
             before = durable(r)
             monkeypatch.setattr(server, "_decay_sweep_if_due", checked_sweep)
-            monkeypatch.setattr(server, "apply_decay", checked_apply)
+            monkeypatch.setattr(server, "apply_decay_counts", checked_apply)
             arguments = {
                 "memory_recall": {"query": CONTENT, "scope": SCOPE},
                 "memory_remember": {"content": CONTENT, "context": {"scope": SCOPE}},
@@ -206,7 +206,7 @@ def test_explicit_sweep_failure_remains_an_error(runtime, monkeypatch, route, fa
     else:
         def fail(*args, **kwargs):
             raise RuntimeError(ERRORS[fault])
-        monkeypatch.setattr(server, "apply_decay", fail)
+        monkeypatch.setattr(server, "apply_decay_counts", fail)
     if route == "forced":
         with pytest.raises((RuntimeError, sqlite3.IntegrityError), match=ERRORS[fault]):
             server._decay_sweep_if_due(r.store, force=True)
