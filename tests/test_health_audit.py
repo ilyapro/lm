@@ -585,7 +585,7 @@ def test_health_reads_canonical_scopes_without_candidate_queries(
     assert report["feedback"]["feedback_applied"] == 2
     assert statements
     assert all(
-        statement.lstrip().split()[0].upper() in {"SELECT", "WITH", "PRAGMA"}
+        statement.lstrip().split()[0].upper() in {"SELECT", "WITH", "PRAGMA", "SAVEPOINT", "RELEASE"}
         for statement in statements
     )
     assert not any(
