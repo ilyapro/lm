@@ -1,6 +1,7 @@
 """Synthetic consumers of byte-identified corpus entries."""
 
 import hashlib
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 
@@ -10,7 +11,7 @@ from living_memory.postsession.corpus import (
     assign_splits, probe, refs_from_index, split_for, write_index,
 )
 from living_memory.postsession.transcripts import (
-    ADAPTERS, IndexedTranscriptMismatch, TranscriptRef, load_transcript,
+    IndexedTranscriptMismatch, TranscriptRef, load_transcript,
 )
 from scripts import attest_eval, post_session_extract
 
@@ -24,7 +25,8 @@ def codex_line(text):
 def indexed(tmp_path):
     path = tmp_path / "session.jsonl"
     path.write_bytes(codex_line(b"first"))
-    key = next(k for i in range(100) if split_for(k := f"codex:{i}") == "train")
+    keys = (f"codex:{i}" for i in range(100))
+    key = next(key for key in keys if split_for(key) == "train")
     entry, = assign_splits([probe(TranscriptRef("codex", "codex", path, key))])
     index = tmp_path / "index.jsonl"
     write_index([entry], index)
@@ -83,22 +85,73 @@ def test_attest_reader_checks_membership_before_open_and_checks_bytes(indexed):
     assert reader.refused == {"unsealed": 1}
 
 
-def test_each_parser_reads_the_verified_snapshot(tmp_path, monkeypatch):
-    for source, adapter in ADAPTERS.items():
-        path = tmp_path / source
-        path.write_bytes(b'{"messages": []}\n')
-        entry = probe(TranscriptRef(source, adapter.cli, path, source))
-        index = tmp_path / "index"
-        write_index(assign_splits([entry]), index)
-        ref, = refs_from_index(index)
-        parse = adapter._parse
+@pytest.mark.parametrize(("source", "original"), [
+    ("ae_node_result", b"first"),
+    ("ae_chat", b'{"type":"user_message","text":"first"}'),
+    ("deepseek", b'{"metadata":{},"messages":[{"role":"user","content":"first"}]}'),
+    ("claude", b'{"type":"user","message":{"content":"first"}}'),
+    ("codex", codex_line(b"first")),
+    ("gigacode", b'{"message":{"role":"user","parts":[{"text":"first"}]}}'),
+])
+def test_parser_uses_same_bytes_after_source_replacement(tmp_path, monkeypatch, source, original):
+    path = tmp_path / "session"
+    path.write_bytes(original)
+    entry = probe(TranscriptRef(source, source, path, source))
+    index = tmp_path / "index"
+    write_index(assign_splits([entry]), index)
+    ref, = refs_from_index(index)
 
-        def replace_before_parse(ref, input_path, sha256):
-            path.write_bytes(b'{"messages": [42]}\n')
-            assert input_path.read_bytes() == b'{"messages": []}\n'
-            return parse(ref, input_path, sha256)
+    # Once the loader has captured its prefix, replace the original in place.
+    # Reopening or rewinding the live input for any parser pass sees "other".
+    real_open = Path.open
 
-        monkeypatch.setattr(adapter, "_parse", replace_before_parse)
-        record = load_transcript(ref)
-        assert record.transcript_sha256 == entry.sha256
-        assert record.path == str(path)
+    @contextmanager
+    def open_source(self, *args, **kwargs):
+        with real_open(self, *args, **kwargs) as handle:
+            yield handle
+        if self == path:
+            with real_open(path, "wb") as writer:
+                writer.write(original.replace(b"first", b"other"))
+
+    monkeypatch.setattr(Path, "open", open_source)
+    record = load_transcript(ref)
+    assert record.transcript_sha256 == entry.sha256
+    turn, = record.turns
+    assert turn.text == "first"
+    assert turn.span.path == record.path == str(path)
+
+
+def test_large_source_reads_only_indexed_bytes(tmp_path, monkeypatch):
+    path = tmp_path / "session"
+    original = b"{}\n" * (1 << 20) + codex_line(b"first")
+    path.write_bytes(original)
+    entry = probe(TranscriptRef("codex", "codex", path, "codex:large"))
+    index = tmp_path / "index"
+    write_index(assign_splits([entry]), index)
+    with path.open("ab") as stream:
+        stream.truncate(1 << 32)
+    real_open = Path.open
+    reads = []
+
+    @contextmanager
+    def open_source(self, *args, **kwargs):
+        with real_open(self, *args, **kwargs) as stream:
+            if self != path:
+                yield stream
+                return
+
+            class Reader:
+                def read(self, size):
+                    assert 0 < size <= 1 << 20
+                    chunk = stream.read(size)
+                    reads.append(len(chunk))
+                    assert stream.tell() <= entry.bytes
+                    return chunk
+
+            yield Reader()
+
+    monkeypatch.setattr(Path, "open", open_source)
+    ref, = refs_from_index(index)
+    record = load_transcript(ref)
+    assert sum(reads) == entry.bytes
+    assert [turn.text for turn in record.turns] == ["first"]
