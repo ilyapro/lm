@@ -414,6 +414,8 @@ def _transcript_digests(path: Path, recorded_bytes: int) -> tuple[str, int, str]
             digest.update(chunk)
             size += len(chunk)
         prefix = digest.hexdigest()
+        if size < recorded_bytes:
+            return prefix, size, prefix
         while chunk := handle.read(_CHUNK):
             digest.update(chunk)
             size += len(chunk)
