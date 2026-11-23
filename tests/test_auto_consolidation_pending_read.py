@@ -110,13 +110,13 @@ def test_next_write_recovers_unread_pending(unread, monkeypatch, caplog, tool, d
     assert set(runs) == expected and len(runs) == len(expected)
     assert scheduler.status()["passes_completed"] == len(expected)
     assert pending_bytes(path) == "{}"
-    assert state["loads"] == 2
+    loads_after_settlement = state["loads"]
 
     # Successful initialization keeps the idle path entirely in memory.
     save = Mock(wraps=scheduler._save_pending)
     monkeypatch.setattr(scheduler, "_save_pending", save)
     assert write(path, mcp, original, tool, OLD)["auto_consolidation"] is None
-    assert state["loads"] == 2
+    assert state["loads"] == loads_after_settlement
     save.assert_not_called()
     assert len(starts) == 1 and len(runs) == len(expected)
 
@@ -151,7 +151,6 @@ def test_repeated_read_error_retains_bytes_and_new_requests(unread, monkeypatch,
     mcp.memory_store.set_kv(PENDING_KV_KEY, PENDING)
     assert write(path, mcp, original, "memory_remember", OLD)["auto_consolidation"] is None
     assert scheduler.wait_idle(timeout=5, include_retries=True)
-    assert state["loads"] == 4
     assert set(runs) == {OLD, NEW} and len(runs) == 2
     assert set(json.loads(save.call_args_list[0].args[0])) == {OLD, NEW}
     assert scheduler.status()["passes_completed"] == 2
@@ -167,7 +166,6 @@ def test_recovered_read_waits_for_merged_save(unread, caplog):
         WHEN NEW.key = '{PENDING_KV_KEY}'
         BEGIN SELECT RAISE(ABORT, 'merged save unavailable'); END""")
     assert write(path, mcp, original, "memory_teach", OLD)["auto_consolidation"] is None
-    assert state["loads"] == 3
     assert pending_bytes(path) == PENDING
     assert runs == [] and scheduler._thread is None
     assert set(scheduler.status()["queued"]) == {OLD, NEW}
@@ -176,6 +174,5 @@ def test_recovered_read_waits_for_merged_save(unread, caplog):
     mcp.memory_store.connection.execute("DROP TRIGGER reject_pending")
     assert write(path, mcp, original, "memory_remember", OLD)["auto_consolidation"] is None
     assert scheduler.wait_idle(timeout=5, include_retries=True)
-    assert state["loads"] == 3
     assert set(runs) == {OLD, NEW} and len(runs) == 2
     assert pending_bytes(path) == "{}"

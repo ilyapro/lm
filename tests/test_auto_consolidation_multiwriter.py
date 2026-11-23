@@ -6,6 +6,7 @@ from contextlib import ExitStack
 
 import pytest
 
+from living_memory import consolidation
 from living_memory.auto_consolidation import PENDING_KV_KEY
 from living_memory.server import create_mcp_server
 from test_lookup import FakeMCP
@@ -67,7 +68,8 @@ def test_other_writer_survives_completion_and_restart(tmp_path, monkeypatch, sam
 
     with ExitStack() as stack:
         servers = [open_server(stack, path) for _ in scopes]
-        stack.callback(lambda: [gate.set() for gate in release])
+        for gate in release:
+            stack.callback(gate.set)
         for i, server in enumerate(servers):
             monkeypatch.setattr(server.auto_consolidation, "_run_pass", pass_for(i))
             result = write_interval(server, scopes[i], 6 if i and same_scope else 1)
@@ -103,7 +105,6 @@ def test_peer_resuming_an_older_request_cannot_settle_a_followup(tmp_path, monke
         monkeypatch.setattr(writer.auto_consolidation, "_run_pass", interrupted)
         write_interval(writer, scope, 1)
         assert writer.auto_consolidation.wait_idle(timeout=5)
-        from living_memory import consolidation
         real_pass = consolidation.memory_consolidate
 
         def wait_then_run(*args, **kwargs):

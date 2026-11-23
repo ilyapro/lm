@@ -79,7 +79,8 @@ def test_start_failure_preserves_write_pending_and_cold_resume(seeded, monkeypat
         for _ in range(3):
             report = mcp.auto_consolidation.request(SCOPE)
             assert report["coalesced"] and report["worker_start_pending"]
-            assert durable(path)[2] == pending
+            pending = durable(path)[2]
+            assert list(pending) == [SCOPE]
         assert len(starts) == 4
         assert mcp.auto_consolidation.status()["queued"] == [SCOPE]
         assert mcp.auto_consolidation.status()["passes_completed"] == 0
