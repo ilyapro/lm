@@ -18,7 +18,7 @@ from living_memory.postsession.client import (
 )
 from living_memory.postsession.evidence import proposed_attestations
 from living_memory.postsession.runner import (
-    EXIT_GATE, EXIT_UNKNOWN, EXIT_USAGE, ExtractionRunner, GateDecision, Ledger, RunnerConfig,
+    EXIT_GATE, EXIT_UNKNOWN, EXIT_USAGE, ExtractionRunner, GateDecision, Ledger, LedgerError, RunnerConfig,
     SessionProposals, enforce_attribution, op_fingerprint,
 )
 from postsession_support import (
@@ -52,9 +52,37 @@ def run(state, client, record, ops):
     ).decide_and_execute([SessionProposals(record=record, ops=ops)])
 
 
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085"])
+def test_remember_round_trips_unicode_in_ledger(tmp_path, separator):
+    record = make_record()
+    content = f"Saved{separator}fact."
+    op = make_remember(record, content)
+    client = Recipient()
+
+    decision, = run(tmp_path, client, record, [op])
+    assert (decision.status, decision.node_id) == ("written", "node-1")
+    entry, = Ledger(tmp_path).entries()
+    assert (entry["state"], entry["result_id"]) == ("applied", "node-1")
+    assert entry["operation"]["payload"]["content"] == content
+    assert run(tmp_path, client, record, [op])[0].reason == "ledger_duplicate"
+    assert [effect[0] for effect in client.effects] == [content]
+
+
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085", "\r"])
+def test_ledger_rejects_non_lf_between_records(tmp_path, separator):
+    legacy = {"transcript_sha256": "sha", "fingerprint": "first", "kind": "teach"}
+    second = dict(legacy, fingerprint="second")
+    data = (json.dumps(legacy) + separator + json.dumps(second) + "\n").encode()
+    path = tmp_path / "ledger.jsonl"
+    path.write_bytes(data)
+    with pytest.raises(LedgerError):
+        Ledger(tmp_path)
+    assert path.read_bytes() == data
+
+
 def test_unknown_does_not_block_an_independent_operation(tmp_path):
     record = make_record()
-    op = make_remember(record, "First operation has an unknown outcome.")
+    op = make_remember(record, "First operation has an unknown\u2028outcome.")
     client = Recipient(ClientError("reply lost"))
     first = run(tmp_path, client, record, [op])
     assert first[0].status == "unknown"
@@ -62,7 +90,7 @@ def test_unknown_does_not_block_an_independent_operation(tmp_path):
     second = run(tmp_path, client, record, [op, make_remember(record, "Independent fact.")])
     assert [d.status for d in second] == ["unknown", "written"]
     assert len(client.effects) == 2
-    assert len(Ledger(tmp_path)) == 2
+    assert [e["state"] for e in Ledger(tmp_path).entries()] == ["unknown", "applied"]
 
 
 @pytest.mark.parametrize("read_failure", ["recall", "lookup", "empty"])
@@ -174,8 +202,8 @@ def test_recipient_change_cannot_reopen_unknown(tmp_path):
 def test_old_completed_entries_remain_completed(tmp_path):
     (tmp_path / "ledger.jsonl").write_text(json.dumps({
         "transcript_sha256": "sha", "fingerprint": "fp", "kind": "teach",
-        "session_key": "session", "result_id": "node",
-    }) + "\n")
+        "session_key": "session\u0085key", "result_id": "node",
+    }, ensure_ascii=False) + "\n")
     assert Ledger(tmp_path).has("sha", "fp")
     runner = ExtractionRunner(config=RunnerConfig(), ledger=Ledger(tmp_path))
     completed = runner.reconcile(operation="sha:fp")[0]

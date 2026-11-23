@@ -572,7 +572,7 @@ class Ledger:
 
     def _load(self) -> None:
         try:
-            raw = self.path.read_text(encoding="utf-8")
+            raw = self.path.read_bytes().decode("utf-8")
         except FileNotFoundError:
             self._seen = {}
             return
@@ -580,8 +580,8 @@ class Ledger:
             raise LedgerError(f"cannot read {self.path}: {exc}") from exc
         seen = {}
         try:
-            for line in raw.splitlines():
-                if not line.strip():
+            for line in raw.split("\n"):
+                if not line.strip(" \t\r"):
                     continue
                 entry = json.loads(line)
                 key = (entry["transcript_sha256"], entry["fingerprint"])
