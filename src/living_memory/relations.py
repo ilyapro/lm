@@ -208,15 +208,27 @@ def is_semantic_relation(relation_type: str, metadata: Mapping[str, Any]) -> boo
 def correction_sql(alias: str = "") -> str:
     """SQL equivalent of is_correction; alias is a caller-owned identifier."""
     prefix = f"{alias}." if alias else ""
+    metadata = f"{prefix}metadata"
     kinds = ", ".join(f"'{kind}'" for kind in _NON_CORRECTION_KINDS)
+
+    def matches(meta: str) -> str:
+        return (
+            f"((COALESCE(json_type({meta}, '$.correction'), '') = 'text'"
+            f" AND json_extract({meta}, '$.correction') <> '') OR ("
+            f" COALESCE(json_extract({meta}, '$.kind'), '') NOT IN ({kinds})"
+            f" AND COALESCE(json_extract({meta}, '$.rule'), '') <> 'R1c'"
+            f" AND NOT (COALESCE(json_extract({meta}, '$.by'), '') = '{_HEURISTIC_PRODUCER}'"
+            f" AND COALESCE(json_extract({meta}, '$.reason'), '') = '{_HEURISTIC_REASON}')))"
+        )
+
+    # SQLite JSON path lookup can stop comparing a key at an escaped NUL.
+    # For these exact ASCII markers and the nonempty-text test, U+0001
+    # preserves every comparison, including literal backslash-u sequences.
+    nul = r"'\u0000'"
+    normalized = rf"replace({metadata}, {nul}, '\u0001')"
     return (
-        f"({prefix}type = 'supersedes'"
-        f" AND ((COALESCE(json_type({prefix}metadata, '$.correction'), '') = 'text'"
-        f" AND json_extract({prefix}metadata, '$.correction') <> '') OR ("
-        f" COALESCE(json_extract({prefix}metadata, '$.kind'), '') NOT IN ({kinds})"
-        f" AND COALESCE(json_extract({prefix}metadata, '$.rule'), '') <> 'R1c'"
-        f" AND NOT (COALESCE(json_extract({prefix}metadata, '$.by'), '') = '{_HEURISTIC_PRODUCER}'"
-        f" AND COALESCE(json_extract({prefix}metadata, '$.reason'), '') = '{_HEURISTIC_REASON}'))))"
+        f"({prefix}type = 'supersedes' AND CASE WHEN instr({metadata}, {nul})"
+        f" THEN {matches(normalized)} ELSE {matches(metadata)} END)"
     )
 
 
