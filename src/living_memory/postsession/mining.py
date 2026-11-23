@@ -975,12 +975,12 @@ def _mine_operator_corrections(
             continue
         if prior is None:
             continue
-        start = _at(turn)
-        if not any(start < point <= start + config.lookahead_records for point in after_points):
-            continue
         for offset, text in operator_passages(turn):
             hit = CORRECTION_MARKERS.search(text)
             if hit is None:
+                continue
+            start = _at(turn)
+            if not any(start < point <= start + config.lookahead_records for point in after_points):
                 continue
             correction = quote_window(
                 text, hit.start(), hit.end(), before=config.quote_before, after=config.quote_after

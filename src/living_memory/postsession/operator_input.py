@@ -57,7 +57,7 @@ def operator_passages(turn: Turn) -> Iterator[tuple[int, str]]:
         start = header.end()
         # The rendered label comes from the producer. Its bound digest also
         # lets us tell a real next section from one quoted in this body.
-        metadata = {}
+        metadata = None
         if text.startswith("<!-- ae-augment ", start):
             end = text.find("\n", start)
             if end < 0 or text[end - 4:end] != " -->":
@@ -66,14 +66,23 @@ def operator_passages(turn: Turn) -> Iterator[tuple[int, str]]:
                 metadata = json.loads(text[start + len("<!-- ae-augment "):end - 4])
             except (ValueError, RecursionError):
                 return
+            if not (
+                isinstance(metadata, dict)
+                and metadata.get("author") == "operator"
+                and metadata.get("operator_authenticated") is True
+                and metadata.get("source") == "dashboard"
+            ):
+                return
             start = end + 1
         boundary = _BOUNDARY.search(text, start)
         if not boundary:
             return
         passage = text[start:boundary.start()]
-        yield start, passage
-        if not isinstance(metadata, dict) or metadata.get("text_sha256") != hashlib.sha256(
+        if metadata is not None and metadata.get("text_sha256") != hashlib.sha256(
             passage.encode("utf-8", errors="surrogatepass")
         ).hexdigest():
+            return
+        yield start, passage
+        if metadata is None:
             return
         start = boundary.start()

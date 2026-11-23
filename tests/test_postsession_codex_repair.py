@@ -162,7 +162,7 @@ PEER_SECTION = section("peer", PEER)
 @pytest.mark.parametrize(("messages", "expected"), [
     ([HUMAN], [HUMAN]),
     ([DIRECT], [HUMAN]),
-    ([addressed(PEER_SECTION)], []),
+    ([addressed(section("peer", HUMAN))], []),
     ([addressed(section("authorship unknown", HUMAN))], []),
     ([addressed(section("other", HUMAN))], []),
     ([addressed(PEER_SECTION), HUMAN], [HUMAN]),
@@ -172,6 +172,9 @@ PEER_SECTION = section("peer", PEER)
     ([addressed(augment(HUMAN + "\n") + PEER_SECTION)], [HUMAN]),
     ([addressed(DIRECT + augment("Stop, keep second.py.\n") + PEER_SECTION)],
      [HUMAN, "Stop, keep second.py."]),
+    ([addressed(augment(HUMAN) + augment("Stop, keep second.py."))], [HUMAN, "Stop, keep second.py."]),
+    ([addressed(augment(HUMAN).replace("No,", "Stop,"))], []),
+    ([addressed(augment(HUMAN).replace('"author": "operator"', '"author": "unknown"'))], []),
     ([addressed(PEER_SECTION + augment(HUMAN))], []),
     ([addressed(section("authorship unknown", DIRECT + augment(HUMAN)))], []),
     ([addressed(section("peer", "Quoted text:\n" + addressed(DIRECT)))], []),
@@ -181,6 +184,7 @@ PEER_SECTION = section("peer", PEER)
 ], ids=[
     "plain", "standalone-live", "peer", "unknown", "unrecognised", "separate-events",
     "direct-before-peer", "peer-marker-only", "addressed-operator", "multiple-operator-inputs",
+    "bound-sections", "changed-body", "conflicting-author",
     "operator-header-in-peer", "operator-frame-in-unknown", "nested-frame-in-peer",
     "unattributed-preamble", "header-quoted-in-unbounded-body",
 ])
