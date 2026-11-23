@@ -141,6 +141,43 @@ def test_native_explicit_correction_survives_inferred_metadata(tmp_path, writer)
 
 
 @pytest.mark.parametrize("metadata,expected", [
+    ({"kind\0suffix": "duplicate_content"}, True),
+    ({"kind-suffix": "duplicate_content"}, True),
+    ({"kind\0": "unknown", "kind": "duplicate_content"}, False),
+    ({"kind": "duplicate_content\0suffix"}, True),
+    ({"kind": "duplicate_content", "correction\0suffix": "explicit"}, False),
+    ({"rule": "R1c", "correction": "\0"}, True),
+    ({"rule\0suffix": "R1c"}, True),
+    ({"by\0suffix": "lm_collapse_near_dups.py", "reason": "near-duplicate collapse"}, True),
+    ({"by": "lm_collapse_near_dups.py", "reason\0suffix": "near-duplicate collapse"}, True),
+    ({"by": "lm_collapse_near_dups.py", "reason": "near-duplicate collapse", "note": "\0"}, False),
+    ({"rule": "R1c", "correction": {"text": "\0"}}, False),
+    ({r"kind\u0000suffix": "duplicate_content"}, True),
+])
+def test_native_lookup_uses_exact_correction_metadata(tmp_path, metadata, expected):
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3")
+
+    async def scenario():
+        async with Client(mcp) as client:
+            original = await remember(client, ORIGINAL)
+            replacement = await remember(client, "Release hatch pressure first.")
+            connection = _structured(await client.call_tool("memory_connect", {
+                "id_a": replacement, "id_b": original, "relation_type": "supersedes",
+                "metadata": metadata,
+            }))["connection"]
+            assert connection["metadata"] == metadata
+            entry, _ = await read(client, "lookup:knowledge", original)
+            assert entry["superseded"] is expected
+            assert entry["superseded_by"] == ([replacement] if expected else [])
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        mcp.auto_consolidation.close()
+        mcp.memory_store.close()
+
+
+@pytest.mark.parametrize("metadata,expected", [
     ({}, True),
     ({"kind": "unknown"}, True),
     (INFERRED, False),
