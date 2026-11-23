@@ -147,6 +147,8 @@ _LADDER_OFF_FLAGS = frozenset({"off", "false", "no", "none", "uniform"})
 _CLEAN_BOUNDARIES = ("\n\n", "\n", ". ", " ")
 _SPARSE_SCORE_KEYS = ("score", "bm25_score", "vector_score", "graph_score", "trigger_score")
 _SPARSE_NULL_NODE_KEYS = ("agent", "task", "decay_reason")
+_NONSPACE = re.compile(r"\S")
+_NEWLINE_OR_NONSPACE = re.compile(r"[\n\S]")
 _WORD = re.compile(r"[^\W_]+", re.UNICODE)
 _EVIDENCE_RECORD = re.compile(r"(?m)^- ([A-Za-z0-9]{12,}): ")
 
@@ -862,19 +864,37 @@ def _json_chars(value: Any) -> int:
 
 
 def _one_line_preview(content: str, max_chars: int = PREVIEW_MAX_CHARS) -> str:
-    first_line = content.strip().split("\n", 1)[0].strip()
-    if len(first_line) <= max_chars:
-        return first_line
-    return _truncate_at_boundary(first_line, max_chars)
+    if max_chars < 0:
+        return ELLIPSIS
+    first = _NONSPACE.search(content)
+    if first is None:
+        return ""
+    start = first.start()
+    limit = min(start + max_chars, len(content))
+    newline = content.find("\n", start, limit)
+    if newline >= 0:
+        return _rstrip_slice(content, start, newline)
+
+    # Padding beyond the limit only counts if the same line has more text.
+    following = _NEWLINE_OR_NONSPACE.search(content, limit)
+    if following is None or content[following.start()] == "\n":
+        return _rstrip_slice(content, start, limit)
+    return _truncate_at_boundary(content, max_chars, start=start)
 
 
-def _truncate_at_boundary(text: str, max_chars: int) -> str:
+def _rstrip_slice(text: str, start: int, end: int) -> str:
+    while end > start and text[end - 1].isspace():
+        end -= 1
+    return text[start:end]
+
+
+def _truncate_at_boundary(text: str, max_chars: int, *, start: int = 0) -> str:
     budget = max(0, max_chars - len(ELLIPSIS))
-    head = text[:budget]
-    floor = budget // 2
+    end = min(start + budget, len(text))
+    floor = start + budget // 2
     for boundary in _CLEAN_BOUNDARIES:
-        cut = head.rfind(boundary)
+        cut = text.rfind(boundary, start, end)
         if cut >= floor:
-            head = head[:cut]
+            end = cut
             break
-    return head.rstrip() + ELLIPSIS
+    return _rstrip_slice(text, start, end) + ELLIPSIS

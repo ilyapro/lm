@@ -464,6 +464,19 @@ def test_preview_long_first_line_cut_at_sentence() -> None:
     assert shaped[0]["node"]["content"] == "s" * 100 + ELLIPSIS
 
 
+@pytest.mark.parametrize(("content", "expected"), [
+    ("\n\r\t\u3000", ""),
+    ("\u2003\n\xa0A\rB\u2028C\x1cD\r\nE", "A\rB\u2028C\x1cD"),
+    ("字" * PREVIEW_MAX_CHARS + "\u2007" * 4096 + "\nrest", "字" * PREVIEW_MAX_CHARS),
+    ("字" * PREVIEW_MAX_CHARS + "\u2007" * 4096 + "Z", "字" * (PREVIEW_MAX_CHARS - 1) + ELLIPSIS),
+    ("x" + "\u2003" * 4096 + "z\nrest", "x" + ELLIPSIS),
+])
+def test_preview_uses_trimmed_first_literal_line(content: str, expected: str) -> None:
+    shaped = shape([make_result(make_node("n1", content))], delivered={"n1"})
+
+    assert shaped[0]["node"]["content"] == expected
+
+
 def test_preview_never_contains_newline() -> None:
     content = "alpha beta\ngamma delta"
     shaped = shape([make_result(make_node("n1", content))], delivered={"n1"})
