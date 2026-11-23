@@ -226,9 +226,10 @@ def correction_sql(alias: str = "") -> str:
     # preserves every comparison, including literal backslash-u sequences.
     nul = r"'\u0000'"
     normalized = rf"replace({metadata}, {nul}, '\u0001')"
+    # A WHEN predicate lets SQLite short-circuit the common marker checks.
     return (
         f"({prefix}type = 'supersedes' AND CASE WHEN instr({metadata}, {nul})"
-        f" THEN {matches(normalized)} ELSE {matches(metadata)} END)"
+        f" THEN {matches(normalized)} WHEN {matches(metadata)} THEN 1 ELSE 0 END)"
     )
 
 
