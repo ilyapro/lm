@@ -2999,6 +2999,8 @@ class MemoryStore:
                         str(mark.get("marked_at") or now),
                     ),
                 )
+                if cursor.rowcount != 1:
+                    raise RuntimeError("feedback audit row was not inserted")
                 ids.append(int(cursor.lastrowid))
         return ids
 

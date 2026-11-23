@@ -1004,13 +1004,13 @@ def apply_explicit_marks(
         _LOG.warning(
             "explicit feedback marks failed for %s %s", via_tool, source_id, exc_info=True
         )
-        if reads:
-            # No confirmed commit of this batch. Do not report a successful
-            # mark or credit after an optional validation or write failure.
+        # Ordinary audit ids survive later optional credit failures. Map
+        # validation and audit share a transaction whose exit must also succeed.
+        if reads or not outcome.mark_ids:
             return ExplicitMarks(policy=policy, marks=[
                 replace(mark, accepted=False, event=None, rank=None,
                         reject_reason=mark.reject_reason or "unconfirmed")
-                for mark in outcome.marks
+                for mark in (outcome.marks or _explicit_mark_requests(used, irrelevant, transport_session_id))
             ])
     return outcome
 
