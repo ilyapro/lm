@@ -1000,6 +1000,110 @@ class ClaudeAdapter(TranscriptAdapter):
         )
 
 
+# Only the tool-generated header describes the process. Its stdout may
+# contain arbitrary text, including another command's status lines.
+_CODEX_PROCESS_HEADER = re.compile(
+    r"\A(?:Chunk ID: [^\n]+\n)?(?:Wall time: [\d.]+ seconds\n)?"
+    r"(?:(?:Process exited with code |Exit code: )(?P<exit>-?[0-9]+)"
+    r"|Process running with session ID (?P<session>[0-9]+))(?:\n|$)"
+)
+_CODEX_SHELL = {"exec_command", "shell", "shell_command"}
+
+
+def _codex_outcome(call: ToolCall, ok: bool, span: SourceSpan, quote: str) -> None:
+    if call.outcome_span is None:
+        call.ok = ok
+        call.outcome_span = span
+        call.outcome_quote = quote
+
+
+class _CodexCalls:
+    """In-flight tool responses and yielded processes within one rollout."""
+
+    def __init__(self) -> None:
+        self.pending: dict[str, ToolCall] = {}
+        self.running: dict[str, ToolCall] = {}
+
+    @staticmethod
+    def _track(index: dict[str, ToolCall], key: str, call: ToolCall) -> None:
+        if len(index) >= PENDING_CALL_LIMIT:
+            index.pop(next(iter(index)))
+        index[key] = call
+
+    def invoked(self, call: ToolCall) -> None:
+        if call.call_id:
+            self._track(self.pending, call.call_id, call)
+
+    def output(self, record: SessionRecord, payload: dict[str, Any], index: int) -> None:
+        call = self.pending.pop(payload.get("call_id"), None)
+        if call is None:
+            return
+        output = payload.get("output")
+        field = "payload.output"
+        if (isinstance(output, list) and len(output) == 1
+                and isinstance(output[0], dict) and output[0].get("type") == "input_text"):
+            output = output[0].get("text")
+            field += ".0.text"
+        span = record.span(index, field)
+        call.result_span = span
+        call.result_text, call.result_truncated = _clip(output)
+        if call.server not in {None, "functions"} or call.name not in (
+            _CODEX_SHELL | {"write_stdin", "apply_patch"}
+        ):
+            return
+        if not isinstance(output, str):
+            return
+        match = _CODEX_PROCESS_HEADER.match(output)
+        if match is None:
+            # Legacy shell replies encode the wrapper as JSON in the output string.
+            if call.name in {"shell", "shell_command"} and output.startswith("{"):
+                try:
+                    body = json.loads(output)
+                except ValueError:
+                    return
+                meta = body.get("metadata") if isinstance(body, dict) else None
+                code = meta.get("exit_code") if isinstance(meta, dict) else None
+                if type(code) is int:
+                    _codex_outcome(call, code == 0, span, str(code))
+            return
+        session = match["session"]
+        if session is not None:
+            if call.name == "exec_command" and call.ok is None:
+                self._track(self.running, session, call)
+            return
+        ok = match["exit"].lstrip("-0") == ""
+        quote = match.group().rstrip().splitlines()[-1]
+        _codex_outcome(call, ok, span, quote)
+        if call.name == "write_stdin":
+            origin = self.running.pop(str(call.arguments.get("session_id")), None)
+            if origin and origin.span.record_index < call.span.record_index:
+                _codex_outcome(origin, ok, span, quote)
+
+    def ended(self, record: SessionRecord, payload: dict[str, Any], index: int) -> None:
+        call_id = payload.get("call_id")
+        if not isinstance(call_id, str):
+            return
+        process_id = str(payload.get("process_id", ""))
+        call = self.pending.get(call_id)
+        if call is None:
+            # Older end events omit process_id. The originating call_id still
+            # identifies the command, including after its initial response.
+            for session, origin in self.running.items():
+                if origin.call_id == call_id and (not process_id or session == process_id):
+                    call = origin
+                    del self.running[session]
+                    break
+        if call is None or call.name not in _CODEX_SHELL or call.server not in {None, "functions"}:
+            return
+        code = payload.get("exit_code")
+        if type(code) is not int:
+            return
+        ok = code == 0
+        expected = "completed" if ok else "failed"
+        if payload.get("status", expected) == expected:
+            _codex_outcome(call, ok, record.span(index, "payload.exit_code"), str(code))
+
+
 class CodexAdapter(TranscriptAdapter):
     """``rollout-*.jsonl`` from ``~/.codex`` and every AE ``codex_home``."""
 
@@ -1032,7 +1136,7 @@ class CodexAdapter(TranscriptAdapter):
         record = self._new_record(ref, sha256)
         turn_index = 0
         count = 0
-        pending_patches: dict[str, int] = {}
+        calls = _CodexCalls()
         for index, entry in iter_jsonl(path):
             count = index + 1
             stamp = entry.get("timestamp")
@@ -1059,15 +1163,11 @@ class CodexAdapter(TranscriptAdapter):
             elif kind == "patch_apply_end":
                 self._read_patch(record, payload, index, stamp)
             elif kind in {"custom_tool_call", "function_call"}:
-                self._read_call(record, payload, index, stamp, pending_patches)
+                calls.invoked(self._read_call(record, payload, index, stamp))
             elif kind in {"custom_tool_call_output", "function_call_output"}:
-                ordinal = pending_patches.pop(str(payload.get("call_id") or ""), None)
-                if ordinal is not None and ordinal < len(record.tool_calls):
-                    call = record.tool_calls[ordinal]
-                    text, truncated = _clip(payload.get("output"))
-                    call.result_text = text
-                    call.result_truncated = truncated
-                    call.ok = True
+                calls.output(record, payload, index)
+            elif kind == "exec_command_end" and envelope == "event_msg":
+                calls.ended(record, payload, index)
             elif kind == "user_message":
                 text = str(payload.get("message") or "")
                 if text:
@@ -1173,6 +1273,9 @@ class CodexAdapter(TranscriptAdapter):
     def _read_patch(
         self, record: SessionRecord, payload: dict[str, Any], index: int, stamp: Any
     ) -> None:
+        success = payload.get("success", payload.get("status") == "completed")
+        if success is not True or payload.get("status", "completed") != "completed":
+            return
         changes = payload.get("changes")
         if not isinstance(changes, dict):
             return
@@ -1205,8 +1308,7 @@ class CodexAdapter(TranscriptAdapter):
         payload: dict[str, Any],
         index: int,
         stamp: Any,
-        pending: dict[str, int],
-    ) -> None:
+    ) -> ToolCall:
         name = str(payload.get("name") or "")
         arguments = payload.get("arguments")
         if isinstance(arguments, str):
@@ -1224,11 +1326,7 @@ class CodexAdapter(TranscriptAdapter):
             at=stamp,
         )
         record.tool_calls.append(call)
-        call_id = payload.get("call_id")
-        if call_id:
-            if len(pending) >= PENDING_CALL_LIMIT:
-                pending.pop(next(iter(pending)))
-            pending[str(call_id)] = call.ordinal
+        return call
 
 
 class GigacodeAdapter(TranscriptAdapter):

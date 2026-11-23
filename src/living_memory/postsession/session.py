@@ -308,6 +308,10 @@ class ToolCall(Wire):
     ok: bool | None = None
     result_text: str | None = None
     result_truncated: bool = False
+    result_span: SourceSpan | None = None
+    # A process can finish in a different record from its first tool response.
+    outcome_span: SourceSpan | None = None
+    outcome_quote: str | None = None
 
     @property
     def is_memory_tool(self) -> bool:

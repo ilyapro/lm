@@ -550,6 +550,8 @@ def _evidence(span: SourceSpan, quote: str) -> Evidence:
 
 
 def _result_span(call: ToolCall) -> SourceSpan:
+    if call.result_span is not None:
+        return call.result_span
     base = call.span
     return SourceSpan(base.source, base.path, base.record_index, base.field or "result")
 
@@ -575,16 +577,19 @@ def _mine_resolved_failures(
     """
 
     calls = [call for call in record.tool_calls if not call.is_memory_tool]
-    mutation_points = sorted(_at(item) for item in record.file_mutations)
     for index, call in enumerate(calls):
         text = call.result_text or ""
         failure = FAILURE_MARKERS.search(text)
-        if failure is None and call.ok is not False:
+        if record.source == "codex":
+            if call.outcome_span is None or call.ok is not False:
+                continue
+        elif failure is None and call.ok is not False:
             continue
         command = tool_command(call)
         if not command:
             continue
-        start = _at(call)
+        red_span = call.outcome_span or _result_span(call)
+        start = red_span.record_index
         for later in calls[index + 1 :]:
             gap = _at(later) - start
             if gap <= 0:
@@ -594,12 +599,11 @@ def _mine_resolved_failures(
             if not _same_work(command, tool_command(later), min_jaccard=config.rerun_min_jaccard):
                 continue
             later_text = later.result_text or ""
-            if FAILURE_MARKERS.search(later_text) or later.ok is False:
-                continue
-            if not (SUCCESS_MARKERS.search(later_text) or later.ok is True):
-                continue
-            fixed_at = [point for point in mutation_points if start < point < _at(later)]
-            if not fixed_at:
+            if record.source == "codex":
+                if later.outcome_span is None or later.ok is not True:
+                    continue
+            elif (FAILURE_MARKERS.search(later_text) or later.ok is False
+                  or not (SUCCESS_MARKERS.search(later_text) or later.ok is True)):
                 continue
             failure_quote = (
                 quote_window(
@@ -617,27 +621,33 @@ def _mine_resolved_failures(
                 for mutation in record.file_mutations
                 if start < _at(mutation) < _at(later)
             )
+            if not changed:
+                continue
+            green_span = later.outcome_span or _result_span(later)
             evidence = (
                 _evidence(call.span, f"$ {command}"),
-                _evidence(_result_span(call), failure_quote),
+                *([_evidence(_result_span(call), failure_quote)] if failure_quote else []),
+                *([_evidence(red_span, call.outcome_quote)] if call.outcome_quote and
+                  (red_span != _result_span(call) or call.outcome_quote not in failure_quote) else []),
                 _evidence(later.span, f"$ {tool_command(later)}"),
                 _evidence(
-                    _result_span(later),
-                    later_text[: config.quote_after].strip() or "(no output)",
+                    green_span,
+                    (later_text[: config.quote_after].strip() if green_span == _result_span(later)
+                     else "") or later.outcome_quote or "(no output)",
                 ),
             )
             yield Candidate(
                 kind="resolved_failure",
                 session_key=record.session_key,
                 ordinal=0,
-                span=_result_span(call),
+                span=red_span,
                 evidence=evidence,
                 identifiers=hard_identifiers(failure_quote),
                 signals={
                     "command": command,
                     "failure_marker": failure.group(0).strip() if failure else "exit_status",
                     "changed_paths": list(dict.fromkeys(changed))[:12],
-                    "green_record_index": _at(later),
+                    "green_record_index": green_span.record_index,
                 },
                 at=call.at,
                 position=_position(record, start),
