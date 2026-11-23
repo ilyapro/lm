@@ -264,6 +264,14 @@ def test_historical_index_reads_and_nominees_match_full_scan(tmp_path, monkeypat
 
         check("global", 6, 6)
         check("project:absent", 0, 6)
+        def interrupted(*args):
+            yield next(read(*args))
+            raise sqlite3.OperationalError("interrupted scope scan")
+
+        with monkeypatch.context() as failure:
+            failure.setattr(reader, "iter_foreign_anchor_queries", interrupted)
+            with pytest.raises(sqlite3.OperationalError, match="interrupted scope scan"):
+                warm.memory_recall("pattern", log_access=False, log_event=False)
         check(None, 6, 12)
         insert(12, "active", "global")
         check(None, 0, 12)
@@ -302,6 +310,10 @@ def test_historical_index_reads_and_nominees_match_full_scan(tmp_path, monkeypat
                 "UPDATE query_anchors SET encoder_id='previous' WHERE id='4'"
             )
         check(None, 6, 6)
+        with writer.transaction():
+            writer.connection.execute("UPDATE query_anchors SET scope='project:moved' WHERE id='5'")
+        check("global", 3, 3)
+        check(None, 3, 6)
 
 
 def test_unlabelled_nomination_matrix_follows_committed_rows(tmp_path, monkeypatch):

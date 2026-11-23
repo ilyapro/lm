@@ -364,22 +364,30 @@ class _AnchorTextIndex:
 
 @dataclass
 class _AnchorTextCache:
+    """Keep one postings list per term and scope in a committed foreign corpus."""
+
     encoder: str
     revision: int | tuple[int, int]
     by_scope: dict[str, _AnchorTextIndex] = field(default_factory=dict)
     complete: bool = False
+    empty_scopes: set[str] = field(default_factory=set)
 
     def indexes(self, store: MemoryStore, scopes: tuple[str, ...] | None) -> list[_AnchorTextIndex]:
-        if scopes is None and self.complete:
-            return list(self.by_scope.values())
+        if self.complete:
+            if scopes is None:
+                return list(self.by_scope.values())
+            return [self.by_scope[scope] for scope in scopes if scope in self.by_scope]
+
         requested = store.live_anchor_scopes() if scopes is None else scopes
         for scope in requested:
-            if scope not in self.by_scope and not self.complete:
-                index = _AnchorTextIndex(store.iter_foreign_anchor_queries(self.encoder, (scope,)))
-                if index.texts:
-                    self.by_scope[scope] = index
-        if scopes is None:
-            self.complete = True
+            if scope in self.by_scope or scope in self.empty_scopes:
+                continue
+            index = _AnchorTextIndex(store.iter_foreign_anchor_queries(self.encoder, (scope,)))
+            if index.texts:
+                self.by_scope[scope] = index
+        self.complete = scopes is None
+        # Bound negative entries even if callers repeatedly name nonexistent scopes.
+        self.empty_scopes = set(scopes or ()).difference(self.by_scope)
         return [self.by_scope[scope] for scope in requested if scope in self.by_scope]
 
 
