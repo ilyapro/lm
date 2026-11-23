@@ -16,7 +16,7 @@ from living_memory.embeddings import copy_vector
 from living_memory import grounding
 from living_memory.grounding import DEFAULT_MIN_CONTAINMENT
 from living_memory.irrelevance import cancel_query_irrelevance, record_query_irrelevance
-from living_memory.models import Node, RecallEvent, RecallEventHeader, RetrievalWeights
+from living_memory.models import Node, RecallEvent, RecallEventHeader, RetrievalPolicyFloors, RetrievalWeights
 from living_memory import storage as storage_module
 from living_memory.query_anchors import resolve_query_anchor, upsert_anchor
 from living_memory.scope import normalize_scope
@@ -380,6 +380,7 @@ def apply_retrieval_feedback(
     useful: bool = True,
     signal: float = 1.0,
     scope: str | None = None,
+    prepared_scopes: dict[str, RetrievalPolicyFloors | None] | None = None,
 ) -> FeedbackUpdate:
     """Update node usefulness and nudge weights by each method's evidence share."""
 
@@ -395,13 +396,17 @@ def apply_retrieval_feedback(
         node = store.update_node(node.id, stats={"usefulness_score": updated_usefulness})
 
     target_scope = scope or (node.scope if node is not None else "global")
-    _maybe_retune_learning_rate(store, target_scope)
+    if prepared_scopes is None or target_scope not in prepared_scopes:
+        _maybe_retune_learning_rate(store, target_scope)
+        if prepared_scopes is not None:
+            prepared_scopes[target_scope] = store.applicable_retrieval_weight_floors(target_scope)
     method_signals = _method_signals(result, signed_signal)
     weights = store.update_retrieval_weights(
         target_scope,
         bm25_signal=method_signals["bm25"],
         vector_signal=method_signals["vector"],
         graph_signal=method_signals["graph"],
+        applicable_floors=prepared_scopes[target_scope] if prepared_scopes is not None else None,
     )
     return FeedbackUpdate(node=node, weights=weights)
 
@@ -509,6 +514,9 @@ def apply_pending_recall_feedback(
         if reinforce_results and policy != "all" else None
     )
 
+    # Only numeric state and event bookkeeping change inside this loop.
+    # Reuse scope policy only while the caller holds the knowledge transaction.
+    prepared_scopes = {} if store.connection.in_transaction else None
     for event_index, event in enumerate(events):
         event_node_ids: list[str] = []
         # Per event, not accumulated across the batch: an anchor's edges may
@@ -591,6 +599,7 @@ def apply_pending_recall_feedback(
                         useful=grounded,
                         signal=signal if grounded else UNGROUNDED_NEGATIVE_FACTOR * signal,
                         scope=event.scope,
+                        prepared_scopes=prepared_scopes,
                     )
                     feedback_applied = True
 

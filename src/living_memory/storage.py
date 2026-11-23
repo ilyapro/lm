@@ -5346,6 +5346,7 @@ class MemoryStore:
         bm25_signal: float = 0.0,
         vector_signal: float = 0.0,
         graph_signal: float = 0.0,
+        applicable_floors: RetrievalPolicyFloors | None = None,
     ) -> RetrievalWeights:
         current = self.get_retrieval_weights(scope)
         updated = RetrievalWeights(
@@ -5356,7 +5357,9 @@ class MemoryStore:
             learning_rate=current.learning_rate,
             updated_at=current.updated_at,
         ).normalized()
-        updated = self.apply_retrieval_weight_floors(scope, updated)
+        if applicable_floors is None:
+            applicable_floors = self.applicable_retrieval_weight_floors(scope)
+        updated = self._apply_applicable_floors(scope, updated, applicable_floors)
         return self.set_retrieval_weights(
             scope,
             bm25=updated.bm25,
@@ -5382,10 +5385,13 @@ class MemoryStore:
     ) -> tuple[RetrievalPolicyFloors | None, RetrievalWeights]:
         """Read applicable floors and effective weights from the same evidence."""
 
-        normalized = weights.normalized()
+        floors = self.applicable_retrieval_weight_floors(scope)
+        return floors, self._apply_applicable_floors(scope, weights, floors)
+
+    def applicable_retrieval_weight_floors(self, scope: str) -> RetrievalPolicyFloors | None:
         floors = self.config.retrieval_policy_floors.get(_scope_family(scope))
         if floors is None:
-            return None, normalized
+            return None
 
         vector_min = (
             floors.vector_min
@@ -5400,22 +5406,27 @@ class MemoryStore:
         # feedback (feedback._method_signals) drives bm25 to 0 and exact-keyword /
         # identifier recall stops contributing to ranking.
         bm25_min = floors.bm25_min
-        applicable = RetrievalPolicyFloors(
+        return RetrievalPolicyFloors(
             # A BM25 surplus can move only to a channel with an active minimum.
             bm25_max=floors.bm25_max if vector_min > 0.0 or graph_min > 0.0 else 1.0,
             vector_min=vector_min,
             graph_min=graph_min,
             bm25_min=bm25_min,
         )
-        if vector_min <= 0.0 and graph_min <= 0.0 and bm25_min <= 0.0:
-            return applicable, normalized
+
+    def _apply_applicable_floors(
+        self, scope: str, weights: RetrievalWeights, floors: RetrievalPolicyFloors | None,
+    ) -> RetrievalWeights:
+        normalized = weights.normalized()
+        if floors is None or not (floors.vector_min or floors.graph_min or floors.bm25_min):
+            return normalized
 
         values = {
             "bm25": normalized.bm25,
             "vector": normalized.vector,
             "graph": normalized.graph,
         }
-        minimum = {"bm25": bm25_min, "vector": vector_min, "graph": graph_min}
+        minimum = {"bm25": floors.bm25_min, "vector": floors.vector_min, "graph": floors.graph_min}
 
         for target in ("vector", "graph", "bm25"):
             self._lift_retrieval_weight(values, minimum, target)
@@ -5437,7 +5448,7 @@ class MemoryStore:
             learning_rate=normalized.learning_rate,
             updated_at=normalized.updated_at,
         ).normalized()
-        return applicable, floored
+        return floored
 
     @staticmethod
     def _lift_retrieval_weight(
