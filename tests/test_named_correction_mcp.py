@@ -32,12 +32,16 @@ def mcp(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("named", [False, True], ids=["default", "name"])
-@pytest.mark.parametrize("case", ["connected", "independent", "outside", "decayed", "threshold"])
+@pytest.mark.parametrize("case", [
+    "connected", "qualified", "independent", "partial", "outside", "decayed", "threshold",
+])
 def test_public_recall_order(mcp, monkeypatch, named, case):
     if named:
         monkeypatch.setenv("LM_RECALL_SCHEMA_TRIGGER", "name")
     if case == "threshold":
         monkeypatch.setenv("LM_RECALL_MIN_SCORE", "1")
+    elif case == "qualified":
+        monkeypatch.setenv("LM_RECALL_MIN_SCORE", "0.05")
     store = mcp.memory_store
     schema = store.create_node(
         level="schema", content="Rotate a spare key during inventory.",
@@ -47,7 +51,8 @@ def test_public_recall_order(mcp, monkeypatch, named, case):
         "Rotate vault keys only after sealing the vault.",
         {"scope": "project:outside" if case == "outside" else SCOPE},
     )
-    if case != "independent":
+    linked = case not in ("independent", "partial")
+    if linked:
         store.create_connection(other.id, schema.id, "supersedes")
     if case == "decayed":
         store.soft_delete_node(other.id)
@@ -59,17 +64,19 @@ def test_public_recall_order(mcp, monkeypatch, named, case):
     else:
         expected = [other, schema]
 
+    query = QUERY + " after sealing" if case == "partial" else QUERY
+
     async def read():
         async with Client(mcp) as client:
             for limit in (1, 2):
                 response = (await client.call_tool("memory_recall", {
-                    "query": QUERY, "scope": SCOPE, "max_results": limit,
+                    "query": query, "scope": SCOPE, "max_results": limit,
                 })).data
                 selected = expected[:limit]
                 assert response["count"] == len(selected)
                 assert [r["id"] for r in response["results"]] == [n.id for n in selected]
                 for item, node in zip(response["results"], selected, strict=True):
-                    stale = node == schema and case != "independent"
+                    stale = node == schema and linked
                     assert item["superseded"] is stale
                     assert item["superseded_by"] == ([other.id] if stale and case != "outside" else [])
                     assert item["scope"] == SCOPE and not item["decayed"]
