@@ -5689,17 +5689,19 @@ class MemoryStore:
         operator = "IS" if compatible else "IS NOT"
         return f" AND encoder_id {operator} ?", (encoder,)
 
-    def foreign_anchor_text_revision(self, encoder: str, scope: str) -> int | None:
-        """Probe just this scope's counters. Older schemas have no scoped marker."""
-        row = self._conn.execute(
+    def has_scoped_anchor_text_revisions(self) -> bool:
+        return self._conn.execute(
+            "SELECT 1 FROM metadata WHERE key = ?", (_ANCHOR_TEXT_SCOPED,)
+        ).fetchone() is not None
+
+    def foreign_anchor_text_revision(self, encoder: str, scope: str) -> int:
+        """Probe only this scope's counters, excluding the encoder used by the reader."""
+        return self._conn.execute(
             """WITH partition(prefix) AS (SELECT ? || hex(?))
-               SELECT (SELECT COALESCE(SUM(value), 0) FROM metadata, partition
-                       WHERE key >= prefix || ':' AND key < prefix || ';'
-                           AND key != prefix || '::' || ?)
-               FROM metadata WHERE key = ?""",
-            (_ANCHOR_TEXT_SCOPED, scope, encoder, _ANCHOR_TEXT_SCOPED),
-        ).fetchone()
-        return row[0] if row else None
+               SELECT COALESCE(SUM(value), 0) FROM metadata, partition
+               WHERE key >= prefix || ':' AND key < prefix || ';' AND key != prefix || '::' || ?""",
+            (_ANCHOR_TEXT_SCOPED, scope, encoder),
+        ).fetchone()[0]
 
     def unlabelled_anchor_vector_revision(self) -> int | None:
         """Combine the two monotonic counters in one snapshot, or defer to the legacy reader."""

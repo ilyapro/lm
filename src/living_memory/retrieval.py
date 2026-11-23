@@ -367,6 +367,7 @@ class _AnchorTextCache:
     """Keep one postings list per term and scope in a committed foreign corpus."""
 
     encoder: str
+    scoped_revisions: bool
     by_scope: dict[str, tuple[int | tuple[int, int], _AnchorTextIndex]] = field(default_factory=dict)
     complete_at: tuple[int, int] | None = None
 
@@ -381,9 +382,7 @@ class _AnchorTextCache:
         requested = store.live_anchor_scopes() if scopes is None else scopes
         selected = {}
         for scope in requested:
-            revision = store.foreign_anchor_text_revision(self.encoder, scope)
-            # Read-only predecessors may also lack a trigger for query edits.
-            identity = corpus if revision is None else revision
+            identity = store.foreign_anchor_text_revision(self.encoder, scope) if self.scoped_revisions else corpus
             entry = self.by_scope.get(scope)
             if entry is None or entry[0] != identity:
                 entry = (identity, _AnchorTextIndex(store.iter_foreign_anchor_queries(self.encoder, (scope,))))
@@ -568,8 +567,11 @@ class MemoryRecallService:
         if isinstance(source, _AnchorVectorCache):
             cache = self._anchor_text_cache
             if cache is None or cache.encoder != encoder:
-                cache = self._anchor_text_cache = _AnchorTextCache(encoder)
-            data_version = self.store.connection.execute("PRAGMA data_version").fetchone()[0]
+                cache = self._anchor_text_cache = _AnchorTextCache(encoder, self.store.has_scoped_anchor_text_revisions())
+            # Older read-only schemas may lack a trigger for query edits.
+            data_version = 0 if cache.scoped_revisions else self.store.connection.execute(
+                "PRAGMA data_version"
+            ).fetchone()[0]
             indexes = cache.indexes(self.store, scopes, (source.revision, data_version))
         else:
             indexes = [_AnchorTextIndex(self.store.iter_foreign_anchor_queries(encoder, scopes))]

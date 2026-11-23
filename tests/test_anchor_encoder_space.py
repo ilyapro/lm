@@ -288,14 +288,16 @@ def test_historical_index_reads_and_nominees_match_full_scan(tmp_path, monkeypat
             check(None, 0, 9)
             writer.decay_query_anchor("1", "retired")
             check(None, 0, 9)
-        check(None, 8, 8)
+        check("project:absent", 4, 4)
+        check(None, 0, 8)
         reader.connection.execute("UPDATE query_anchors SET query='archived replacement' WHERE id='2'")
         check(None, 8, 8)
         reader.connection.rollback()
         check(None, 0, 8)
         with writer.transaction():
             writer.connection.execute("UPDATE query_anchors SET query='archived pattern changed' WHERE id='2'")
-        check(None, 8, 8)
+        check("global", 0, 4)
+        check(None, 4, 8)
 
         # A fingerprint conflict can displace an anchor in a different space.
         with writer.transaction():
@@ -304,16 +306,16 @@ def test_historical_index_reads_and_nominees_match_full_scan(tmp_path, monkeypat
             writer.connection.execute(
                 "UPDATE OR REPLACE query_anchors SET fingerprint='2' WHERE id='0'"
             )
-        check(None, 7, 7)
+        check(None, 3, 7)
         with writer.transaction():
             writer.connection.execute(
                 "UPDATE query_anchors SET encoder_id='previous' WHERE id='4'"
             )
-        check(None, 6, 6)
+        check(None, 2, 6)
         with writer.transaction():
             writer.connection.execute("UPDATE query_anchors SET scope='project:moved' WHERE id='5'")
         check("global", 3, 3)
-        check(None, 3, 6)
+        check(None, 1, 6)
 
 
 def test_unlabelled_nomination_matrix_follows_committed_rows(tmp_path, monkeypatch):
