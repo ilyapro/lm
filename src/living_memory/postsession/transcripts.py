@@ -1004,7 +1004,7 @@ class ClaudeAdapter(TranscriptAdapter):
 # contain arbitrary text, including another command's status lines.
 _CODEX_PROCESS_HEADER = re.compile(
     r"\A(?:Chunk ID: [^\n]+\n)?(?:Wall time: [\d.]+ seconds\n)?"
-    r"(?:(?:Process exited with code |Exit code: )(?P<exit>-?[0-9]+)"
+    r"(?:(?:Process exited with code |Exit code: )(?P<exit>-?[0-9]{1,10})"
     r"|Process running with session ID (?P<session>[0-9]+))(?:\n|$)"
 )
 _CODEX_SHELL = {"exec_command", "shell", "shell_command"}
@@ -1022,77 +1022,82 @@ class _CodexCalls:
 
     def __init__(self) -> None:
         self.pending: dict[str, ToolCall] = {}
-        self.running: dict[str, ToolCall] = {}
-
-    @staticmethod
-    def _track(index: dict[str, ToolCall], key: str, call: ToolCall) -> None:
-        if len(index) >= PENDING_CALL_LIMIT:
-            index.pop(next(iter(index)))
-        index[key] = call
+        self.awaiting_end: dict[str, tuple[ToolCall, str | None]] = {}
 
     def invoked(self, call: ToolCall) -> None:
-        if call.call_id:
-            self._track(self.pending, call.call_id, call)
+        if isinstance(call.call_id, str) and call.call_id:
+            if len(self.pending) >= PENDING_CALL_LIMIT:
+                self.pending.pop(next(iter(self.pending)))
+            self.pending[call.call_id] = call
 
     def output(self, record: SessionRecord, payload: dict[str, Any], index: int) -> None:
-        call = self.pending.pop(payload.get("call_id"), None)
+        call_id = payload.get("call_id")
+        if not isinstance(call_id, str):
+            return
+        call = self.pending.pop(call_id, None)
         if call is None:
             return
         output = payload.get("output")
         field = "payload.output"
-        if (isinstance(output, list) and len(output) == 1
-                and isinstance(output[0], dict) and output[0].get("type") == "input_text"):
-            output = output[0].get("text")
-            field += ".0.text"
+        if isinstance(output, list) and len(output) == 1:
+            block = output[0]
+            if isinstance(block, dict) and block.get("type") == "input_text":
+                output = block.get("text")
+                field += ".0.text"
         span = record.span(index, field)
         call.result_span = span
         call.result_text, call.result_truncated = _clip(output)
-        if call.server not in {None, "functions"} or call.name not in (
-            _CODEX_SHELL | {"write_stdin", "apply_patch"}
-        ):
+        if call.server not in {None, "functions"}:
             return
-        if not isinstance(output, str):
+        if call.name not in _CODEX_SHELL | {"write_stdin", "apply_patch"}:
             return
-        match = _CODEX_PROCESS_HEADER.match(output)
-        if match is None:
-            # Legacy shell replies encode the wrapper as JSON in the output string.
-            if call.name in {"shell", "shell_command"} and output.startswith("{"):
+        match = _CODEX_PROCESS_HEADER.match(output) if isinstance(output, str) else None
+        if match and match["exit"] is not None:
+            ok = int(match["exit"]) == 0
+            quote = match.group().rstrip().splitlines()[-1]
+            _codex_outcome(call, ok, span, quote)
+            if call.name == "write_stdin":
+                self._finish_poll(call, span, quote, ok)
+            return
+        if call.name in {"shell", "shell_command"}:
+            # Legacy shell encodes the wrapper as JSON in the output string.
+            body = output
+            if isinstance(output, str) and output.startswith("{"):
                 try:
                     body = json.loads(output)
                 except ValueError:
-                    return
-                meta = body.get("metadata") if isinstance(body, dict) else None
-                code = meta.get("exit_code") if isinstance(meta, dict) else None
-                if type(code) is int:
-                    _codex_outcome(call, code == 0, span, str(code))
-            return
-        session = match["session"]
-        if session is not None:
-            if call.name == "exec_command" and call.ok is None:
-                self._track(self.running, session, call)
-            return
-        ok = match["exit"].lstrip("-0") == ""
-        quote = match.group().rstrip().splitlines()[-1]
-        _codex_outcome(call, ok, span, quote)
-        if call.name == "write_stdin":
-            origin = self.running.pop(str(call.arguments.get("session_id")), None)
-            if origin and origin.span.record_index < call.span.record_index:
-                _codex_outcome(origin, ok, span, quote)
+                    pass
+            meta = body.get("metadata") if isinstance(body, dict) else None
+            code = meta.get("exit_code") if isinstance(meta, dict) else None
+            if type(code) is int:
+                _codex_outcome(call, code == 0, span, str(code))
+                return
+        if call.name in _CODEX_SHELL and call.outcome_span is None:
+            if len(self.awaiting_end) >= PENDING_CALL_LIMIT:
+                self.awaiting_end.pop(next(iter(self.awaiting_end)))
+            self.awaiting_end[call_id] = call, match["session"] if match else None
+
+    def _finish_poll(self, poll: ToolCall, span: SourceSpan, quote: str, ok: bool) -> None:
+        session = str(poll.arguments.get("session_id"))
+        matches = [
+            call_id for call_id, (_, process) in self.awaiting_end.items() if process == session
+        ]
+        if len(matches) == 1:
+            call, _ = self.awaiting_end[matches[0]]
+            if call.span.record_index < poll.span.record_index:
+                del self.awaiting_end[matches[0]]
+                _codex_outcome(call, ok, span, quote)
 
     def ended(self, record: SessionRecord, payload: dict[str, Any], index: int) -> None:
         call_id = payload.get("call_id")
         if not isinstance(call_id, str):
             return
-        process_id = str(payload.get("process_id", ""))
         call = self.pending.get(call_id)
-        if call is None:
-            # Older end events omit process_id. The originating call_id still
-            # identifies the command, including after its initial response.
-            for session, origin in self.running.items():
-                if origin.call_id == call_id and (not process_id or session == process_id):
-                    call = origin
-                    del self.running[session]
-                    break
+        if call is None and call_id in self.awaiting_end:
+            call, process = self.awaiting_end[call_id]
+            if process and payload.get("process_id") is not None:
+                if str(payload["process_id"]) != process:
+                    return
         if call is None or call.name not in _CODEX_SHELL or call.server not in {None, "functions"}:
             return
         code = payload.get("exit_code")
@@ -1102,6 +1107,10 @@ class _CodexCalls:
         expected = "completed" if ok else "failed"
         if payload.get("status", expected) == expected:
             _codex_outcome(call, ok, record.span(index, "payload.exit_code"), str(code))
+            self.awaiting_end.pop(call_id, None)
+            if call.result_span is None and payload.get("aggregated_output"):
+                call.result_span = record.span(index, "payload.aggregated_output")
+                call.result_text, call.result_truncated = _clip(payload["aggregated_output"])
 
 
 class CodexAdapter(TranscriptAdapter):
@@ -1160,11 +1169,11 @@ class CodexAdapter(TranscriptAdapter):
             kind = payload.get("type")
             if kind == "mcp_tool_call_end":
                 self._read_mcp_end(record, payload, index, stamp, turn_index)
-            elif kind == "patch_apply_end":
+            elif envelope == "event_msg" and kind == "patch_apply_end":
                 self._read_patch(record, payload, index, stamp)
-            elif kind in {"custom_tool_call", "function_call"}:
+            elif envelope == "response_item" and kind in {"custom_tool_call", "function_call"}:
                 calls.invoked(self._read_call(record, payload, index, stamp))
-            elif kind in {"custom_tool_call_output", "function_call_output"}:
+            elif envelope == "response_item" and kind in {"custom_tool_call_output", "function_call_output"}:
                 calls.output(record, payload, index)
             elif kind == "exec_command_end" and envelope == "event_msg":
                 calls.ended(record, payload, index)

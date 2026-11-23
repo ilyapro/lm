@@ -602,9 +602,11 @@ def _mine_resolved_failures(
             if record.source == "codex":
                 if later.outcome_span is None or later.ok is not True:
                     continue
-            elif (FAILURE_MARKERS.search(later_text) or later.ok is False
-                  or not (SUCCESS_MARKERS.search(later_text) or later.ok is True)):
-                continue
+            else:
+                if FAILURE_MARKERS.search(later_text) or later.ok is False:
+                    continue
+                if not (SUCCESS_MARKERS.search(later_text) or later.ok is True):
+                    continue
             failure_quote = (
                 quote_window(
                     text,
@@ -624,24 +626,26 @@ def _mine_resolved_failures(
             if not changed:
                 continue
             green_span = later.outcome_span or _result_span(later)
-            evidence = (
-                _evidence(call.span, f"$ {command}"),
-                *([_evidence(_result_span(call), failure_quote)] if failure_quote else []),
-                *([_evidence(red_span, call.outcome_quote)] if call.outcome_quote and
-                  (red_span != _result_span(call) or call.outcome_quote not in failure_quote) else []),
-                _evidence(later.span, f"$ {tool_command(later)}"),
-                _evidence(
-                    green_span,
-                    (later_text[: config.quote_after].strip() if green_span == _result_span(later)
-                     else "") or later.outcome_quote or "(no output)",
-                ),
-            )
+            evidence = [_evidence(call.span, f"$ {command}")]
+            if failure_quote:
+                evidence.append(_evidence(_result_span(call), failure_quote))
+            if call.outcome_quote and (
+                red_span != _result_span(call) or call.outcome_quote not in failure_quote
+            ):
+                evidence.append(_evidence(red_span, call.outcome_quote))
+            evidence.append(_evidence(later.span, f"$ {tool_command(later)}"))
+            green_quote = later_text[: config.quote_after].strip()
+            if later.outcome_quote and (
+                green_span != _result_span(later) or later.outcome_quote not in green_quote
+            ):
+                green_quote = later.outcome_quote
+            evidence.append(_evidence(green_span, green_quote or "(no output)"))
             yield Candidate(
                 kind="resolved_failure",
                 session_key=record.session_key,
                 ordinal=0,
                 span=red_span,
-                evidence=evidence,
+                evidence=tuple(evidence),
                 identifiers=hard_identifiers(failure_quote),
                 signals={
                     "command": command,
