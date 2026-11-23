@@ -253,3 +253,29 @@ def test_sweep_keeps_its_own_supersession_basis_and_committed_prefix(tmp_path, m
         else:
             assert set(reasons) == {None, "manual" if interruption == "manual" else "superseded"}
         assert not peer.get_node("unrelated").decayed
+
+
+def test_scoped_supersession_preserves_chain_and_cross_scope_basis(tmp_path):
+    db = tmp_path / "memory.sqlite3"
+    with MemoryStore(db) as store, MemoryStore(db) as reader:
+        for node_id, scope in [
+            ("original", "project:a"), ("middle", "project:a"), ("newest", "project:b"),
+            ("outside", "project:b"), ("forgotten", "project:a"), ("survivor", "project:a"),
+        ]:
+            store.create_node(level="trace", node_id=node_id, content=node_id,
+                              context={"scope": scope})
+        for source, target in [
+            ("newest", "middle"), ("middle", "original"), ("newest", "outside"),
+            ("forgotten", "survivor"),
+        ]:
+            store.create_connection(source, target, "supersedes")
+        decay.memory_forget(store, "forgotten", "manual")
+
+        result = decay.apply_decay(store, scope="project:a", now=NOW)
+        assert sorted(node.id for node in result.nodes) == ["middle", "original"]
+        assert [(node.id, node.decay_reason) for node in
+                (reader.get_node(i) for i in ("original", "middle", "newest", "outside",
+                                               "forgotten", "survivor"))] == [
+            ("original", "superseded"), ("middle", "superseded"), ("newest", None),
+            ("outside", None), ("forgotten", "manual"), ("survivor", None),
+        ]
