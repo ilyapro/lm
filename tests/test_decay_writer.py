@@ -105,3 +105,46 @@ def test_sweep_preserves_committed_prefix_on_write_failure(tmp_path):
             _decay_sweep_if_due(store, force=True, now=NOW)
         assert [store.get_node(i).decayed for i in ("a", "b", "c")] == [True, False, False]
         assert store.get_kv(_DECAY_SWEEP_KV_KEY) is None
+
+
+def test_repeated_external_changes_bound_rescans_and_keep_prefix(tmp_path, monkeypatch):
+    monkeypatch.setenv(decay.CONCEPT_COVERED_ENV, "0")
+    db = tmp_path / "memory.sqlite3"
+    with MemoryStore(db) as store, MemoryStore(db) as peer:
+        for node_id in ("a", "b", "c"):
+            store.create_node(level="trace", content=node_id, node_id=node_id,
+                              context={"timestamp": "2000-01-01"})
+        transaction = store.transaction
+        writes = iter([None, "b", "c"])
+
+        @contextmanager
+        def interleave(*, immediate=False):
+            if immediate:
+                source = next(writes)
+                if source:
+                    peer.create_node(level="concept", content="live digest",
+                                     provenance={"source_traces": [source]})
+            with transaction(immediate=immediate):
+                yield
+
+        monkeypatch.setattr(store, "transaction", interleave)
+        result = _decay_sweep_if_due(store, force=True, now=NOW)
+        assert result["expired_count"] == 1
+        assert [peer.get_node(i).decayed for i in ("a", "b", "c")] == [True, False, False]
+
+
+def test_retiring_covering_owner_invalidates_its_source_in_same_sweep(tmp_path):
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        store.create_node(level="trace", content="recent source", node_id="source",
+                          context={"timestamp": "2026-10-22"})
+        store.create_node(level="schema", content="expired owner", node_id="owner",
+                          context={"timestamp": "2000-01-01"},
+                          provenance={"source_traces": ["source"]})
+        retired = decay.soft_delete_expired(
+            store, now=NOW, ttl_days=7, levels=iter(["schema", "trace"]),
+            decay_concept_covered=True, ttl_anchor="created",
+        )
+        assert [(node.id, node.decay_reason) for node in retired] == [
+            ("owner", decay.TTL_EXPIRED_REASON),
+        ]
+        assert not store.get_node("source").decayed

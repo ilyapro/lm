@@ -308,12 +308,6 @@ def soft_delete_expired(
                 if reference is not None and reference < cutoff:
                     yield (reference, node_id, TTL_EXPIRED_REASON)
 
-    # Oldest reference first, id as tie-breaker: whatever the cap defers is the
-    # youngest of the batch, and the next sweep resumes exactly where this one
-    # stopped instead of re-picking an arbitrary subset.
-    # Both selectors exhaust eligibility before any mutation. A finite cap
-    # retains only O(cap) candidates; the key keeps exact ties stable without
-    # comparing reasons, including repeated visits through duplicated levels.
     def data_version() -> int:
         return store.connection.execute("PRAGMA main.data_version").fetchone()[0]
 
@@ -321,10 +315,11 @@ def soft_delete_expired(
     retried = False
     while not cap or len(retired) < cap:
         version = data_version()
-        remaining = cap - len(retired)
+        # Oldest parsed reference first, with stable ID ties even when
+        # levels repeat. A finite sweep retains only its remaining budget.
         if cap:
             candidates = nsmallest(
-                remaining, eligible_candidates(), key=lambda item: (item[0], item[1])
+                cap - len(retired), eligible_candidates(), key=lambda item: (item[0], item[1])
             )
         else:
             candidates = sorted(eligible_candidates(), key=lambda item: (item[0], item[1]))
