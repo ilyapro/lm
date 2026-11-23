@@ -56,3 +56,9 @@ def test_scoped_causal_response_ignores_foreign_edges(tmp_path, monkeypatch, rev
     assert responses[0] == responses[1] == responses[2]
     payload = json.dumps(responses[2])
     assert all(secret not in payload for secret in ("foreign-", "saturn lamp", "project:other"))
+
+
+def test_broad_causal_recall_reaches_foreign_neighbors(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    response = asyncio.run(graph_response(tmp_path / "broad.db", count=200, reverse=False, broad=True))
+    assert any(row["scope"] == "project:other" for row in response["results"])

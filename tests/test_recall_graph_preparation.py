@@ -9,6 +9,7 @@ import living_memory.retrieval as retrieval
 import living_memory.storage as storage
 from fixture_vectors import fixture_vector
 from living_memory.retrieval import MemoryRecallService
+from living_memory.scope import resolve_scope
 from living_memory.storage import MemoryStore
 
 
@@ -65,7 +66,7 @@ def test_reader_preserves_bulk_order_ties_self_edges_and_batch_boundaries(tmp_pa
             store.connection.execute("UPDATE connections SET created_at = '2000-01-01'")
         ids = [str(i) for i in range(size)] + ["missing", "0"]
         complete = store.list_connections_for_nodes(ids)
-        bounded = store.list_recall_connections(ids, limit=limit)
+        bounded = store.list_recall_connections(ids, limit=limit, plan=resolve_scope(scope="project:graph"))
         assert bounded == {key: edges[:limit] for key, edges in complete.items()}
         assert store.list_connections_for_nodes(ids) == complete
         assert store.list_recall_connections([], limit=limit) == {}
