@@ -61,7 +61,7 @@ def test_buried_rule_keeps_its_source(
         excerpt = delivery._relevant_excerpt
         monkeypatch.setattr(
             delivery, "_relevant_excerpt",
-            lambda body, budget, query, passage=None: excerpt(body, budget, query, passage).replace(
+            lambda body, budget, query, passage=None, **kwargs: excerpt(body, budget, query, passage, **kwargs).replace(
                 f"- {SOURCE}: ", f"- 01SYNTH{0:020d}: "
             ),
         )

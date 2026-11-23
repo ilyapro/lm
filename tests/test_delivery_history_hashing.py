@@ -234,9 +234,9 @@ def test_whole_body_proof_skips_excerpt_without_spending_a_ladder_slot(monkeypat
     calls = []
     select = delivery._relevant_excerpt
 
-    def excerpt(content, budget, query, passage):
+    def excerpt(content, budget, query, passage, **kwargs):
         calls.append((content, budget))
-        return select(content, budget, query, passage)
+        return select(content, budget, query, passage, **kwargs)
 
     monkeypatch.setattr(delivery, "_relevant_excerpt", excerpt)
     shaped = delivery.shape_recall_results(

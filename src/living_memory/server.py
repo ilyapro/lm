@@ -1440,7 +1440,7 @@ def _register_tools(
                 try:
                     store.record_recall_delivery(
                         recall_service.last_recall_event_id,
-                        recall_delivery_records(results, shaped),
+                        recall_delivery_records(results, shaped, digest=delivery_history.digest),
                         event_results=event_results,
                     )
                 except Exception:

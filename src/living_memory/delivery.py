@@ -101,7 +101,8 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from functools import cache
 from typing import TYPE_CHECKING, Any
 
 from .resources import node_to_dict
@@ -263,7 +264,8 @@ class DeliveryHistory:
         self, results: Iterable[Mapping[str, Any]] = (), *, candidates: Mapping[str, Node] | None = None,
     ) -> None:
         self._versions: dict[tuple[str, str], set[str]] = {}
-        candidate_digests: dict[str, str] = {}
+        # Only strings actually hashed in this request enter the cache.
+        self.digest = cache(_content_digest)
         for result in results:
             delivery = result.get("delivery")
             if not isinstance(delivery, Mapping) or delivery.get("kind") not in (
@@ -279,9 +281,7 @@ class DeliveryHistory:
             if candidates is not None:
                 if node_id not in candidates:
                     continue
-                if node_id not in candidate_digests:
-                    candidate_digests[node_id] = _content_digest(candidates[node_id].content)
-                if source != candidate_digests[node_id]:
+                if source != self.digest(candidates[node_id].content):
                     continue
             bodies = self._versions.setdefault((node_id, source), set())
             if source not in bodies:
@@ -294,14 +294,14 @@ class DeliveryHistory:
             # In-memory Node strings still owe the strict UTF-8 error contract.
             node.content.encode("utf-8")
             return False
-        return (node.id, _content_digest(node.content)) in self._versions
+        return (node.id, self.digest(node.content)) in self._versions
 
     def _excerpt_digests(self, node: Node) -> Collection[str] | None:
         """None means the full current body was delivered, otherwise match excerpts."""
         if not self._versions:
             node.content.encode("utf-8")
             return ()
-        source = _content_digest(node.content)
+        source = self.digest(node.content)
         bodies = self._versions.get((node.id, source), ())
         return None if source in bodies else bodies
 
@@ -310,9 +310,10 @@ class DeliveryHistory:
         if bodies is None:
             return True
         if not bodies:
-            excerpt.encode("utf-8")
+            if excerpt is not node.content:
+                excerpt.encode("utf-8")
             return False
-        return _content_digest(excerpt) in bodies
+        return self.digest(excerpt) in bodies
 
     def uncovered_excerpt(
         self, node: Node, budget: int, query: str | None, passage: SourcePassage | None,
@@ -320,12 +321,13 @@ class DeliveryHistory:
         bodies = self._excerpt_digests(node)
         if bodies is None:
             return None
-        excerpt = _relevant_excerpt(node.content, budget, query, passage)
-        return None if bodies and _content_digest(excerpt) in bodies else excerpt
+        excerpt = _relevant_excerpt(node.content, budget, query, passage, digest=self.digest)
+        return None if bodies and self.digest(excerpt) in bodies else excerpt
 
 
 def recall_delivery_records(
     results: Sequence[RecallResult], shaped: Sequence[Mapping[str, Any]],
+    *, digest: Callable[[str], str] = _content_digest,
 ) -> dict[str, dict[str, str]]:
     """Record the final response's bodies, never infer them from selected ids."""
     sources = {result.node.id: result.node.content for result in results}
@@ -335,8 +337,11 @@ def recall_delivery_records(
         node_id = node["id"]
         record = {"kind": entry["delivery"]}
         if entry["delivery"] in (DELIVERY_FULL, DELIVERY_SNIPPET):
-            record["content_sha256"] = _content_digest(sources[node_id])
-            record["delivered_sha256"] = _content_digest(node["content"])
+            source = sources[node_id]
+            record["content_sha256"] = digest(source)
+            record["delivered_sha256"] = (
+                record["content_sha256"] if node["content"] is source else digest(node["content"])
+            )
         records[node_id] = record
     return records
 
@@ -368,7 +373,7 @@ def shape_recall_results(
     visibility by the caller. Both views retain ``result.superseded`` even
     when no correction is readable or present in this answer.
 
-    Pure: never mutates results, their nodes or delivery_history. Output order
+    Leaves results, their nodes and delivery evidence intact. Output order
     matches input order. Only exact content with matching scope and source
     identity shares a bearer; semantic similarity is solely retrieval evidence.
     """
@@ -418,7 +423,9 @@ def shape_recall_results(
                         result.node, budget, query, result.semantic_passage,
                     )
                 else:
-                    offered = _relevant_excerpt(content, budget, query, result.semantic_passage)
+                    offered = _relevant_excerpt(
+                        content, budget, query, result.semantic_passage, digest=delivery_history.digest,
+                    )
                 delivery = DELIVERY_SNIPPET
             else:
                 offered = None if session_dedup and delivery_history.covers(result.node, content) else content
@@ -524,6 +531,7 @@ def knowledge_node(node: Node | Mapping[str, Any]) -> dict[str, Any]:
 def _relevant_excerpt(
     content: str, budget: int, query: str | None,
     semantic_passage: SourcePassage | None = None,
+    *, digest: Callable[[str], str] = _content_digest,
 ) -> str:
     """Select bounded source-labelled passages without changing the stored node.
 
@@ -542,7 +550,7 @@ def _relevant_excerpt(
     """
 
     if semantic_passage is not None and not (
-        semantic_passage.content_fingerprint == _content_digest(content)
+        semantic_passage.content_fingerprint == digest(content)
         and 0 <= semantic_passage.char_start < semantic_passage.char_end <= len(content)
     ):
         semantic_passage = None
