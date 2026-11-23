@@ -594,17 +594,17 @@ def test_load_session_pins_the_recorded_hash(sealed: tuple[Path, Path]) -> None:
     record = load_session(entry)
     assert record.transcript_sha256 == entry.sha256
     assert record.session_key == entry.session_key
-    assert len(record.recalls) == 2
+    assert len(record.recalls) == 1  # the other response lives only in a sidecar
 
 
 def test_recovery_stats_aggregate_the_whole_fixture_corpus(corpus: Corpus) -> None:
     stats = recovery_stats([load_session(entry) for entry in corpus.entries])
     totals = stats["totals"]
     assert totals["sessions"] == 10
-    # claude 2 + codex 2 + ae_chat 2 (one id salvaged, one lost) + gigacode 1
+    # claude 1 inline + codex 2 + ae_chat 2 (one id salvaged, one lost) + gigacode 1
     # + deepseek 1
-    assert totals["recalls"] == 8
-    assert totals["recall_event_ids"] == 7
+    assert totals["recalls"] == 7
+    assert totals["recall_event_ids"] == 6
     assert totals["writes"] == 5
     assert totals["written_nodes"] == 5
     assert totals["file_mutations"] == 5

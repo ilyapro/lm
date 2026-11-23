@@ -23,7 +23,7 @@ Where each host puts the untruncated server response:
     and the copies only serve as fallbacks for records that predate it. Results
     over ~100 KB are spilled to
     ``<project>/<session>/tool-results/*.txt`` with a ``<persisted-output>``
-    stub in the transcript -- those are followed when the file still exists.
+    stub in the transcript. Only unindexed loads follow these sidecars.
 ``codex``
     ``payload.type == "mcp_tool_call_end"`` with ``invocation.arguments``
     (including ``ambient_context``, which the Claude host does not send) and a
@@ -604,6 +604,10 @@ class TranscriptRef:
 # --------------------------------------------------------------------------
 
 
+class IndexedTranscriptMismatch(ValueError):
+    """The source no longer contains the prefix identified by the index row."""
+
+
 class TranscriptAdapter:
     """Base class: discover transcripts of one format and parse them."""
 
@@ -618,7 +622,7 @@ class TranscriptAdapter:
         if prefix is None:
             return self._parse(ref, ref.path, sha256)
         if prefix.size < 0 or (sha256 is not None and sha256 != prefix.sha256):
-            raise ValueError(f"{ref.session_key}: invalid indexed prefix")
+            raise IndexedTranscriptMismatch(f"{ref.session_key}: invalid indexed prefix")
 
         # Some adapters make several passes. Give them one immutable input
         # while keeping the original path in the record and all source spans.
@@ -629,12 +633,14 @@ class TranscriptAdapter:
                 while remaining:
                     chunk = source.read(min(remaining, 1 << 20))
                     if not chunk:
-                        raise ValueError(f"{ref.session_key}: shorter than indexed {prefix.size} bytes")
+                        raise IndexedTranscriptMismatch(
+                            f"{ref.session_key}: shorter than indexed {prefix.size} bytes"
+                        )
                     digest.update(chunk)
                     snapshot.write(chunk)
                     remaining -= len(chunk)
             if digest.hexdigest() != prefix.sha256:
-                raise ValueError(f"{ref.session_key}: indexed prefix SHA-256 mismatch")
+                raise IndexedTranscriptMismatch(f"{ref.session_key}: indexed prefix SHA-256 mismatch")
             snapshot.flush()
             return self._parse(ref, Path(snapshot.name), prefix.sha256)
 
