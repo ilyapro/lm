@@ -137,13 +137,12 @@ def native_runs(tmp_path_factory):
     return *runs, nodes[0].id
 
 
-def test_native_first_recall_omits_unusable_hashes(native_runs):
+def test_native_recall_hashes_each_source_and_excerpt_once(native_runs):
     eager, current, _ = native_runs
     print(json.dumps({"eager": eager["counts"], "current": current["counts"]}))
     assert eager["counts"][0]["calls"] == 40
-    assert current["counts"][0]["calls"] == 24
-    assert eager["counts"][0]["bytes"] - current["counts"][0]["bytes"] == 41776
-    assert current["counts"][1:3] == eager["counts"][1:3]
+    for count in current["counts"][:3]:
+        assert count == {"calls": 16, "bytes": 41776}
 
 
 def test_native_answers_and_receipts_match_independently(native_runs):
@@ -168,15 +167,15 @@ def test_mutable_content_and_exact_excerpt_proofs(monkeypatch):
     assert history.has_content(node)
     assert history.covers(node, "First excerpt.")
     assert not history.covers(node, "Different excerpt.")
-    assert inputs == [node.content.encode()] * 2 + [b"First excerpt.", node.content.encode(), b"Different excerpt."]
+    assert inputs == [node.content.encode(), b"First excerpt.", b"Different excerpt."]
     node.content = "Updated source."
     inputs.clear()
     assert not history.has_content(node)
     assert not history.covers(node, "First excerpt.")
-    assert inputs == [b"Updated source."] * 2
+    assert inputs == [b"Updated source."]
     inputs.clear()
     assert not history.covers(replace(node, id="other"), "First excerpt.")
-    assert inputs == [b"Updated source."]
+    assert inputs == []
     node.content = "Original source."
     assert history.covers(node, "First excerpt.")
 
@@ -245,3 +244,57 @@ def test_whole_body_proof_skips_excerpt_without_spending_a_ladder_slot(monkeypat
     )
     assert [entry["delivery"] for entry in shaped] == ["full", *(["session_duplicate"] * 4), "snippet"]
     assert calls == [(rows[5].node.content, 1000)]
+
+
+@pytest.mark.parametrize("view", ["knowledge", "full"])
+def test_native_full_source_digests_across_replacement(tmp_path, monkeypatch, view):
+    for key, value in {
+        "LIVING_MEMORY_EMBEDDING_BACKEND": "hash", "LIVING_MEMORY_CHUNK_TOKENIZER": "heuristic",
+        "LM_AUTO_CONSOLIDATE_POLICY": "off", "LM_DECAY_SWEEP_INTERVAL_SEC": "0",
+        "LM_RECALL_MAP": "0", "LM_RECALL_MIN_SCORE": "off", "LM_DELIVERY_SESSION_DEDUP": "1",
+        "LM_DELIVERY_SNIPPET_LADDER": "off", "LM_DELIVERY_SNIPPET_CHARS": "0",
+    }.items():
+        monkeypatch.setenv(key, value)
+    mcp = server.create_mcp_server(tmp_path / "memory.sqlite3")
+    store = mcp.memory_store
+    content = "Quick recap\n" + "x" * (1 << 20)
+    node = store.create_node(level="trace", content=content, context={"scope": "project:synthetic"})
+    inputs = count_hashes(monkeypatch)
+
+    async def recall(client, source, kind):
+        inputs.clear()
+        response = (await client.call_tool("memory_recall", {
+            "query": "Quick recap", "scope": node.scope, "depth": 0, "max_results": 1, "view": view,
+        })).data
+        entry, = response["results"]
+        body = entry.get("node", entry)
+        assert (body["id"], entry["delivery"]) == (node.id, kind)
+        assert body["content"] == (source if kind == "full" else "Quick recap")
+        receipt, = store.get_recall_event(response["recall_event_id"]).results
+        assert receipt["node_id"] == node.id
+        expected = {"kind": kind}
+        encoded = source.encode("utf-8")
+        if kind == "full":
+            digest = hashlib.sha256(encoded).hexdigest()
+            expected.update(content_sha256=digest, delivered_sha256=digest)
+        assert receipt["delivery"] == expected
+        assert inputs == [encoded]
+
+    async def scenario():
+        async with Client(mcp) as client:
+            await recall(client, content, "full")
+            monkeypatch.setenv("LM_DELIVERY_SNIPPET_CHARS", "500")
+            await recall(client, content, "session_duplicate")
+            updated = content[:-1] + "é"
+            store.update_node(node.id, content=updated)
+            monkeypatch.setenv("LM_DELIVERY_SNIPPET_CHARS", "0")
+            await recall(client, updated, "full")
+            await recall(client, updated, "session_duplicate")
+        async with Client(mcp) as independent:
+            await recall(independent, updated, "full")
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        mcp.auto_consolidation.close()
+        store.close()
