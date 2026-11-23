@@ -882,20 +882,13 @@ class MemoryRecallService:
             decision_mode=decision_mode,
             demotions=demotions,
             supersedes=supersedes,
+            named_query=query if by_name else None,
+            repeatable_selection=repeatable_selection,
         )
         # Precision stages (goal recall-precision), each behind its own env
         # valve and the identity while it is off: same-procedure schema
         # duplicates give up their slot, then the quality gate decides what is
         # delivered and what stays in the residual the recall map describes.
-        if by_name:
-            ranked = self._named_schemas_first(
-                query,
-                plan,
-                ranked,
-                repeatable_selection=repeatable_selection,
-                demotions=demotions,
-                causal_mode=causal_mode,
-            )
         ranked, _collapsed = collapse_schema_duplicates(ranked)
         self.last_query_relevance = QueryRelevance(
             ranked, plan=plan, demotions=demotions, causal_mode=causal_mode,
@@ -1130,6 +1123,8 @@ class MemoryRecallService:
         decision_mode: bool = False,
         demotions: Mapping[str, float] | None = None,
         supersedes: tuple[dict[str, tuple[str, ...]], set[str]] | None = None,
+        named_query: str | None = None,
+        repeatable_selection: bool = False,
     ) -> list[RecallResult]:
         """Score and order candidates.
 
@@ -1282,6 +1277,11 @@ class MemoryRecallService:
             ),
             reverse=True,
         )
+        if named_query is not None:
+            ordered = self._named_schemas_first(
+                named_query, plan, ordered, repeatable_selection=repeatable_selection,
+                demotions=demotions, causal_mode=causal_mode,
+            )
         return _enforce_correction_dominance(ordered, corrections_by_superseded)
 
     def submit_feedback(
@@ -1745,7 +1745,7 @@ class MemoryRecallService:
         causal_mode: bool,
         repeatable_selection: bool = False,
     ) -> list[RecallResult]:
-        """``name`` mode: the schemas this query names, if they earned a slot, go first.
+        """``name`` mode: the schemas this query names, if they earned a slot, go first in the base order.
 
         A schema is named when the query's evidence terms equal its trigger's:
         the whole query is its title, with complete lexical support and a

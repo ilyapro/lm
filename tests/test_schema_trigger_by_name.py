@@ -221,10 +221,9 @@ def test_ranked_trigger_read_observes_selection_boundary(tmp_path, monkeypatch, 
                 content=f"{query} for {node_id}", context={"scope": SCOPE, "trigger": query},
             )
         service = MemoryRecallService(store)
-        rank = service.rank_candidates
+        name_first = service._named_schemas_first
 
-        def rank_then_edit(*args, **kwargs):
-            ranked = rank(*args, **kwargs)
+        def edit_before_trigger_read(query, plan, ranked, **kwargs):
             assert {r.node.id for r in ranked} == set(ids)
             with writer.transaction():
                 writer.connection.execute("UPDATE nodes SET level='concept' WHERE id='promoted'")
@@ -237,9 +236,9 @@ def test_ranked_trigger_read_observes_selection_boundary(tmp_path, monkeypatch, 
                     node_id="unranked", level="schema", content=query,
                     context={"scope": SCOPE, "trigger": query},
                 )
-            return ranked
+            return name_first(query, plan, ranked, **kwargs)
 
-        monkeypatch.setattr(service, "rank_candidates", rank_then_edit)
+        monkeypatch.setattr(service, "_named_schemas_first", edit_before_trigger_read)
         read = store.schema_triggers
         rows = []
 

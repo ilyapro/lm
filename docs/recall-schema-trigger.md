@@ -51,9 +51,10 @@ It changes no provider, model or threshold.
   qualification evidence. Corrections retain structural precedence.
 - If the query's token set equals a ranked schema's trigger token set, the
   schema receives lexical support 1.0 and discovery BM25 1.0: the whole query
-  names its title. It moves first if
-  that current evidence passes the channel qualifier, or unconditionally when
-  the main gate is off. Named schemas retain their relative ranking order.
+  names its title. If that evidence passes the channel qualifier or the main
+  gate is off, matching schemas lead the base order in their ranked sequence.
+  Present corrections then precede the nodes they supersede in the final
+  ranking, including named schemas, before the gate and result limit apply.
 - The name match is reported as `trigger_score=1.0` and `trigger` in diagnostic
   methods. This marker does not restore the separate trigger scale.
 - After ranking, SQLite projects triggers only for ranked identities that are
