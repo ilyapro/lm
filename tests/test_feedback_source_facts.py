@@ -347,3 +347,122 @@ def test_tokens_live_only_until_their_last_event(sources, monkeypatch, repeat):
     mcp.tools["memory_remember"](CONTENT, CONTEXT)
     assert observed == [{CONTENT, *(node.content for node in group)} for group in live_sources]
     assert all(ref() is None for ref in refs.values())
+
+
+def test_scope_policy_is_fresh_at_each_transaction(sources, monkeypatch):
+    mcp, nodes = sources
+    store = mcp.memory_store
+    monkeypatch.setenv("LM_RETRIEVAL_TUNING_POLICY", "adaptive")
+    monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "0")
+    first, second = "project:first", "project:second"
+    context = {**CONTEXT, "session_id": "policy-test"}
+    first_nodes = [store.append_trace(f"first {i}", {"scope": first}) for i in range(9)]
+    edge = store.create_connection(first_nodes[0].id, first_nodes[1].id, "related")
+    second_nodes = [store.append_trace(f"second {i}", {"scope": second}) for i in range(10)]
+    store.update_node(second_nodes[0].id, embedding=[1.0, 0.0])
+    events = []
+    for i, scope in enumerate([first, second, first, second, first]):
+        query = f"scope policy {i}"
+        events.append(store.record_recall_event(
+            query=query, scope=scope, requested_scope=context["scope"], ambient_context=context,
+            results=[{"node_id": nodes[0].id, "bm25_score": 1.0}],
+        ))
+        store.insert_query_anchor(scope=scope, query=query, fingerprint=recall_fingerprint(query, scope),
+                                  embedding=[1.0, 0.0])
+
+    probes = []
+    read = store.applicable_retrieval_weight_floors
+
+    def observe(scope):
+        assert store.connection.in_transaction
+        floors = read(scope)
+        probes.append((scope, store.get_retrieval_weights(scope).learning_rate,
+                       floors.vector_min > 0, floors.graph_min > 0))
+        return floors
+
+    monkeypatch.setattr(store, "applicable_retrieval_weight_floors", observe)
+    before = [store.get_retrieval_weights(scope) for scope in (first, second)]
+    close = store.mark_recall_event_feedback
+
+    def fail_last(event_id, *args, **kwargs):
+        close(event_id, *args, **kwargs)
+        if event_id == events[0].id:
+            raise RuntimeError("last closure failed")
+
+    with monkeypatch.context() as fault:
+        fault.setattr(store, "mark_recall_event_feedback", fail_last)
+        with pytest.raises(RuntimeError, match="last closure failed"):
+            mcp.tools["memory_remember"](CONTENT, context)
+    assert probes == [(first, 0.2, False, True), (second, 0.1, True, False)]
+    assert not store.connection.in_transaction
+    assert [store.get_retrieval_weights(scope) for scope in (first, second)] == before
+    assert store.get_node(nodes[0].id) == nodes[0]
+    assert all(not store.credited_node_ids(event.id) for event in events)
+    assert all(store.get_recall_event(event.id).feedback_trace_id is None for event in events)
+    assert not store.list_query_anchor_edges()
+
+    store.append_trace("first at boundary", {"scope": first})
+    store.update_node(first_nodes[0].id, embedding=[1.0, 0.0])
+    store.delete_connection(edge.id)
+    store.soft_delete_node(second_nodes[0].id)
+    store.create_connection(second_nodes[1].id, second_nodes[2].id, "related")
+    probes.clear()
+    response = mcp.tools["memory_remember"](CONTENT, context)
+    assert probes == [(first, 0.1, True, False), (second, 0.2, False, True)]
+    assert all(store.get_recall_event(event.id).feedback_trace_id == response["node"]["id"]
+               for event in events)
+    assert all(store.credited_node_ids(event.id) == {nodes[0].id} for event in events)
+    assert len(store.list_query_anchor_edges()) == len(events)
+
+
+def test_reconciled_source_scope_refreshes_numeric_policy(sources, monkeypatch):
+    mcp, nodes = sources
+    store = mcp.memory_store
+    monkeypatch.setenv("LM_RETRIEVAL_TUNING_POLICY", "adaptive")
+    scope = "project:population"
+    for i in range(9):
+        store.append_trace(f"population {i}", {"scope": scope})
+    moving = store.create_node(level="trace", content=CONTENT, context={"scope": scope},
+                               embedding=[1.0, 0.0])
+    store.create_connection(moving.id, nodes[0].id, "caused")
+    # update_node uses the stored context when it encounters inconsistent columns.
+    with store.transaction():
+        store.connection.execute("UPDATE nodes SET scope = ? WHERE id = ?", ("global", moving.id))
+    for source in (moving, nodes[0]):
+        store.record_recall_event(
+            query="scope transition", scope=scope, requested_scope=CONTEXT["scope"],
+            ambient_context=CONTEXT, results=[{"node_id": source.id, "bm25_score": 1.0}],
+        )
+
+    mcp.tools["memory_remember"](CONTENT, CONTEXT)
+    assert store.get_node(moving.id).scope == scope
+    weights = store.get_retrieval_weights(scope)
+    assert weights.learning_rate == 0.1
+    assert weights.vector >= 0.1 and weights.graph >= 0.05
+
+
+def test_direct_feedback_without_transaction_observes_intervening_write(sources, monkeypatch):
+    mcp, nodes = sources
+    store = mcp.memory_store
+    monkeypatch.setenv("LM_RETRIEVAL_TUNING_POLICY", "adaptive")
+    scope = CONTEXT["scope"]
+    trace = store.append_trace(CONTENT, CONTEXT)
+    for i in range(5):
+        store.append_trace(f"population {i}", CONTEXT)
+    for i in range(2):
+        store.record_recall_event(query=f"event {i}", scope=scope, ambient_context=CONTEXT,
+                                  results=[{"node_id": nodes[0].id, "bm25_score": 1.0}])
+    close = store.mark_recall_event_feedback
+    rates = []
+
+    def observe(event_id, *args, **kwargs):
+        result = close(event_id, *args, **kwargs)
+        rates.append(store.get_retrieval_weights(scope).learning_rate)
+        if len(rates) == 1:
+            assert not store.connection.in_transaction
+            store.append_trace("tenth active trace", CONTEXT)
+        return result
+
+    monkeypatch.setattr(store, "mark_recall_event_feedback", observe)
+    feedback.apply_pending_recall_feedback(store, trace)
+    assert rates == [0.2, 0.1]

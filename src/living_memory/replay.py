@@ -773,6 +773,8 @@ def load_supersedes_pairs(connection: sqlite3.Connection) -> list[tuple[str, str
 class _FloorShim:
     """Duck-typed ``self`` for reusing ``MemoryStore.apply_retrieval_weight_floors``."""
 
+    applicable_retrieval_weight_floors = MemoryStore.applicable_retrieval_weight_floors
+    _apply_applicable_floors = MemoryStore._apply_applicable_floors
     evaluate_retrieval_weight_floors = MemoryStore.evaluate_retrieval_weight_floors
     _lift_retrieval_weight = staticmethod(MemoryStore._lift_retrieval_weight)
 

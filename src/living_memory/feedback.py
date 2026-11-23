@@ -16,7 +16,7 @@ from living_memory.embeddings import copy_vector
 from living_memory import grounding
 from living_memory.grounding import DEFAULT_MIN_CONTAINMENT
 from living_memory.irrelevance import cancel_query_irrelevance, record_query_irrelevance
-from living_memory.models import Node, RecallEvent, RecallEventHeader, RetrievalWeights
+from living_memory.models import Node, RecallEvent, RecallEventHeader, RetrievalPolicyFloors, RetrievalWeights
 from living_memory import storage as storage_module
 from living_memory.query_anchors import resolve_query_anchor, upsert_anchor
 from living_memory.scope import normalize_scope
@@ -380,8 +380,13 @@ def apply_retrieval_feedback(
     useful: bool = True,
     signal: float = 1.0,
     scope: str | None = None,
+    prepared_scopes: dict[str, RetrievalPolicyFloors | None] | None = None,
 ) -> FeedbackUpdate:
-    """Update node usefulness and nudge weights by each method's evidence share."""
+    """Update node usefulness and nudge weights by each method's evidence share.
+
+    prepared_scopes belongs to one transaction's numeric feedback loop. Each
+    entry records the applicable floors after tuning that scope's learning rate.
+    """
 
     magnitude = max(0.0, min(abs(float(signal)), 5.0))
     signed_signal = magnitude if useful else -magnitude
@@ -392,16 +397,25 @@ def apply_retrieval_feedback(
         if signed_signal > 0.0:
             increment *= _positive_reinforcement_gain(node)
         updated_usefulness = max(-1.0, min(1.0, node.usefulness_score + increment))
+        previous_scope = node.scope
         node = store.update_node(node.id, stats={"usefulness_score": updated_usefulness})
+        if prepared_scopes is not None and previous_scope != node.scope:
+            # Updating a row can reconcile its scope column with stored context.
+            prepared_scopes.pop(previous_scope, None)
+            prepared_scopes.pop(node.scope, None)
 
     target_scope = scope or (node.scope if node is not None else "global")
-    _maybe_retune_learning_rate(store, target_scope)
+    if prepared_scopes is None or target_scope not in prepared_scopes:
+        _maybe_retune_learning_rate(store, target_scope)
+        if prepared_scopes is not None:
+            prepared_scopes[target_scope] = store.applicable_retrieval_weight_floors(target_scope)
     method_signals = _method_signals(result, signed_signal)
     weights = store.update_retrieval_weights(
         target_scope,
         bm25_signal=method_signals["bm25"],
         vector_signal=method_signals["vector"],
         graph_signal=method_signals["graph"],
+        scope_floors=prepared_scopes,
     )
     return FeedbackUpdate(node=node, weights=weights)
 
@@ -509,6 +523,8 @@ def apply_pending_recall_feedback(
         if reinforce_results and policy != "all" else None
     )
 
+    # Reuse scope policy only while the caller holds the knowledge transaction.
+    prepared_scopes = {} if store.connection.in_transaction else None
     for event_index, event in enumerate(events):
         event_node_ids: list[str] = []
         # Per event, not accumulated across the batch: an anchor's edges may
@@ -591,6 +607,7 @@ def apply_pending_recall_feedback(
                         useful=grounded,
                         signal=signal if grounded else UNGROUNDED_NEGATIVE_FACTOR * signal,
                         scope=event.scope,
+                        prepared_scopes=prepared_scopes,
                     )
                     feedback_applied = True
 
