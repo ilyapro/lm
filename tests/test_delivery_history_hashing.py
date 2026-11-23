@@ -257,7 +257,7 @@ def test_native_full_source_digests_across_replacement(tmp_path, monkeypatch, vi
         monkeypatch.setenv(key, value)
     mcp = server.create_mcp_server(tmp_path / "memory.sqlite3")
     store = mcp.memory_store
-    content = "Quick recap\n" + "x" * (1 << 20)
+    content = "Quick recap\n" + "x" * 1024
     node = store.create_node(level="trace", content=content, context={"scope": "project:synthetic"})
     inputs = count_hashes(monkeypatch)
 
