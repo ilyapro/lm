@@ -21,6 +21,7 @@ import re
 import sqlite3
 from dataclasses import dataclass
 from functools import lru_cache
+from itertools import batched
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from living_memory.file_evidence import file_citations, file_key, file_owner
@@ -321,7 +322,25 @@ def derive_edges_for_new_trace(store: "MemoryStore", node: Node) -> list[Connect
         citing = _file_citation_candidates(store, files)
         edges.extend(rule_r4b_shared_files(node, citing))
 
-    return [upsert_derived_edge(store, edge) for edge in edges]
+    written: list[Connection] = []
+    for batch in batched(edges, 32):
+        failure = None
+        with store.transaction(immediate=True):
+            endpoints = store.get_node_endpoints(
+                node_id for edge in batch for node_id in (edge.source_id, edge.target_id)
+            )
+            try:
+                for edge in batch:
+                    source, target = endpoints[edge.source_id], endpoints[edge.target_id]
+                    if not source.decayed and not target.decayed:
+                        written.append(upsert_derived_edge(store, edge))
+            except Exception as exc:
+                # The graph writer rolls back the failed edge's savepoint.
+                # Commit the completed prefix before reporting the optional failure.
+                failure = exc
+        if failure is not None:
+            raise failure
+    return written
 
 
 def _commit_group_candidates(
