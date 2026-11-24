@@ -300,51 +300,41 @@ def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _string_leaves(value: Any, path: str = "$") -> Iterator[tuple[str, int]]:
-    if isinstance(value, str):
+_PayloadPath = tuple[str | int, ...]
+
+
+def _shrink_candidates(
+    value: Any, kind: type, path: _PayloadPath = (),
+) -> Iterator[tuple[_PayloadPath, int]]:
+    if isinstance(value, kind):
         yield path, len(value)
-    elif isinstance(value, Mapping):
-        for key in sorted(value, key=str):
-            yield from _string_leaves(value[key], f"{path}.{key}")
+    if isinstance(value, dict):
+        for key in sorted(value):
+            yield from _shrink_candidates(value[key], kind, (*path, key))
     elif isinstance(value, list):
         for index, item in enumerate(value):
-            yield from _string_leaves(item, f"{path}[{index}]")
+            yield from _shrink_candidates(item, kind, (*path, index))
 
 
-def _list_nodes(value: Any, path: str = "$") -> Iterator[tuple[str, int]]:
-    if isinstance(value, Mapping):
-        for key in sorted(value, key=str):
-            yield from _list_nodes(value[key], f"{path}.{key}")
-    elif isinstance(value, list):
-        yield path, len(value)
-        for index, item in enumerate(value):
-            yield from _list_nodes(item, f"{path}[{index}]")
+def _candidate_rank(candidate: tuple[_PayloadPath, int]) -> tuple[int, str]:
+    path, length = candidate
+    # Preserve the lexicographic tie-break used by recorded prompts.
+    display = "".join(f"[{step}]" if isinstance(step, int) else f".{step}" for step in path)
+    return length, display
 
 
-_PATH_STEP = re.compile(r"\.([^.\[]+)|\[(\d+)\]")
+def _apply_at(container: Any, path: _PayloadPath, transform: Callable[[Any], Any]) -> Any:
+    """Copy the ancestors of the selected value and transform that value."""
 
-
-def _apply_at(container: Any, path: str, transform: Callable[[Any], Any]) -> Any:
-    """Return ``container`` with the value at ``path`` replaced by ``transform``."""
-
-    steps: list[str | int] = []
-    for name, index in _PATH_STEP.findall(path):
-        steps.append(int(index) if index else name)
-    if not steps:
+    if not path:
         return transform(container)
 
     def _descend(node: Any, depth: int) -> Any:
-        step = steps[depth]
-        last = depth == len(steps) - 1
-        if isinstance(step, int):
-            items = list(node)
-            items[step] = transform(items[step]) if last else _descend(items[step], depth + 1)
-            return items
-        items_map = dict(node)
-        items_map[step] = (
-            transform(items_map[step]) if last else _descend(items_map[step], depth + 1)
-        )
-        return items_map
+        step = path[depth]
+        last = depth == len(path) - 1
+        parent = node.copy()
+        parent[step] = transform(node[step]) if last else _descend(node[step], depth + 1)
+        return parent
 
     return _descend(container, 0)
 
@@ -372,16 +362,16 @@ def bound_payload(
     min_field_chars = max(0, min_field_chars)
     current = json.loads(json.dumps(payload))  # normalise tuples away
     rendered = current
-    omissions: dict[str, int] = {}
+    omissions: dict[_PayloadPath, int] = {}
     truncated = False
     while True:
         size = len(canonical_json(rendered).encode("utf-8"))
         if size <= max_bytes:
             return rendered, truncated
 
-        leaves = [item for item in _string_leaves(current) if item[1] > min_field_chars]
+        leaves = [item for item in _shrink_candidates(current, str) if item[1] > min_field_chars]
         if leaves:
-            longest = max(leaves, key=lambda item: (item[1], item[0]))
+            longest = max(leaves, key=_candidate_rank)
             keep = max(min_field_chars, int(longest[1] * 0.7))
             dropped = omissions.get(longest[0], 0) + longest[1] - keep
             omissions[longest[0]] = dropped
@@ -394,9 +384,9 @@ def bound_payload(
             truncated = True
             continue
 
-        lists = [item for item in _list_nodes(current) if item[1] > 1]
+        lists = [item for item in _shrink_candidates(current, list) if item[1] > 1]
         if lists:
-            longest_list = max(lists, key=lambda item: (item[1], item[0]))
+            longest_list = max(lists, key=_candidate_rank)
             keep = max(1, int(longest_list[1] * 0.7))
             dropped = omissions.get(longest_list[0], 0) + longest_list[1] - keep
             omissions[longest_list[0]] = dropped
