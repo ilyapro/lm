@@ -8,6 +8,15 @@ import re
 from .session import Turn
 
 
+# Host-injected pseudo-turns that are not the operator speaking.
+INJECTED_TURN = re.compile(
+    r"(?:<(?:system-reminder|command-name|command-message|local-command|"
+    r"user-prompt-submit-hook|environment_details)\b|\[Request interrupted|"
+    r"Caveat: The messages below|<user_instructions>|<environment_context>)",
+    re.IGNORECASE,
+)
+
+
 _TREE_TITLE = "# Tree Goal Node\n"
 _TREE_FRAME = _TREE_TITLE + "\n## Your Goal\n\n<!-- ae-operator-spans "
 _CURRENT = "[current input] Addressed messages delivered into this turn:\n\n"

@@ -52,7 +52,7 @@ from .judge import (
     default_redactor,
     sha256_text,
 )
-from .operator_input import operator_passages
+from .operator_input import INJECTED_TURN, operator_passages
 from .session import (
     RECALL_TOOL,
     TEACH_TOOL,
@@ -332,14 +332,6 @@ _TEST_MARKERS = re.compile(
     re.IGNORECASE,
 )
 
-# Host-injected pseudo-turns that are not the operator speaking.
-_INJECTED_TURN = re.compile(
-    r"^\s*(?:<(?:system-reminder|command-name|command-message|local-command|"
-    r"user-prompt-submit-hook|environment_details)\b|\[Request interrupted|"
-    r"Caveat: The messages below|<user_instructions>|<environment_context>)",
-    re.IGNORECASE,
-)
-
 # A Living Memory round trip, however the session spelled it. ``ToolCall.server``
 # only catches the calls the host recorded *as* MCP calls; a large part of this
 # corpus reaches the same server from inside a script tool instead --
@@ -504,7 +496,7 @@ def observations(
     for turn in record.turns:
         for offset, passage in operator_passages(turn):
             text = passage.strip()
-            if not text or _INJECTED_TURN.match(text):
+            if not text or INJECTED_TURN.match(text):
                 continue
             field = turn.span.field or f"turns[{turn.index}].text"
             if offset:

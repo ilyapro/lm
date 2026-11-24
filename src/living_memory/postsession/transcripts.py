@@ -61,6 +61,7 @@ import re
 import tempfile
 from typing import Any, Iterable, Iterator, TextIO
 
+from .operator_input import INJECTED_TURN
 from .session import (
     MEMORY_SERVER,
     RECALL_TOOL,
@@ -892,7 +893,6 @@ class ClaudeAdapter(TranscriptAdapter):
     def _parse(self, ref: TranscriptRef, path: Path, sha256: str | None) -> SessionRecord:
         record = self._new_record(ref, sha256)
         pending: dict[str, dict[str, Any]] = {}
-        turn_index = 0
         count = 0
         for index, entry in iter_jsonl(path):
             count = index + 1
@@ -913,20 +913,10 @@ class ClaudeAdapter(TranscriptAdapter):
                 text = _first_text((entry.get("message") or {}).get("content"))
                 if text:
                     record.turns.append(
-                        Turn(turn_index, "assistant", text, stamp, record.span(index))
+                        Turn(len(record.turns), "assistant", text, stamp, record.span(index))
                     )
-                    turn_index += 1
             elif kind == "user":
-                consumed = self._read_user(
-                    record, entry, index, pending, turn_index, allow_sidecars=ref.indexed is None
-                )
-                if not consumed:
-                    text = _first_text((entry.get("message") or {}).get("content"))
-                    if text:
-                        record.turns.append(
-                            Turn(turn_index, "user", text, stamp, record.span(index))
-                        )
-                        turn_index += 1
+                self._read_user(record, entry, index, pending, allow_sidecars=ref.indexed is None)
         record.record_count = count
         return self._finalize(record)
 
@@ -977,24 +967,27 @@ class ClaudeAdapter(TranscriptAdapter):
         entry: dict[str, Any],
         index: int,
         pending: dict[str, dict[str, Any]],
-        turn_index: int,
         *,
         allow_sidecars: bool,
-    ) -> bool:
-        """Handle a tool-result-bearing ``user`` record. Returns True if consumed."""
-
+    ) -> None:
         message = entry.get("message") or {}
         blocks = message.get("content")
-        if not isinstance(blocks, list):
-            return False
+        result_indices = [
+            i for i, block in enumerate(blocks)
+            if isinstance(block, dict) and block.get("type") == "tool_result"
+        ] if isinstance(blocks, list) else []
+        if not result_indices:
+            text = _first_text(blocks)
+            if text:
+                record.turns.append(
+                    Turn(len(record.turns), "user", text, entry.get("timestamp"), record.span(index))
+                )
+            return
+
         # Entry-level metadata has no tool_use_id when several responses share a row.
-        result_count = sum(isinstance(b, dict) and b.get("type") == "tool_result" for b in blocks)
-        result_entry = entry if result_count == 1 else {}
-        consumed = False
-        for block_index, block in enumerate(blocks):
-            if not isinstance(block, dict) or block.get("type") != "tool_result":
-                continue
-            consumed = True
+        result_entry = entry if len(result_indices) == 1 else {}
+        for block_index in result_indices:
+            block = blocks[block_index]
             call_id = str(block.get("tool_use_id") or "")
             info = pending.pop(call_id, None)
             if info is None:
@@ -1020,12 +1013,52 @@ class ClaudeAdapter(TranscriptAdapter):
                     record.span(index, channel or f"message.content.{block_index}"),
                     failed=call.ok is False,
                     at=info.get("at"),
-                    turn_index=turn_index,
+                    turn_index=len(record.turns),
                     record_index=info["index"],
                 )
             elif call.ok and tool in {"Edit", "Write", "MultiEdit", "NotebookEdit"}:
                 self._add_mutation(record, tool, info, result_entry, index)
-        return consumed
+
+        # Messages permits additional user input only after the result prefix.
+        suffix = result_indices[-1] + 1
+        if suffix < len(blocks) and suffix == len(result_indices) and message.get("role") == "user":
+            self._read_mixed_text(record, entry, index, blocks, suffix)
+
+    @staticmethod
+    def _read_mixed_text(
+        record: SessionRecord, entry: dict[str, Any], index: int, blocks: list[Any], suffix: int
+    ) -> None:
+        # Claude Code also constructs user-role result rows with host-written
+        # text. Require its keyboard-origin stamp, or the exact feedback the
+        # permission dialog recorded independently of the tool's response.
+        if any(entry.get(flag) for flag in (
+            "isMeta", "isSynthetic", "isSidechain", "isVirtual", "isVisibleInTranscriptOnly",
+            "isCompactSummary", "turnCompanion", "parent_tool_use_id",
+        )):
+            return
+        human = {"kind": "human"}
+        if entry.get("origin", human) != human or entry.get("queueOrigin", human) != human:
+            return
+        from_human = entry.get("origin") == human and not any(
+            field in entry for field in ("toolUseResult", "sourceToolAssistantUUID", "mcpMeta")
+        )
+        feedback = entry.get("userFeedback") if suffix == 1 else None
+        for i in range(suffix, len(blocks)):
+            block = blocks[i]
+            if not isinstance(block, dict) or block.get("type") != "text":
+                continue
+            # Extra fields can describe generated or attributed content.
+            if block.keys() - {"type", "text", "cache_control"}:
+                continue
+            text = block.get("text")
+            if not isinstance(text, str) or not text.strip() or not (from_human or text == feedback):
+                continue
+            if INJECTED_TURN.search(text):
+                continue
+            record.turns.append(Turn(
+                len(record.turns), "user", text, entry.get("timestamp"),
+                record.span(index, f"message.content.{i}.text"),
+            ))
 
     def _structured_content(
         self, entry: dict[str, Any], block: dict[str, Any], *, allow_sidecars: bool
