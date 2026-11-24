@@ -456,7 +456,7 @@ _MEASURED_NUMBER = re.compile(
 # Reuse compares the entire value, including precision and any unit, even
 # when only its integer part qualified it as a measurement.
 _WHOLE_VALUE = re.compile(
-    rf"(?<!\d[.,])[+-]?\b\d+(?:[.,]\d+)?(?:\s?(?:%|(?:{_WORD_UNITS}|px)\b)|\b)(?![.,]\d)"
+    rf"[+-]?(?<!\d[.,])\b\d+(?:[.,]\d+)?(?:\s?(?:%|(?:{_WORD_UNITS}|px)\b)|\b)(?![.,]\d)"
 )
 
 

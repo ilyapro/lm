@@ -78,7 +78,7 @@ def test_output_order_then_first_eligible_decision(tmp_path):
     assert candidate.evidence[-1].locator == record.span(2, "text").locator()
 
 
-@pytest.mark.parametrize("noise", ["9" * 4500, "13740 23740 33740", "-374 +374 -374"])
+@pytest.mark.parametrize("noise", ["9" * 4500, "13740 23740 33740", "-374 +374 -374", "1,-374 2,-374 3,-374"])
 def test_useful_measurement_survives_other_output_fields(tmp_path, noise):
     output = noise + "\n" + " " * 500 + "374 demo.txt"
     decision = "limit = 374"
