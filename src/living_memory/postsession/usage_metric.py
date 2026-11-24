@@ -27,7 +27,7 @@ event recorded after a window closed can only ever *add* consumption to it.
 
 GROUNDED variant. Raw consumption says a node was delivered again; it does not
 say the reading agent used it. The grounded variant additionally requires that
-the consuming event was closed by a ``memory_remember`` trace (a non-null
+the consuming event was closed by the cutoff by a ``memory_remember`` trace (a non-null
 ``feedback_trace_id``) whose content *grounds* the node, under the shared
 IDF-containment rule at :data:`DEFAULT_MIN_CONTAINMENT`. The containment
 arithmetic is never reimplemented here: it comes from
@@ -455,12 +455,23 @@ def load_consumption_index(
 ) -> ConsumptionIndex:
     """Read every recall event at or before ``as_of`` into the delivery index."""
 
-    sql = "SELECT id, created_at, results, feedback_trace_id FROM recall_events"
-    params: list[Any] = []
+    params: dict[str, str] = {}
+    sql = "SELECT e.id, e.created_at, e.results, e.feedback_trace_id FROM recall_events e"
     if as_of is not None:
-        sql += " WHERE created_at <= ?"
-        params.append(as_of)
-    sql += " ORDER BY created_at ASC, rowid ASC"
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(recall_events)")}
+        # Older snapshots only date the closing trace. A dangling reference
+        # still counts as a closed consumer, though its content cannot ground a node.
+        future = "t.created_at > :cutoff"
+        if "feedback_applied_at" in columns:
+            future += " OR e.feedback_applied_at > :cutoff"
+        sql = f"""
+            SELECT e.id, e.created_at, e.results,
+                   CASE WHEN {future} THEN NULL ELSE e.feedback_trace_id END AS feedback_trace_id
+            FROM recall_events e LEFT JOIN nodes t ON t.id = e.feedback_trace_id
+            WHERE e.created_at <= :cutoff
+        """
+        params = {"cutoff": as_of}
+    sql += " ORDER BY e.created_at ASC, e.rowid ASC"
 
     events: list[ReplayEvent] = []
     event_times: list[datetime | None] = []
@@ -823,8 +834,8 @@ CONSUMED_RULE = (
 )
 
 GROUNDED_RULE = (
-    "the consuming event was closed by a memory_remember trace "
-    "(feedback_trace_id not null) whose content grounds the node at "
+    "the consuming event has a memory_remember trace whose known creation and feedback "
+    "times are at or before as_of and whose content grounds the node at "
     "IDF containment >= min_containment"
 )
 
