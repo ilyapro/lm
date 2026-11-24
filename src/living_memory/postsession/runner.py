@@ -1515,8 +1515,11 @@ def build_report(
         "judge": {
             "calls": len(judge_stats),
             "total_cost_usd": round(
-                sum(float(getattr(s, "total_cost_usd", 0.0)) for s in judge_stats
-                    if not getattr(s, "replayed", False)), 4
+                sum(
+                    float(getattr(s, "total_cost_usd", 0.0))
+                    for s in judge_stats if not getattr(s, "replayed", False)
+                ),
+                4,
             ),
             "outcomes": _count(getattr(s, "outcome", "?") for s in judge_stats),
             "backends": _count(getattr(s, "backend", "?") for s in judge_stats),

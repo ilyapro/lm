@@ -1490,7 +1490,8 @@ class CassetteJudge(_BaseJudge):
             fd, name = tempfile.mkstemp(dir=self.path.parent, suffix=".tmp")
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as temporary:
-                    temporary.write(canonical_json({"version": CASSETTE_VERSION, "entries": entries}))
+                    body = {"version": CASSETTE_VERSION, "entries": entries}
+                    temporary.write(canonical_json(body))
                     temporary.write("\n")
                     temporary.flush()
                     os.fsync(temporary.fileno())
@@ -1526,8 +1527,9 @@ class CassetteJudge(_BaseJudge):
         envelope = self._envelope(task, schema, payload)
         model = self.model
         key = self.key_for(envelope, model)
-        entries = self._load() if self.record else self._entries
-        entry = entries.get(key)
+        if self.record and key not in self._entries:
+            self._entries = self._load()
+        entry = self._entries.get(key)
 
         if entry is not None:
             return self._replay(entry, envelope, schema)
