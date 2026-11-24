@@ -29,11 +29,8 @@ but PASS means exit :data:`EXIT_GATE` and zero writes. Before the first
 extracted cohort exists there is nothing to measure, so a self-validated
 organic-control verdict authorizes a *bounded* bootstrap
 (``control_bootstrap``). Each node claim reserves one slot under the ledger
-lock. Once the ledger shows more than
-``bootstrap_write_allowance`` nodes ever written, a control-only verdict stops
-authorizing and the runner demands a measurement of its own cohort — an
-extractor whose traces are not recalled must signal and stop, not keep
-writing.
+lock. At the limit, existing outcomes can still be reconciled and attests
+can proceed. An over-limit ledger requires a measured cohort verdict.
 
 **Mutation recovery.** The per-``(transcript sha256, op fingerprint)`` ledger
 is admission state. It durably saves the request and UNKNOWN before dispatch;
@@ -1320,6 +1317,9 @@ class ExtractionRunner:
                 attempts[group] += 1
                 sessions[skey] = sessions.get(skey, 0) + 1
                 self._dispatch(op, decision)
+                if decision.reason == "bootstrap_allowance":
+                    attempts[group] -= 1
+                    sessions[skey] -= 1
             except LedgerError as exc:
                 decision.status, decision.reason = "unknown", "ledger_error"
                 decision.detail = str(exc)
@@ -1411,21 +1411,20 @@ class ExtractionRunner:
                     decision.status, decision.reason = "dropped", "bootstrap_allowance"
                     continue
 
-                # The op is accepted; it consumes budget whether or not this
-                # is a dry run, so a dry run predicts exactly what a write run
-                # would do.
+                try:
+                    self._dispatch(op, decision, receipt=receipt)
+                except LedgerError as exc:
+                    decision.status, decision.reason = "unknown", "ledger_error"
+                    decision.detail = str(exc)
+                if decision.reason == "bootstrap_allowance":
+                    continue
+
                 if op.kind == "attest":
                     session_attests += 1
                     total_attests += 1
                 else:
                     session_ops += 1
                     total_ops += 1
-
-                try:
-                    self._dispatch(op, decision, receipt=receipt)
-                except LedgerError as exc:
-                    decision.status, decision.reason = "unknown", "ledger_error"
-                    decision.detail = str(exc)
 
         return decisions
 
