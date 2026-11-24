@@ -196,6 +196,7 @@ def _live_record(recall_event_id: str, node_id: str) -> SessionRecord:
             path="config/ports.env",
             kind="update",
             span=SourceSpan("claude", record.path, 9),
+            action_span=record.span(8),
             unified_diff=(
                 "--- a/config/ports.env\n"
                 "+++ b/config/ports.env\n"

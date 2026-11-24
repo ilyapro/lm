@@ -170,6 +170,7 @@ def make_record() -> SessionRecord:
                     "description": "run the attestation tests",
                 },
                 span=span(4, "message.content.tool_use"),
+                result_span=span(5, "message.content.tool_result"),
                 result_text=(
                     "12 passed in 3.41s\n"
                     f"env: {FAKE_ENV_ASSIGNMENT}\n"
@@ -192,6 +193,7 @@ def make_record() -> SessionRecord:
                 path="src/living_memory/storage.py",
                 kind="update",
                 span=span(5, "toolUseResult"),
+                action_span=span(4, "message.content.tool_use"),
                 unified_diff=DIFF_TWO_HUNKS,
                 tool="Edit",
             ),
@@ -200,6 +202,7 @@ def make_record() -> SessionRecord:
                 path="src/living_memory/attestation.py",
                 kind="create",
                 span=span(6, "toolUseResult"),
+                action_span=span(5, "message.content.tool_use"),
                 post_image=WHOLE_FILE_BODY,
                 tool="Write",
             ),
@@ -208,6 +211,7 @@ def make_record() -> SessionRecord:
                 path="src/living_memory/models.py",
                 kind="update",
                 span=span(7, "toolUseResult"),
+                action_span=span(6, "message.content.tool_use"),
                 pre_image=PRE_IMAGE,
                 post_image=POST_IMAGE,
                 tool="Write",

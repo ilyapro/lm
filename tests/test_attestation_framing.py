@@ -160,7 +160,7 @@ def record(event_id="synthetic-event"):
     session = SessionRecord(session_key="claude:framing", source="claude", cli="claude",
                             path="/synthetic/session.jsonl", transcript_sha256="a" * 64)
     span = SourceSpan("claude", session.path, 1)
-    session.recalls.append(RecallInteraction(ordinal=0, query="", span=span,
+    session.recalls.append(RecallInteraction(ordinal=0, query="", span=session.span(0),
                                              recall_event_id=event_id))
     return session, span
 
@@ -189,12 +189,12 @@ def test_extraction_reports_invalid_evidence_without_proposing_or_writing(tmp_pa
     session, span = record()
     if source == "command":
         session.tool_calls.append(ToolCall(0, "exec_command", None, {"cmd": "probe"}, span,
-                                           result_text=JOINED))
+                                           result_text=JOINED, result_span=session.span(2)))
     else:
         fields = {"post_image": JOINED} if source == "file" else {
             "unified_diff": f"--- a/sample\n+++ b/sample\n@@ -0,0 +1 @@\n+{JOINED}\n",
         }
-        session.file_mutations.append(FileMutation(0, "sample", "create", span, **fields))
+        session.file_mutations.append(FileMutation(0, "sample", "create", span, action_span=span, **fields))
     with pytest.raises(attestation.AttestationError, match="U\\+001E"):
         assemble_evidence(session)
     ledger = Ledger(tmp_path)
@@ -210,7 +210,7 @@ def test_extraction_reports_invalid_evidence_without_proposing_or_writing(tmp_pa
 def test_extraction_client_and_server_use_the_same_canonical_digest(runtime):
     session, span = record(runtime.event.id)
     session.tool_calls.append(ToolCall(0, "exec_command", None, {"cmd": "probe"}, span,
-                                       result_text="\r\n" + " ".join(WORDS) + " \t\r\n"))
+                                       result_span=session.span(2), result_text="\r\n" + " ".join(WORDS) + " \t\r\n"))
     bundle = assemble_evidence(session)
     op = proposed_attestations(session, bundle=bundle)[0]
     result = attest(runtime, op.payload["evidence"], "native")

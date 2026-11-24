@@ -365,14 +365,10 @@ re-seal, and if the shuffled rate approaches 0.05, tighten in this order:
    than below it. Below ~400 chars both arms collapse together (at 1 item × 400
    the separation is 1.7×): an item too small to contain a whole thought
    grounds nothing, and the true rate falls faster than the noise.
-3. **A temporal filter on the evidence**, which is currently a deliberate
-   non-goal in `evidence.py`: every event of a session is offered the same
-   bundle, including artifacts produced *before* that recall happened. Filtering
-   each event's evidence to what followed it is a real tightening — a node
-   cannot have influenced a diff written before it was delivered — and it is the
-   next lever with headroom. It costs one digest per event instead of one per
-   session, which weakens the idempotency key's reuse across a session's events;
-   that is the trade to weigh.
+
+The extraction runner selects evidence separately for each recall. A command
+or edit must have a recorded action after delivery in the same transcript.
+Only those artifacts enter deduplication and compete for the event's caps.
 
 Three things are **not** available as responses. Lowering
 `ATTESTATION_MIN_CONTAINMENT` would make credit easier exactly when the noise

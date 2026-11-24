@@ -93,20 +93,17 @@ Every item passes through :func:`living_memory.postsession.judge.default_redacto
 can never be split across two items and survive. No second set of secret
 patterns is defined here; the redactor is the one place they live.
 
-Deliberate non-goal: no temporal filter
----------------------------------------
-Every recall event of a session is offered the *same* bundle, including
-artifacts produced before that recall happened. Filtering evidence to what
-followed a given recall would be a real tightening, but it is not what makes
-this honest -- the server's containment gate is -- and it would give each event
-a different digest for the same session. It is left to the field-check child,
-which can measure whether it changes the cross-session discrimination at all.
+Event chronology
+----------------
+For attestation, the delivery span and the originating action must be ordered
+within the same transcript. Only eligible artifacts compete for that event's
+budget. The server grades the resulting evidence against its delivered nodes.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from itertools import zip_longest
 from typing import Any, TypeVar
 import difflib
@@ -456,6 +453,7 @@ class EvidenceBundle:
     caps: Mapping[str, int]
     #: Which caps actually bound: ``max_items`` and/or ``max_total_chars``.
     caps_hit: tuple[str, ...]
+    redactor: Redactor = field(default=default_redactor, repr=False, compare=False)
 
     def __len__(self) -> int:
         return len(self.items)
@@ -523,7 +521,7 @@ def _round_robin(groups: Sequence[Sequence[_T]]) -> list[_T]:
 
 def _sub_span(span: SourceSpan, suffix: str) -> SourceSpan:
     field = f"{span.field}.{suffix}" if span.field else suffix
-    return SourceSpan(span.source, span.path, span.record_index, field)
+    return replace(span, field=field)
 
 
 def _parts(
@@ -545,9 +543,19 @@ def _parts(
     ]
 
 
+def _end(span: SourceSpan) -> int:
+    return span.record_index if span.end_record_index is None else span.end_record_index
+
+
+def _on_transcript(span: SourceSpan | None, record: SessionRecord) -> bool:
+    return (span is not None and span.source == record.source and span.path == record.path
+            and 0 <= span.record_index <= _end(span))
+
+
 def assemble_evidence(
     record: SessionRecord,
     *,
+    after_delivery: SourceSpan | None = None,
     redactor: Redactor = default_redactor,
     max_items: int = EVIDENCE_MAX_ITEMS,
     max_item_chars: int = EVIDENCE_MAX_ITEM_CHARS,
@@ -592,6 +600,14 @@ def assemble_evidence(
 
     mutation_groups: list[list[_Candidate]] = []
     for mutation in record.file_mutations:
+        if after_delivery is not None:
+            action = mutation.action_span
+            if (not _on_transcript(after_delivery, record)
+                    or action is None or not _on_transcript(action, record)
+                    or not _on_transcript(mutation.span, record)
+                    or action.record_index <= _end(after_delivery)
+                    or mutation.span.record_index < action.record_index):
+                continue
         extracted = _mutation_text(mutation)
         if extracted is None:
             excluded["mutations_without_content"] += 1
@@ -621,12 +637,26 @@ def assemble_evidence(
         if not command:
             excluded["tool_calls_without_command"] += 1
             continue
+        if after_delivery is not None and (
+            not _on_transcript(after_delivery, record) or not _on_transcript(call.span, record)
+            or call.span.record_index <= _end(after_delivery)
+            or (record.source == "codex" and call.span.field == "payload.invocation")
+        ):
+            # Codex also projects invocations from MCP completion records.
+            continue
         body = f"{COMMAND_PREFIX}{command}"
+        span = call.span
         if call.result_text and call.result_text.strip():
-            body = f"{body}\n{call.result_text}"
+            result = call.result_span
+            located = (result is not None and _on_transcript(result, record)
+                       and result.record_index >= _end(call.span))
+            if located or after_delivery is None:
+                body = f"{body}\n{call.result_text}"
+            if result is not None and located:
+                span = replace(span, end_record_index=_end(result))
         group = _parts(
             redactor(body),
-            call.span,
+            span,
             COMMAND,
             f"{call.name or 'tool'}#{call.ordinal}",
             f"tool[{call.ordinal}].command",
@@ -702,6 +732,7 @@ def assemble_evidence(
             "max_total_chars": max_total_chars,
         },
         caps_hit=tuple(caps_hit),
+        redactor=redactor,
     )
 
 
@@ -728,36 +759,33 @@ def proposed_attestations(
 ) -> list[ProposedOp]:
     """One validated ``attest`` op per recall event the session recorded.
 
-    Every event of a session is graded against the same bundle -- the evidence
-    is the session's artifacts, and which of them a given event's nodes appear
-    in is precisely what the *server* decides. An event whose id the transcript
-    never captured cannot be credited and is skipped; a session with no
-    evidence yields no ops, because an op with no evidence is invalid by
-    :meth:`ProposedOp.validate`.
-
-    ``kwargs`` are forwarded to :func:`assemble_evidence` when ``bundle`` is
-    not supplied.
+    Each event gets the eligible artifacts following its delivery, with deduplication
+    and caps applied to that selection. A session-wide bundle supplies the same
+    redactor and caps when rebuilding each event's selection.
     """
 
-    if bundle is None:
-        bundle = assemble_evidence(record, **kwargs)
-    if not bundle:
-        return []
+    if bundle is not None:
+        if bundle.session_key != record.session_key:
+            raise EvidenceError("bundle belongs to a different session")
+        kwargs = {**bundle.caps, "redactor": bundle.redactor}
     wanted = set(recall_event_ids) if recall_event_ids is not None else None
-    evidence = bundle.evidence()
-    payload_evidence = list(bundle.texts)
     ops: list[ProposedOp] = []
     for recall in record.recalls:
         event_id = recall.recall_event_id
         if not event_id or (wanted is not None and event_id not in wanted):
             continue
+        if not _on_transcript(recall.span, record) or recall.record_index > _end(recall.span):
+            continue
+        eligible = assemble_evidence(record, after_delivery=recall.span, **kwargs)
+        if not eligible:
+            continue
         ops.append(
             ProposedOp.for_session(
                 "attest",
-                {"recall_event_id": event_id, "evidence": list(payload_evidence)},
+                {"recall_event_id": event_id, "evidence": list(eligible.texts)},
                 record,
                 recall.span,
-                evidence,
+                eligible.evidence(),
             ).validate()
         )
     return ops
