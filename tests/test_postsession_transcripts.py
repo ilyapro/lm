@@ -736,6 +736,48 @@ def test_result_md_body_is_bounded(tmp_path: Path) -> None:
     assert record.record_count == RESULT_TAIL_LINES * 5 + 2
 
 
+def test_result_md_long_lines_in_header_and_selected_tail(tmp_path: Path) -> None:
+    from living_memory.postsession.transcripts import MAX_BLOB_CHARS, RESULT_TAIL_LINES
+
+    goal = tmp_path / "demo" / "state" / "goals" / "wide"
+    goal.mkdir(parents=True)
+    padding = " " * 100_000
+    session = "測" * 40_000
+    header = (f"OpenAI Codex{padding}v1\r\nmodel: old\r"
+              f"{padding}model{padding}:\t新{padding}型{padding}\n"
+              f"session id: {session}\rworkdir: {padding}\n")
+    wide = "🦊" * MAX_BLOB_CHARS
+    (goal / "result.md").write_bytes(
+        header.encode() + b"\xff\r\n" + wide.encode() + b"\r" * (RESULT_TAIL_LINES - 2)
+        + b"last"
+    )
+    (ref,) = ADAPTERS["ae_node_result"].discover(Roots(ae_projects=tmp_path))
+    record = load_transcript(ref)
+    assert ref.cli == "codex"
+    assert record.linked_session_ids == (session,)
+    assert record.model == "新" + padding + "型"
+    assert record.cwd == ""
+    assert record.record_count == RESULT_TAIL_LINES + 5
+    (turn,) = record.turns
+    assert turn.span.record_index == 5
+    assert turn.text == "�\n" + wide[:-2]
+    assert turn.truncated
+
+
+@pytest.mark.parametrize(("extra", "truncated"), [("", False), ("界", True)])
+def test_result_md_clip_excludes_final_line_ending(tmp_path: Path, extra: str, truncated: bool) -> None:
+    from living_memory.postsession.transcripts import MAX_BLOB_CHARS, TranscriptRef
+
+    path = tmp_path / "result.md"
+    body = "界" * MAX_BLOB_CHARS
+    path.write_bytes((body + extra + "\r\n").encode())
+    record = load_transcript(TranscriptRef("ae_node_result", "unknown", path, "synthetic"))
+    (turn,) = record.turns
+    assert record.record_count == 1
+    assert turn.text == body
+    assert turn.truncated is truncated
+
+
 # --------------------------------------------------------------------------
 # shared schema
 # --------------------------------------------------------------------------

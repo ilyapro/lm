@@ -2149,25 +2149,25 @@ class AeNodeResultAdapter(TranscriptAdapter):
                 break
             if piece.startswith("OpenAI Codex"):
                 header["_cli"] = "codex"
-            key: str | None = ""
-            in_value = False
+            prefix: str | None = ""
+            field = None
             start = end = None
             offset = 0
             while piece:
                 part = piece.removesuffix("\n")
-                if key is not None and not in_value:
+                if prefix is not None:
                     left, colon, part = part.partition(":")
                     offset += len(left) + len(colon)
-                    candidate = key + (left if key else left.lstrip())
-                    # Padding before the colon may span many chunks.
-                    key = (None if candidate[longest:].strip(" ")
-                           else candidate[:longest])
-                    if colon and key is not None:
-                        key = key.rstrip(" ")
-                        in_value = key in keys
-                        if not in_value:
-                            key = None
-                if in_value and part:
+                    candidate = prefix + (left if prefix else left.lstrip())
+                    # Only ASCII spaces may follow the key before the colon.
+                    if candidate[longest:].strip(" "):
+                        prefix = None
+                    elif colon:
+                        field = candidate.rstrip(" ")
+                        prefix = None
+                    else:
+                        prefix = candidate[:longest]
+                if field in keys and part:
                     if start is None:
                         stripped = part.lstrip()
                         if stripped:
@@ -2176,7 +2176,7 @@ class AeNodeResultAdapter(TranscriptAdapter):
                     if trimmed:
                         end = offset + len(trimmed)
                     # A whitespace-only value matches, an absent value doesn't.
-                    ranges[key] = (cookie, start or 0, (end or 0) - (start or 0))
+                    ranges[field] = (cookie, start or 0, (end or 0) - (start or 0))
                 offset += len(part)
                 if piece.endswith("\n"):
                     break
@@ -2224,7 +2224,7 @@ class AeNodeResultAdapter(TranscriptAdapter):
         text = chunk[start:]
         if not last_chunk:
             # One lookahead character for clipping and one for a final newline.
-            text += handle.read(MAX_BLOB_CHARS + 2 - len(text))
+            text += handle.read(max(0, MAX_BLOB_CHARS + 2 - len(text)))
         text = text.removesuffix("\n")
         return count, text[:MAX_BLOB_CHARS], len(text) > MAX_BLOB_CHARS or bool(omit)
 
