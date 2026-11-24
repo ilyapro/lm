@@ -18,6 +18,7 @@ _DIRECT_END = (
 )
 _SECTION = "\n\nCurrent addressed input ("
 _END = "\n\nPreserve each source's author and recipient."
+_CURRENT_CLOSE = " Inspect an UNKNOWN external outcome before any retry."
 _BOUNDARY = re.compile(f"{re.escape(_SECTION)}|{re.escape(_END)}")
 _OPERATOR_SECTION = re.compile(r"\n\nCurrent addressed input \([^\n]+; operator\):\n\n")
 
@@ -112,14 +113,17 @@ def operator_passages(turn: Turn) -> Iterator[tuple[int, str]]:
     if (text.startswith("# Tree Goal Node\n\n## Your Goal\n")
             and "\n## Execution Context\n\n### Execution Worktree\n" in text):
         return
+    address = _LOOP_ADDRESS.search(text)
     result = _LOOP_RESULT.search(text)
-    if result and (address := _LOOP_ADDRESS.search(text)):
-        if not text.startswith(_CURRENT):
-            yield from _loop_passages(text, address, result)
+    live = text.startswith(_CURRENT)
+    if not (live and text.endswith(_CURRENT_CLOSE)):
+        if address and result:
+            # A complete live frame can be quoted in the assignment. Walk
+            # only from the renderer's unique address to its result contract.
+            if not live:
+                yield from _loop_passages(text, address, result)
             return
-        # The loop scaffold can itself be quoted inside a live source, or
-        # the assignment can begin with a live frame. Don't mine its prefix.
-        if text.rfind(_END) < result.end():
+        if (address or result) and "## Current loop assignment\n" in text:
             return
     if not text.startswith(_CURRENT):
         if not text.startswith(_DIRECT) and not text.lstrip().startswith("[current input]"):

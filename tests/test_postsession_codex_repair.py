@@ -228,6 +228,8 @@ TREE = "# Tree Goal Node\n\n## Your Goal\n" + HUMAN + "\n\n## Execution Context\
 
 @pytest.mark.parametrize(("message", "bodies"), [
     (loop_prompt(LOOP_PEER), []),
+    (loop_prompt(LOOP_PEER).split("## Loop work result")[0], []),
+    (loop_prompt(LOOP_PEER).replace("Your reply address is", "Unavailable address"), []),
     (loop_prompt(LOOP_DIRECT + LOOP_PEER), [HUMAN]),
     (loop_prompt(REQUESTS + loop_augment(LITERAL) + LOOP_PEER, "Continue the interrupted invocation."), [LITERAL]),
     (loop_prompt(loop_augment(HUMAN) + loop_augment(LITERAL) + LOOP_UNKNOWN), [HUMAN, LITERAL]),
@@ -237,7 +239,9 @@ TREE = "# Tree Goal Node\n\n## Your Goal\n" + HUMAN + "\n\n## Execution Context\
     (loop_prompt(loop_augment(HUMAN, text_sha256="invalid")), []),
     (loop_prompt(LOOP_DIRECT, assignment=loop_prompt(LOOP_DIRECT)), []),
     (loop_prompt(LOOP_PEER, assignment=addressed(DIRECT)), []),
+    (loop_prompt(LOOP_PEER, assignment=addressed(DIRECT_HEADER + loop_prompt(LOOP_DIRECT) + DIRECT_FOOTER)), []),
     (addressed(section("peer", loop_prompt(LOOP_DIRECT))), []),
+    (addressed(DIRECT + section("peer", loop_prompt(LOOP_DIRECT))), [HUMAN]),
     (addressed(augment(LITERAL + PEER_SECTION)), [LITERAL + PEER_SECTION]),
     (DIRECT_HEADER + LITERAL + DIRECT_FOOTER, [LITERAL]),
     (LITERAL, [LITERAL]),
