@@ -554,6 +554,60 @@ def _on_transcript(span: SourceSpan, record: SessionRecord) -> bool:
     )
 
 
+@dataclass
+class _PreparedActions:
+    """Per-proposal groups for the built-in redactor, keyed by position and part limit."""
+
+    mutations: dict[tuple[int, int], list[_Candidate] | None] = field(default_factory=dict)
+    commands: dict[tuple[int, int, str], list[_Candidate]] = field(default_factory=dict)
+
+
+def _mutation_group(
+    mutation: FileMutation, redactor: Redactor, limit: int,
+) -> list[_Candidate] | None:
+    extracted = _mutation_text(mutation)
+    if extracted is None:
+        return None
+    category, texts = extracted
+    group: list[_Candidate] = []
+    for hunk_index, text in enumerate(texts):
+        group.extend(
+            _parts(
+                redactor(text),
+                mutation.span,
+                category,
+                mutation.path,
+                f"mutation[{mutation.ordinal}].hunk[{hunk_index}]",
+                limit,
+            )
+        )
+    return group
+
+
+def _command_group(
+    record: SessionRecord, call: ToolCall, command: str, redactor: Redactor, limit: int,
+    *, allow_unlocated_result: bool,
+) -> list[_Candidate]:
+    body = f"{COMMAND_PREFIX}{command}"
+    span = call.span
+    if call.result_text and call.result_text.strip():
+        result = call.result_span
+        if (result is not None and _on_transcript(result, record)
+                and result.record_index >= _end(call.span)):
+            span = replace(span, end_record_index=_end(result))
+            body += f"\n{call.result_text}"
+        elif allow_unlocated_result:
+            body += f"\n{call.result_text}"
+    return _parts(
+        redactor(body),
+        span,
+        COMMAND,
+        f"{call.name or 'tool'}#{call.ordinal}",
+        f"tool[{call.ordinal}].command",
+        limit,
+    )
+
+
 def assemble_evidence(
     record: SessionRecord,
     *,
@@ -588,6 +642,20 @@ def assemble_evidence(
     an error, it simply has no effect.
     """
 
+    return _assemble_evidence(
+        record, None, after_delivery=after_delivery, redactor=redactor,
+        max_items=max_items, max_item_chars=max_item_chars, max_total_chars=max_total_chars,
+    )
+
+
+def _assemble_evidence(
+    record: SessionRecord, prepared: _PreparedActions | None, /, *,
+    after_delivery: SourceSpan | None = None,
+    redactor: Redactor = default_redactor,
+    max_items: int = EVIDENCE_MAX_ITEMS,
+    max_item_chars: int = EVIDENCE_MAX_ITEM_CHARS,
+    max_total_chars: int = EVIDENCE_MAX_TOTAL_CHARS,
+) -> EvidenceBundle:
     max_items = max(0, min(int(max_items), EVIDENCE_MAX_ITEMS))
     max_item_chars = max(0, min(int(max_item_chars), EVIDENCE_MAX_ITEM_CHARS))
     max_total_chars = max(0, min(int(max_total_chars), EVIDENCE_MAX_TOTAL_CHARS))
@@ -605,7 +673,7 @@ def assemble_evidence(
     }
 
     mutation_groups: list[list[_Candidate]] = []
-    for mutation in record.file_mutations:
+    for index, mutation in enumerate(record.file_mutations):
         if boundary is not None:
             action = mutation.action_span
             if (
@@ -614,28 +682,20 @@ def assemble_evidence(
                 or not boundary < action.record_index <= mutation.span.record_index
             ):
                 continue
-        extracted = _mutation_text(mutation)
-        if extracted is None:
+        mutation_key = (index, max_item_chars)
+        if prepared is not None and mutation_key in prepared.mutations:
+            group = prepared.mutations[mutation_key]
+        else:
+            group = _mutation_group(mutation, redactor, max_item_chars)
+            if prepared is not None:
+                prepared.mutations[mutation_key] = group
+        if group is None:
             excluded["mutations_without_content"] += 1
-            continue
-        category, texts = extracted
-        group: list[_Candidate] = []
-        for hunk_index, text in enumerate(texts):
-            group.extend(
-                _parts(
-                    redactor(text),
-                    mutation.span,
-                    category,
-                    mutation.path,
-                    f"mutation[{mutation.ordinal}].hunk[{hunk_index}]",
-                    max_item_chars,
-                )
-            )
         if group:
             mutation_groups.append(group)
 
     command_groups: list[list[_Candidate]] = []
-    for call in record.tool_calls:
+    for index, call in enumerate(record.tool_calls):
         if call.is_memory_tool:
             excluded["memory_tool_calls"] += 1
             continue
@@ -649,24 +709,16 @@ def assemble_evidence(
         ):
             # Codex also projects invocations from MCP completion records.
             continue
-        body = f"{COMMAND_PREFIX}{command}"
-        span = call.span
-        if call.result_text and call.result_text.strip():
-            result = call.result_span
-            if (result is not None and _on_transcript(result, record)
-                    and result.record_index >= _end(call.span)):
-                span = replace(span, end_record_index=_end(result))
-                body += f"\n{call.result_text}"
-            elif boundary is None:
-                body += f"\n{call.result_text}"
-        group = _parts(
-            redactor(body),
-            span,
-            COMMAND,
-            f"{call.name or 'tool'}#{call.ordinal}",
-            f"tool[{call.ordinal}].command",
-            max_item_chars,
-        )
+        command_key = (index, max_item_chars, command)
+        if prepared is not None and command_key in prepared.commands:
+            group = prepared.commands[command_key]
+        else:
+            group = _command_group(
+                record, call, command, redactor, max_item_chars,
+                allow_unlocated_result=boundary is None,
+            )
+            if prepared is not None:
+                prepared.commands[command_key] = group
         if group:
             command_groups.append(group)
 
@@ -775,13 +827,17 @@ def proposed_attestations(
         kwargs = {**bundle.caps, "redactor": bundle.redactor}
     wanted = set(recall_event_ids) if recall_event_ids is not None else None
     ops: list[ProposedOp] = []
+    prepared = (
+        _PreparedActions() if kwargs.get("redactor", default_redactor) is default_redactor
+        else None
+    )
     for recall in record.recalls:
         event_id = recall.recall_event_id
         if not event_id or (wanted is not None and event_id not in wanted):
             continue
         if not _on_transcript(recall.span, record) or recall.record_index > _end(recall.span):
             continue
-        eligible = assemble_evidence(record, after_delivery=recall.span, **kwargs)
+        eligible = _assemble_evidence(record, prepared, after_delivery=recall.span, **kwargs)
         if not eligible:
             continue
         ops.append(
