@@ -390,7 +390,7 @@ def test_serializer_generalizes_to_a_dataclass_it_was_never_written_for() -> Non
     assert wire == {
         "required": 7,
         "tags": ["a", "b"],
-        "span": {"source": "claude", "path": "/p", "record_index": 1, "field": "f"},
+        "span": {"source": "claude", "path": "/p", "record_index": 1, "field": "f", "end_record_index": None},
         "nested": [{"quote": "q", "locator": "l"}],
         "anything": {"free": ["form", 1, None]},
     }

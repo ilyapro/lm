@@ -8,7 +8,7 @@ from living_memory.postsession.corrections import observations
 from living_memory.postsession.corpus import assign_splits, probe
 from living_memory.postsession.mining import mine
 from living_memory.postsession.session import SourceSpan
-from living_memory.postsession.transcripts import ADAPTERS, Roots, TranscriptRef, load_transcript
+from living_memory.postsession.transcripts import ADAPTERS, Roots, load_transcript
 
 
 def dashboard(tmp_path, events):
@@ -41,15 +41,16 @@ def test_dashboard_correction_and_native_twin(tmp_path):
         {"type": "tool_use", "turn": 2, "name": "exec_command", "tool_id": "act",
          "input_summary": '{"cmd":"ls example.py"}'},
     ])
-    native = TranscriptRef("codex", "codex", tmp_path / "native.jsonl", "codex:native",
-                           cli_session_id="native")
-    native.path.write_text("\n".join(json.dumps(row) for row in [
+    directory = tmp_path / ".codex/sessions"
+    directory.mkdir(parents=True)
+    (directory / "native.jsonl").write_text("\n".join(json.dumps(row) for row in [
         {"type": "event_msg", "payload": {"type": "agent_message", "message": claim}},
         {"type": "event_msg", "payload": {"type": "user_message", "message": correction}},
         {"type": "response_item", "payload": {"type": "function_call", "name": "exec_command",
                                                "call_id": "act", "arguments": '{"cmd":"ls example.py"}'}},
     ]))
 
+    native, = ADAPTERS["codex"].discover(Roots(codex_sessions=(directory,)))
     record = load_transcript(ref)
     assert [(t.index, t.role, t.cli, t.text) for t in record.turns] == [
         (0, "assistant", "codex", claim), (1, "user", "claude", correction),
