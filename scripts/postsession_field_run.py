@@ -82,7 +82,7 @@ from living_memory.postsession.judge import (  # noqa: E402
     ClaudeCliJudge,
     JudgeError,
     canonical_json,
-    default_redactor,
+    redacted_report_json,
 )
 from living_memory.postsession.runner import (  # noqa: E402
     DEFAULT_BASELINE,
@@ -771,7 +771,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
         extra={"selection": notes, "elapsed_seconds": elapsed},
     )
     (state / f"extract-{split}.json").write_text(
-        default_redactor(canonical_json(report)) + "\n", encoding="utf-8"
+        redacted_report_json(report) + "\n", encoding="utf-8"
     )
 
     # Full op dump (attributed payloads, private, never tracked): what the
