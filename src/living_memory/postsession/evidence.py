@@ -104,6 +104,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from functools import cache
 from itertools import zip_longest
 from typing import Any, TypeVar
 import difflib
@@ -554,14 +555,6 @@ def _on_transcript(span: SourceSpan, record: SessionRecord) -> bool:
     )
 
 
-@dataclass
-class _PreparedActions:
-    """Per-proposal groups for the built-in redactor, keyed by position and part limit."""
-
-    mutations: dict[tuple[int, int], list[_Candidate] | None] = field(default_factory=dict)
-    commands: dict[tuple[int, int, str], list[_Candidate]] = field(default_factory=dict)
-
-
 def _mutation_group(
     mutation: FileMutation, redactor: Redactor, limit: int,
 ) -> list[_Candidate] | None:
@@ -606,6 +599,30 @@ def _command_group(
         f"tool[{call.ordinal}].command",
         limit,
     )
+
+
+class _PreparedActions:
+    """Lazy, delivery-independent groups for one record and the built-in redactor."""
+
+    def __init__(self, record: SessionRecord) -> None:
+        @cache
+        def invocation(index: int) -> str | None:
+            return command_text(record.tool_calls[index])
+
+        @cache
+        def mutation(index: int, limit: int) -> list[_Candidate] | None:
+            return _mutation_group(record.file_mutations[index], default_redactor, limit)
+
+        @cache
+        def command(index: int, text: str, limit: int) -> list[_Candidate]:
+            return _command_group(
+                record, record.tool_calls[index], text, default_redactor, limit,
+                allow_unlocated_result=False,
+            )
+
+        self.invocation = invocation
+        self.mutation = mutation
+        self.command = command
 
 
 def assemble_evidence(
@@ -682,16 +699,13 @@ def _assemble_evidence(
                 or not boundary < action.record_index <= mutation.span.record_index
             ):
                 continue
-        mutation_key = (index, max_item_chars)
-        if prepared is not None and mutation_key in prepared.mutations:
-            group = prepared.mutations[mutation_key]
-        else:
+        if prepared is None:
             group = _mutation_group(mutation, redactor, max_item_chars)
-            if prepared is not None:
-                prepared.mutations[mutation_key] = group
+        else:
+            group = prepared.mutation(index, max_item_chars)
         if group is None:
             excluded["mutations_without_content"] += 1
-        if group:
+        elif group:
             mutation_groups.append(group)
 
     command_groups: list[list[_Candidate]] = []
@@ -699,7 +713,7 @@ def _assemble_evidence(
         if call.is_memory_tool:
             excluded["memory_tool_calls"] += 1
             continue
-        command = command_text(call)
+        command = command_text(call) if prepared is None else prepared.invocation(index)
         if not command:
             excluded["tool_calls_without_command"] += 1
             continue
@@ -709,16 +723,13 @@ def _assemble_evidence(
         ):
             # Codex also projects invocations from MCP completion records.
             continue
-        command_key = (index, max_item_chars, command)
-        if prepared is not None and command_key in prepared.commands:
-            group = prepared.commands[command_key]
-        else:
+        if prepared is None:
             group = _command_group(
                 record, call, command, redactor, max_item_chars,
                 allow_unlocated_result=boundary is None,
             )
-            if prepared is not None:
-                prepared.commands[command_key] = group
+        else:
+            group = prepared.command(index, command, max_item_chars)
         if group:
             command_groups.append(group)
 
@@ -827,16 +838,16 @@ def proposed_attestations(
         kwargs = {**bundle.caps, "redactor": bundle.redactor}
     wanted = set(recall_event_ids) if recall_event_ids is not None else None
     ops: list[ProposedOp] = []
-    prepared = (
-        _PreparedActions() if kwargs.get("redactor", default_redactor) is default_redactor
-        else None
-    )
+    prepared = None
+    reuse = kwargs.get("redactor", default_redactor) is default_redactor
     for recall in record.recalls:
         event_id = recall.recall_event_id
         if not event_id or (wanted is not None and event_id not in wanted):
             continue
         if not _on_transcript(recall.span, record) or recall.record_index > _end(recall.span):
             continue
+        if reuse and prepared is None:
+            prepared = _PreparedActions(record)
         eligible = _assemble_evidence(record, prepared, after_delivery=recall.span, **kwargs)
         if not eligible:
             continue
