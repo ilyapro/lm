@@ -39,9 +39,6 @@ Protocol facts this driver relies on (verified against the modules it imports):
 * A candidate trace has no history and no chunk embeddings; the counterfactual
   harness embeds it via the ordinary lazy drain on the read path, which is the
   documented path for judging candidate cohorts.
-* ``CassetteJudge`` recording is not safe across concurrent instances sharing a
-  path (whole-file rewrite, last writer wins); :class:`LockingCassetteJudge`
-  below serializes cassette I/O while keeping the paid CLI calls parallel.
 
 The sealed split is read exactly once per phase, on purpose, and only here.
 """
@@ -54,7 +51,6 @@ import json
 import os
 import subprocess
 import sys
-import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -358,86 +354,6 @@ def require(path: Path, hint: str) -> dict[str, Any]:
     if not path.is_file():
         raise SystemExit(f"missing {path}: run `{hint}` first")
     return read_json(path)
-
-
-# ---------------------------------------------------------------------------
-# A cassette judge that is safe to record into from concurrent workers.
-# ---------------------------------------------------------------------------
-
-
-class LockingCassetteJudge(CassetteJudge):
-    """CassetteJudge with merge-on-save under a class-wide lock.
-
-    The parent rewrites the whole cassette file from one instance's private
-    entry dict; with a fresh instance per stage per session (the runner's
-    factory contract) and parallel workers, recordings race and the last writer
-    wins. Here every cache read and write first merges the file's current
-    entries, and only the cassette I/O is serialized — the paid CLI call itself
-    stays parallel.
-    """
-
-    _io_lock = threading.Lock()
-
-    def judge(
-        self,
-        task: str,
-        schema: dict[str, Any],
-        payload: dict[str, Any],
-        *,
-        timeout_s: float,
-    ) -> dict[str, Any]:
-        envelope = self._envelope(task, schema, payload)
-        key = self.key_for(envelope, self.model)
-        with self._io_lock:
-            if key not in self._entries and self.path.exists():
-                self._entries.update(self._load())
-            entry = self._entries.get(key)
-        if entry is not None:
-            return self._replay(entry, envelope, schema)
-        if not self.record or self.inner is None:
-            return super().judge(task, schema, payload, timeout_s=timeout_s)
-
-        stored: dict[str, Any] = {
-            "task": envelope.task,
-            "model": self.model,
-            "schema_sha256": envelope.schema_sha256,
-            "system_sha256": envelope.system_sha256,
-            "prompt_sha256": envelope.prompt_sha256,
-            "prompt": envelope.user_prompt,
-            "recorded_at": self._now(),
-        }
-        try:
-            response = self.inner.judge(task, schema, payload, timeout_s=timeout_s)
-        except JudgeError as exc:
-            from living_memory.postsession.judge import (
-                JudgeInvalidOutput,
-                JudgeRefused,
-                JudgeStats,
-            )
-
-            if not isinstance(exc, (JudgeRefused, JudgeInvalidOutput)):
-                raise
-            stored["outcome"] = "refused" if isinstance(exc, JudgeRefused) else "invalid"
-            stored["error"] = str(exc)
-            stored["stats"] = self._inner_stats(envelope, stored["outcome"])
-            self._store(key, stored)
-            self._record(JudgeStats.from_dict(stored["stats"]))
-            raise
-        from living_memory.postsession.judge import JudgeStats
-
-        stored["outcome"] = "ok"
-        stored["response"] = response
-        stored["stats"] = self._inner_stats(envelope, "ok")
-        self._store(key, stored)
-        self._record(JudgeStats.from_dict(stored["stats"]))
-        return response
-
-    def _store(self, key: str, stored: dict[str, Any]) -> None:
-        with self._io_lock:
-            if self.path.exists():
-                self._entries.update(self._load())
-            self._entries[key] = stored
-            self._save()
 
 
 # ---------------------------------------------------------------------------
@@ -833,7 +749,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
         config=config,
         ledger=ledger,
         client=None,
-        judge_factory=lambda: LockingCassetteJudge(
+        judge_factory=lambda: CassetteJudge(
             cassette, inner=ClaudeCliJudge(model=EXTRACT_JUDGE_MODEL), record=True
         ),
     )

@@ -73,6 +73,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
+import fcntl
 import hashlib
 import json
 import os
@@ -1417,6 +1418,11 @@ class CassetteJudge(_BaseJudge):
     :class:`JudgeCassetteMiss` and the inner judge is never called. A test
     suite therefore cannot start spending money because someone edited a
     prompt.
+
+    Recorders sharing a path on a filesystem supporting flock and atomic
+    rename publish the first completed write for each key. Concurrent misses
+    may both call the inner judge. Each caller receives and accounts for its
+    own result, and subsequent calls replay the published one.
     """
 
     backend = "cassette"
@@ -1456,22 +1462,41 @@ class CassetteJudge(_BaseJudge):
     # -- storage ---------------------------------------------------------
 
     def _load(self) -> dict[str, dict[str, Any]]:
-        if not self.path.exists():
+        try:
+            body = self.path.read_text(encoding="utf-8")
+        except FileNotFoundError:
             return {}
-        data = json.loads(self.path.read_text(encoding="utf-8"))
+        data = json.loads(body)
         version = data.get("version")
         if version != CASSETTE_VERSION:
             raise JudgeUnavailable(
                 f"cassette {self.path} has version {version!r}, expected {CASSETTE_VERSION}"
             )
-        return dict(data.get("entries") or {})
+        entries = data.get("entries")
+        if not isinstance(entries, dict):
+            raise JudgeUnavailable(f"cassette {self.path} has no entries object")
+        return entries
 
-    def _save(self) -> None:
+    def _store(self, key: str, entry: dict[str, Any]) -> None:
+        self._record(JudgeStats.from_dict(entry["stats"]))
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        body = canonical_json({"version": CASSETTE_VERSION, "entries": self._entries}) + "\n"
-        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
-        temporary.write_text(body, encoding="utf-8")
-        os.replace(temporary, self.path)
+        # The lock inode stays in place across replacements and process exits.
+        with self.path.with_name(self.path.name + ".lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            entries = self._load()
+            if key in entries:
+                return
+            entries[key] = entry
+            fd, name = tempfile.mkstemp(dir=self.path.parent, suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as temporary:
+                    temporary.write(canonical_json({"version": CASSETTE_VERSION, "entries": entries}))
+                    temporary.write("\n")
+                    temporary.flush()
+                    os.fsync(temporary.fileno())
+                os.replace(name, self.path)
+            finally:
+                Path(name).unlink(missing_ok=True)
 
     @staticmethod
     def key_for(envelope: PromptEnvelope, model: str | None) -> str:
@@ -1501,7 +1526,8 @@ class CassetteJudge(_BaseJudge):
         envelope = self._envelope(task, schema, payload)
         model = self.model
         key = self.key_for(envelope, model)
-        entry = self._entries.get(key)
+        entries = self._load() if self.record else self._entries
+        entry = entries.get(key)
 
         if entry is not None:
             return self._replay(entry, envelope, schema)
@@ -1528,16 +1554,12 @@ class CassetteJudge(_BaseJudge):
             stored["outcome"] = "refused" if isinstance(exc, JudgeRefused) else "invalid"
             stored["error"] = str(exc)
             stored["stats"] = self._inner_stats(envelope, stored["outcome"])
-            self._entries[key] = stored
-            self._save()
-            self._record(JudgeStats.from_dict(stored["stats"]))
+            self._store(key, stored)
             raise
         stored["outcome"] = "ok"
         stored["response"] = response
         stored["stats"] = self._inner_stats(envelope, "ok")
-        self._entries[key] = stored
-        self._save()
-        self._record(JudgeStats.from_dict(stored["stats"]))
+        self._store(key, stored)
         return response
 
     def _inner_stats(self, envelope: PromptEnvelope, outcome: str) -> dict[str, Any]:
