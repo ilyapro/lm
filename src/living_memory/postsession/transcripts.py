@@ -51,6 +51,7 @@ import ast
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from io import StringIO
 import hashlib
 import json
 import os
@@ -1768,11 +1769,30 @@ class AeChatAdapter(TranscriptAdapter):
         except (OSError, ValueError):
             record.parse_warnings.append("meta.json unreadable")
         record.model = meta.get("model")
-        turn_index = 0
         count = 0
         pending: dict[str, dict[str, Any]] = {}
+        providers: dict[int, str | None] = {}
+        numbered_turns: list[tuple[Turn, int]] = []
         turn_cli: str | None = None
+        fragments = StringIO()
+        reply: Turn | None = None
+        reply_key = None
+        previous_seq = None
+
+        def finish_reply(*, incomplete: bool) -> None:
+            nonlocal reply, fragments
+            if reply is not None:
+                reply.text = fragments.getvalue()
+                reply.truncated |= incomplete
+                fragments = StringIO()
+                reply = None
+
         for index, entry in iter_jsonl(path):
+            seq = entry.get("seq")
+            gap = index != count or (
+                previous_seq is not None and seq != previous_seq + 1
+            )
+            previous_seq = seq if type(seq) is int else None
             count = index + 1
             stamp = self._stamp(entry.get("ts"))
             if stamp:
@@ -1780,27 +1800,57 @@ class AeChatAdapter(TranscriptAdapter):
                     record.started_at = stamp
                 record.ended_at = stamp
             kind = entry.get("type")
-            if kind == "turn_start":
+            turn = entry.get("turn")
+            key = (turn, entry.get("message_id"), entry.get("agent_id"), entry.get("chat_id"))
+            text = entry.get("text")
+            delta = kind == "text_delta" and isinstance(text, str)
+            if gap or not delta or key != reply_key:
+                finish_reply(incomplete=gap or kind == "error")
+            if delta and text:
+                if reply is None:
+                    role = "subagent" if entry.get("agent_id") else "assistant"
+                    reply = Turn(len(record.turns), role, "", stamp, record.span(index, "text"),
+                                 cli=turn_cli, truncated=gap)
+                    record.turns.append(reply)
+                    if type(turn) is int:
+                        numbered_turns.append((reply, turn))
+                    reply_key = key
+                else:
+                    reply.span = SourceSpan(record.source, record.path, reply.span.record_index,
+                                            "text", index)
+                room = MAX_BLOB_CHARS - fragments.tell()
+                fragments.write(text[:room])
+                reply.truncated |= len(text) > room
+            elif kind == "turn_start":
                 turn_cli = entry.get("provider")
+                if type(turn) is int:
+                    if turn in providers and providers[turn] != turn_cli:
+                        providers[turn] = None
+                    else:
+                        providers[turn] = turn_cli
                 if entry.get("model"):
                     record.model = str(entry["model"])
-            elif kind == "user_message":
-                text = str(entry.get("text") or "")
-                if text:
-                    record.turns.append(
-                        Turn(turn_index, "user", text, stamp, record.span(index), cli=turn_cli)
-                    )
-                    turn_index += 1
+            elif kind == "user_message" and isinstance(text, str) and text:
+                role = "user" if entry.get("origin") in (None, "operator") else "api"
+                message = Turn(len(record.turns), role, text, stamp, record.span(index, "text"),
+                               cli=turn_cli)
+                record.turns.append(message)
+                if type(turn) is int:
+                    numbered_turns.append((message, turn))
             elif kind == "tool_use":
                 self._read_call(record, entry, index, stamp, pending)
             elif kind == "tool_result":
-                self._read_result(record, entry, index, pending, turn_index)
+                self._read_result(record, entry, index, pending, len(record.turns))
             elif kind == "raw" and entry.get("thread_id"):
                 thread = str(entry["thread_id"])
                 if thread not in record.linked_session_ids:
                     record.linked_session_ids = tuple(
                         sorted({*record.linked_session_ids, thread})
                     )
+        finish_reply(incomplete=True)
+        # A user message can precede its own turn_start, including a provider switch.
+        for message, turn in numbered_turns:
+            message.cli = providers.get(turn)
         record.cwd = meta.get("workspace") or record.cwd
         record.record_count = count
         return self._finalize(record)

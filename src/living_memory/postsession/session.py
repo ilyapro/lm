@@ -250,18 +250,22 @@ class SourceSpan(Wire):
     ``record_index`` is the 0-based ordinal of the record inside the transcript
     as the adapter streamed it (JSONL line ordinal, JSON array element ordinal,
     or text line ordinal for ``ae_node_result``). ``field`` is an optional
-    dotted path inside that record.
+    dotted path inside that record. A multi-record quote uses the same field
+    in consecutive records through the inclusive ``end_record_index``.
     """
 
     source: str
     path: str
     record_index: int
     field: str = ""
+    end_record_index: int | None = None
 
     def locator(self) -> str:
         """Render a stable one-line locator, e.g. ``claude:/p/a.jsonl#42:mcpMeta``."""
 
         base = f"{self.source}:{self.path}#{self.record_index}"
+        if self.end_record_index is not None:
+            base += f"-{self.end_record_index}"
         return f"{base}:{self.field}" if self.field else base
 
     @classmethod
@@ -269,8 +273,10 @@ class SourceSpan(Wire):
         head, _, tail = locator.rpartition("#")
         source, _, path = head.partition(":")
         index, _, field_path = tail.partition(":")
+        first, _, last = index.rpartition("-") if "-" in index[1:] else (index, "", "")
         return cls(
-            source=source, path=path, record_index=int(index or 0), field=field_path
+            source=source, path=path, record_index=int(first or 0), field=field_path,
+            end_record_index=int(last) if last else None,
         )
 
 

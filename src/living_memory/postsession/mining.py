@@ -559,7 +559,7 @@ def _result_span(call: ToolCall) -> SourceSpan:
 
 def _turn_span(turn: Turn) -> SourceSpan:
     base = turn.span
-    return SourceSpan(base.source, base.path, base.record_index, base.field or "text")
+    return base if base.field else replace(base, field="text")
 
 
 # --------------------------------------------------------------------------
