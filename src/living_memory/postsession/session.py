@@ -409,7 +409,8 @@ class WriteInteraction(Wire):
     ``implicit_feedback`` is the server's own verdict block
     (``recall_event_ids``, ``feedback_applied``): it says
     which recalls the write closed the loop on, and whether credit was applied.
-    ``supersedes`` is set for teach only and holds the corrected node id.
+    ``teach_outcome`` classifies the observed reply. A confirmed teach sets
+    ``supersedes`` to the original node ID and ``node_id`` to its correction.
     """
 
     ordinal: int
@@ -427,7 +428,6 @@ class WriteInteraction(Wire):
     record_index: int = -1
     position: float = 0.0
     truncated: bool = False
-
     teach_outcome: Literal["confirmed", "failed", "unknown"] | None = None
 
     @property

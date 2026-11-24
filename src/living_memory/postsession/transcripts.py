@@ -442,13 +442,13 @@ def parse_recall_payload(payload: dict[str, Any]) -> tuple[str | None, list[Deli
     return (str(event_id) if event_id else None), delivered
 
 
-def _receipt_id(value: Any) -> bool:
+def _valid_receipt_id(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
 def _confirmed_teach_node(payload: dict[str, Any], trace_id: Any) -> dict[str, Any] | None:
     """Identify both ends of a teach using its reply and the paired request."""
-    if not _receipt_id(trace_id):
+    if not _valid_receipt_id(trace_id):
         return None
     edge = payload.get("supersedes")
     if "corrective_trace" in payload or "original" in payload:
@@ -456,17 +456,19 @@ def _confirmed_teach_node(payload: dict[str, Any], trace_id: Any) -> dict[str, A
         original = payload.get("original")
         if not isinstance(original, dict) or original.get("id") != trace_id:
             return None
-        if not isinstance(edge, dict) or edge.get("type") != "supersedes" or not _receipt_id(edge.get("id")):
+        if not isinstance(node, dict) or not isinstance(edge, dict):
             return None
-        if not isinstance(node, dict):
+        if edge.get("type") != "supersedes" or not _valid_receipt_id(edge.get("id")):
             return None
-        if edge.get("source_id", node.get("id")) != node.get("id") or edge.get("target_id", trace_id) != trace_id:
+        if "source_id" in edge and edge["source_id"] != node.get("id"):
+            return None
+        if "target_id" in edge and edge["target_id"] != trace_id:
             return None
     else:
         node = payload.get("node")
         if not isinstance(node, dict) or edge != trace_id:
             return None
-    return node if _receipt_id(node.get("id")) and node["id"] != trace_id else None
+    return node if _valid_receipt_id(node.get("id")) and node["id"] != trace_id else None
 
 
 def parse_write_payload(
@@ -476,9 +478,8 @@ def parse_write_payload(
     """Project a ``memory_remember`` / ``memory_teach`` round trip into fields.
 
     The written node comes in two shapes and both are live in the corpus. The
-    verbose one echoes the whole node (``node.content``, ``node.context``,
-    ``node.provenance.prior_recalls``). The current compact one returns only
-    ``node.{id,level,scope,created_at,prior_recall_count,...}`` -- there the
+    verbose one echoes the node content, context and prior recalls.
+    The compact one returns node metadata only. In that case the
     written content and its context are recoverable *only* from the call
     arguments, and the recalls the write closed the loop on come from
     ``implicit_feedback.recall_event_ids`` instead of ``prior_recalls``.
@@ -489,16 +490,14 @@ def parse_write_payload(
     teach_outcome = None
     supersedes = None
     if tool == TEACH_TOOL:
-        confirmed = _confirmed_teach_node(payload, arguments.get("trace_id"))
         if failed or "error" in payload or payload.get("isError") or payload.get("ok") is False:
             teach_outcome = "failed"
-            confirmed = None
-        elif confirmed is None:
-            teach_outcome = "unknown"
+            node = {}
         else:
-            teach_outcome = "confirmed"
-            supersedes = arguments["trace_id"]
-        node = confirmed or {}
+            node = _confirmed_teach_node(payload, arguments.get("trace_id")) or {}
+            teach_outcome = "confirmed" if node else "unknown"
+            if node:
+                supersedes = arguments["trace_id"]
     provenance = node.get("provenance") if isinstance(node.get("provenance"), dict) else {}
     prior_ids: list[str] = []
     prior = provenance.get("prior_recalls")
