@@ -56,7 +56,6 @@ import subprocess
 import sys
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
@@ -820,16 +819,12 @@ def cmd_extract(args: argparse.Namespace) -> int:
 
     entries, notes = _select_sessions(split, state)
     log(f"{split}: {notes['eligible']} eligible, extracting from {len(entries)}")
-    records = []
-    failures = 0
-    for entry in entries:
-        try:
-            records.append(load_session(entry))
-        except Exception as exc:  # noqa: BLE001 - a corrupt transcript is a count
-            failures += 1
-            log(f"! load failed {entry.session_key}: {exc}")
-    notes["loaded"] = len(records)
-    notes["failed_to_load"] = failures
+    def records():
+        for entry in entries:
+            try:
+                yield load_session(entry)
+            except Exception as exc:  # noqa: BLE001 - a corrupt transcript is a count
+                log(f"! load failed {entry.session_key}: {exc}")
 
     cassette = state / f"cassette-{split}.json"
     config = _runner_config()
@@ -842,11 +837,9 @@ def cmd_extract(args: argparse.Namespace) -> int:
         ),
     )
     started = time.monotonic()
-    if EXTRACT_WORKERS > 1 and len(records) > 1:
-        with ThreadPoolExecutor(max_workers=EXTRACT_WORKERS) as pool:
-            proposals = list(pool.map(runner.propose, records))
-    else:
-        proposals = [runner.propose(record) for record in records]
+    proposals = runner.propose_many(records(), workers=EXTRACT_WORKERS)
+    notes["loaded"] = len(proposals)
+    notes["failed_to_load"] = len(entries) - len(proposals)
     decisions = runner.decide_and_execute(proposals)
     elapsed = round(time.monotonic() - started, 1)
 
