@@ -894,6 +894,9 @@ class ClaudeAdapter(TranscriptAdapter):
         blocks = message.get("content")
         if not isinstance(blocks, list):
             return False
+        # Entry-level metadata has no tool_use_id when several responses share a row.
+        result_count = sum(isinstance(b, dict) and b.get("type") == "tool_result" for b in blocks)
+        result_entry = entry if result_count == 1 else {}
         consumed = False
         for block_index, block in enumerate(blocks):
             if not isinstance(block, dict) or block.get("type") != "tool_result":
@@ -905,7 +908,7 @@ class ClaudeAdapter(TranscriptAdapter):
                 continue
             call: ToolCall = info["call"]
             call.ok = not block.get("is_error")
-            payload, channel = self._structured_content(entry, block, allow_sidecars=allow_sidecars)
+            payload, channel = self._structured_content(result_entry, block, allow_sidecars=allow_sidecars)
             text, truncated = _clip(
                 block.get("content") if isinstance(block.get("content"), str) else None
             )
@@ -927,7 +930,7 @@ class ClaudeAdapter(TranscriptAdapter):
                     record_index=info["index"],
                 )
             elif call.ok and tool in {"Edit", "Write", "MultiEdit", "NotebookEdit"}:
-                self._add_mutation(record, tool, info, entry, index)
+                self._add_mutation(record, tool, info, result_entry, index)
         return consumed
 
     def _structured_content(

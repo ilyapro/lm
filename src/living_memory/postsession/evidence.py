@@ -547,9 +547,11 @@ def _end(span: SourceSpan) -> int:
     return span.record_index if span.end_record_index is None else span.end_record_index
 
 
-def _on_transcript(span: SourceSpan | None, record: SessionRecord) -> bool:
-    return (span is not None and span.source == record.source and span.path == record.path
-            and 0 <= span.record_index <= _end(span))
+def _on_transcript(span: SourceSpan, record: SessionRecord) -> bool:
+    return (
+        span.source == record.source and span.path == record.path
+        and 0 <= span.record_index <= _end(span)
+    )
 
 
 def assemble_evidence(
@@ -590,6 +592,10 @@ def assemble_evidence(
     max_item_chars = max(0, min(int(max_item_chars), EVIDENCE_MAX_ITEM_CHARS))
     max_total_chars = max(0, min(int(max_total_chars), EVIDENCE_MAX_TOTAL_CHARS))
 
+    if after_delivery is not None and not _on_transcript(after_delivery, record):
+        raise EvidenceError("delivery needs a valid span in this transcript")
+    boundary = _end(after_delivery) if after_delivery is not None else None
+
     excluded = {
         "turns": len(record.turns),
         "memory_tool_calls": 0,
@@ -600,13 +606,13 @@ def assemble_evidence(
 
     mutation_groups: list[list[_Candidate]] = []
     for mutation in record.file_mutations:
-        if after_delivery is not None:
+        if boundary is not None:
             action = mutation.action_span
-            if (not _on_transcript(after_delivery, record)
-                    or action is None or not _on_transcript(action, record)
-                    or not _on_transcript(mutation.span, record)
-                    or action.record_index <= _end(after_delivery)
-                    or mutation.span.record_index < action.record_index):
+            if (
+                action is None or not _on_transcript(action, record)
+                or not _on_transcript(mutation.span, record)
+                or not boundary < action.record_index <= mutation.span.record_index
+            ):
                 continue
         extracted = _mutation_text(mutation)
         if extracted is None:
@@ -637,9 +643,8 @@ def assemble_evidence(
         if not command:
             excluded["tool_calls_without_command"] += 1
             continue
-        if after_delivery is not None and (
-            not _on_transcript(after_delivery, record) or not _on_transcript(call.span, record)
-            or call.span.record_index <= _end(after_delivery)
+        if boundary is not None and (
+            not _on_transcript(call.span, record) or call.span.record_index <= boundary
             or (record.source == "codex" and call.span.field == "payload.invocation")
         ):
             # Codex also projects invocations from MCP completion records.
@@ -648,12 +653,12 @@ def assemble_evidence(
         span = call.span
         if call.result_text and call.result_text.strip():
             result = call.result_span
-            located = (result is not None and _on_transcript(result, record)
-                       and result.record_index >= _end(call.span))
-            if located or after_delivery is None:
-                body = f"{body}\n{call.result_text}"
-            if result is not None and located:
+            if (result is not None and _on_transcript(result, record)
+                    and result.record_index >= _end(call.span)):
                 span = replace(span, end_record_index=_end(result))
+                body += f"\n{call.result_text}"
+            elif boundary is None:
+                body += f"\n{call.result_text}"
         group = _parts(
             redactor(body),
             span,

@@ -101,3 +101,13 @@ def test_codex_patch_needs_a_matching_invocation(tmp_path):
             invocation={"tool": "external", "arguments": {"cmd": "unknown start"}}),
     ], source="codex")
     assert proposed_attestations(record)[0].payload["evidence"] == ["after"]
+
+
+def test_batched_responses_cannot_assign_entry_level_file_content(tmp_path):
+    batch = result("old", toolUseResult={"filePath": "old", "content": "earlier edit"})
+    batch["message"]["content"] += result("new")["message"]["content"]
+    record = read(tmp_path, [
+        call("old", "Write", file_path="old"), recall("event"), delivery("event"),
+        call("new", "Write", file_path="new"), batch,
+    ])
+    assert proposed_attestations(record) == []
