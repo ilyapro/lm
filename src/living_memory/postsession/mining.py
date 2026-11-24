@@ -48,6 +48,7 @@ Nothing here reads the Living Memory database, calls the server, or writes.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -455,7 +456,7 @@ _MEASURED_NUMBER = re.compile(
 # Reuse compares the entire value, including precision and any unit, even
 # when only its integer part qualified it as a measurement.
 _WHOLE_VALUE = re.compile(
-    rf"(?<!\d[.,])\b\d+(?:[.,]\d+)?(?:\s?(?:%|(?:{_WORD_UNITS}|px)\b)|\b)(?![.,]\d)"
+    rf"(?<!\d[.,])[+-]?\b\d+(?:[.,]\d+)?(?:\s?(?:%|(?:{_WORD_UNITS}|px)\b)|\b)(?![.,]\d)"
 )
 
 
@@ -678,25 +679,23 @@ def _mine_resolved_failures(
             break
 
 
-def _noise_number(token: str, text: str) -> bool:
+def _noise_number(token: str) -> bool:
     """Numbers that look measured and are not.
 
     Three families, all seen firing on the train split: git file modes
     (``100644``), calendar years (``2026`` matched 8 times in one ``git show``),
-    and epoch stamps. A token repeated all over its own output is boilerplate
-    too -- a real measurement is quoted once, a mode line is quoted per file.
+    and epoch stamps.
     """
 
-    bare = token.strip().rstrip("%").strip()
+    bare = token.lstrip("+-").rstrip("%").strip()
     if bare in _NUMBER_NOISE_LITERALS:
         return True
     if bare.isdigit():
-        value = int(bare)
-        if len(bare) == 4 and 1900 <= value <= 2100:
+        if len(bare) == 4 and 1900 <= int(bare) <= 2100:
             return True
         if 10 <= len(bare) <= 13:
             return True
-    return text.count(token) > 3
+    return False
 
 
 def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[Candidate]:
@@ -736,23 +735,25 @@ def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[
         if not text or not command:
             continue
         measuring = MEASURE_COMMANDS.search(command) is not None
-        command_numbers = set(_MEASURED_NUMBER.findall(command))
-        matches = [
-            match
-            for match in _MEASURED_NUMBER.finditer(text)
-            if match.group(0) not in command_numbers
-            and not _noise_number(match.group(0), text)
-            and (measuring or UNIT_NUMBER.fullmatch(match.group(0)) is not None)
-        ]
+        eligible = _MEASURED_NUMBER if measuring else UNIT_NUMBER
+        command_numbers = set(_WHOLE_VALUE.findall(command))
+        counts = Counter(_WHOLE_VALUE.findall(text))
+        matches = []
+        for match in _WHOLE_VALUE.finditer(text):
+            token = match.group()
+            if token in command_numbers or counts[token] > 3 or _noise_number(token):
+                continue
+            magnitude = token.lstrip("+-")
+            if eligible.match(magnitude):
+                matches.append(match)
         if not matches:
             continue
         result_span = _result_span(call)
         reused: tuple[re.Match[str], SourceSpan, str] | None = None
         for match in matches:
-            value = _WHOLE_VALUE.match(text, match.start())
-            if value is None or len(match.group(0).strip()) < 3:
+            token = match.group()
+            if len(token.lstrip("+-")) < 3:
                 continue
-            token = value.group()
             for span, later_text in later_texts:
                 if not _follows_within(result_span, span, config.lookahead_records):
                     continue
@@ -765,7 +766,7 @@ def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[
                 if occurrence is None:
                     continue
                 reused = (
-                    value,
+                    match,
                     span,
                     quote_window(
                         later_text,
