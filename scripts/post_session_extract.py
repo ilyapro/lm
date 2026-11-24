@@ -42,7 +42,7 @@ import argparse
 import hashlib
 import json
 import sys
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -246,8 +246,8 @@ def make_judge_factory(args: argparse.Namespace):
 
 def select_records(
     args: argparse.Namespace, log,
-) -> tuple[Iterable[SessionRecord], list[str], dict[str, Any]]:
-    """The sessions this run reads, plus the splits it read and the accounting."""
+) -> tuple[Iterator[SessionRecord], list[str], dict[str, Any]]:
+    """Select inputs now. Indexed records and load counts advance together on iteration."""
 
     notes: dict[str, Any] = {}
     if args.transcript:
@@ -261,7 +261,7 @@ def select_records(
             session_key=f"{args.source}:{path.stem}",
             cli_session_id=path.stem,
         )
-        return map(load_transcript, [ref]), [], notes
+        return iter((load_transcript(ref),)), [], notes
 
     index_path = args.index or index_path_for(args.manifest)
     if not Path(index_path).is_file():
@@ -432,7 +432,8 @@ def _main(argv: Sequence[str] | None = None) -> int:
     )
 
     if args.progress:
-        log(f"proposing over {notes.get('sessions_selected', 1)} selected session(s), stages={','.join(stages)}")
+        selected = notes.get("sessions_selected", 1)
+        log(f"proposing over {selected} selected session(s), stages={','.join(stages)}")
     proposals = runner.propose_many(records, workers=args.workers)
     decisions = runner.decide_and_execute(proposals)
 

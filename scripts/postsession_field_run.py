@@ -819,6 +819,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
 
     entries, notes = _select_sessions(split, state)
     log(f"{split}: {notes['eligible']} eligible, extracting from {len(entries)}")
+
     def records():
         for entry in entries:
             try:

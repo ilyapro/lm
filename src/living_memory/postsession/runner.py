@@ -761,7 +761,7 @@ REQUIRED_CONTEXT_KEYS = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SessionIdentity:
     session_key: str
     source: str
@@ -796,7 +796,8 @@ def enforce_attribution(
     context.setdefault("task", task)
     context.setdefault("session_id", record.cli_session_id or record.session_key)
     context["transport_session_id"] = (
-        record.transport_session_id if isinstance(record, SessionIdentity) else source_transport_id(record)
+        record.transport_session_id if isinstance(record, SessionIdentity)
+        else source_transport_id(record)
     )
     context["source_transcript_sha256"] = (
         record.transcript_sha256 or op.provenance.transcript_sha256
@@ -949,7 +950,9 @@ class ExtractionRunner:
         records = iter(records)
         proposals = []
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            pending = deque(pool.submit(self.propose, record) for record in islice(records, workers))
+            pending = deque(
+                pool.submit(self.propose, record) for record in islice(records, workers)
+            )
             while pending:
                 proposals.append(pending.popleft().result())
                 record = next(records, None)
@@ -1327,11 +1330,10 @@ class ExtractionRunner:
         total_ops = 0
         total_attests = 0
         for proposals in all_proposals:
-            record = proposals.session
             session_ops = 0
             session_attests = 0
             for op in proposals.ops + proposals.attests:
-                op = enforce_attribution(op, record, task=self.config.task)
+                op = enforce_attribution(op, proposals.session, task=self.config.task)
                 fingerprint = op_fingerprint(op)
                 decision = self._decision(op)
                 decisions.append(decision)
