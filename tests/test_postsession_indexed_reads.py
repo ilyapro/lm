@@ -53,6 +53,7 @@ def test_extract_reads_the_indexed_version(indexed, change):
     )
     messages = []
     records, splits, notes = post_session_extract.select_records(args, messages.append)
+    records = list(records)
     assert splits == ["train"]
     if change in {"unchanged", "append"}:
         record, = records

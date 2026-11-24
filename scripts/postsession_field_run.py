@@ -871,7 +871,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
     cursor = 0
     for proposal in proposals:
         for op in proposal.ops + proposal.attests:
-            attributed = enforce_attribution(op, proposal.record, task=config.task)
+            attributed = enforce_attribution(op, proposal.session, task=config.task)
             decision = decisions[cursor]
             cursor += 1
             if attributed.kind == "attest":
@@ -885,7 +885,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
             dump.append(
                 {
                     "kind": attributed.kind,
-                    "session_key": proposal.record.session_key,
+                    "session_key": proposal.session.session_key,
                     "fingerprint": decision.fingerprint,
                     "status": decision.status,
                     "reason": decision.reason,

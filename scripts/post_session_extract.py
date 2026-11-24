@@ -42,7 +42,7 @@ import argparse
 import hashlib
 import json
 import sys
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -246,7 +246,7 @@ def make_judge_factory(args: argparse.Namespace):
 
 def select_records(
     args: argparse.Namespace, log,
-) -> tuple[list[SessionRecord], list[str], dict[str, Any]]:
+) -> tuple[Iterable[SessionRecord], list[str], dict[str, Any]]:
     """The sessions this run reads, plus the splits it read and the accounting."""
 
     notes: dict[str, Any] = {}
@@ -261,7 +261,7 @@ def select_records(
             session_key=f"{args.source}:{path.stem}",
             cli_session_id=path.stem,
         )
-        return [load_transcript(ref)], [], notes
+        return map(load_transcript, [ref]), [], notes
 
     index_path = args.index or index_path_for(args.manifest)
     if not Path(index_path).is_file():
@@ -301,18 +301,21 @@ def select_records(
                 0, len(entries) - args.max_sessions
             )
             entries = entries[: args.max_sessions]
-    records: list[SessionRecord] = []
-    failures = 0
-    for entry in entries:
-        try:
-            records.append(load_session(entry))
-        except Exception as exc:  # noqa: BLE001 - a corrupt transcript is not fatal
-            failures += 1
-            log(f"! load failed {entry.session_key}: {exc}")
-    notes["sessions_selected"] = len(entries)
-    notes["sessions_loaded"] = len(records)
-    notes["sessions_failed_to_load"] = failures
-    return records, splits_read, notes
+    notes.update(sessions_selected=len(entries), sessions_loaded=0, sessions_failed_to_load=0)
+
+    def records() -> Iterator[SessionRecord]:
+        for entry in entries:
+            try:
+                record = load_session(entry)
+            except Exception as exc:  # noqa: BLE001 - a corrupt transcript is not fatal
+                notes["sessions_failed_to_load"] += 1
+                log(f"! load failed {entry.session_key}: {exc}")
+                continue
+            notes["sessions_loaded"] += 1
+            yield record
+            del record
+
+    return records(), splits_read, notes
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -429,12 +432,8 @@ def _main(argv: Sequence[str] | None = None) -> int:
     )
 
     if args.progress:
-        log(f"proposing over {len(records)} session(s), stages={','.join(stages)}")
-    if args.workers > 1 and len(records) > 1:
-        with ThreadPoolExecutor(max_workers=args.workers) as pool:
-            proposals = list(pool.map(runner.propose, records))
-    else:
-        proposals = [runner.propose(record) for record in records]
+        log(f"proposing over {notes.get('sessions_selected', 1)} selected session(s), stages={','.join(stages)}")
+    proposals = runner.propose_many(records, workers=args.workers)
     decisions = runner.decide_and_execute(proposals)
 
     report = build_report(

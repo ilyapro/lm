@@ -59,10 +59,13 @@ import json
 import os
 import tempfile
 import threading
+from collections import deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from datetime import UTC, datetime, timedelta
+from itertools import islice
 from pathlib import Path
 from typing import Any
 
@@ -758,8 +761,25 @@ REQUIRED_CONTEXT_KEYS = (
 )
 
 
+@dataclass(frozen=True)
+class SessionIdentity:
+    session_key: str
+    source: str
+    cli: str
+    cli_session_id: str | None
+    transport_session_id: str
+    transcript_sha256: str | None
+
+    @classmethod
+    def from_record(cls, record: SessionRecord) -> SessionIdentity:
+        return cls(
+            record.session_key, record.source, record.cli, record.cli_session_id,
+            source_transport_id(record), record.transcript_sha256,
+        )
+
+
 def enforce_attribution(
-    op: ProposedOp, record: SessionRecord, *, task: str
+    op: ProposedOp, record: SessionRecord | SessionIdentity, *, task: str
 ) -> ProposedOp:
     """Stamp the required attribution onto an op's write context.
 
@@ -775,7 +795,9 @@ def enforce_attribution(
     context["agent"] = f"extractor:{record.cli}"
     context.setdefault("task", task)
     context.setdefault("session_id", record.cli_session_id or record.session_key)
-    context["transport_session_id"] = source_transport_id(record)
+    context["transport_session_id"] = (
+        record.transport_session_id if isinstance(record, SessionIdentity) else source_transport_id(record)
+    )
     context["source_transcript_sha256"] = (
         record.transcript_sha256 or op.provenance.transcript_sha256
     )
@@ -856,12 +878,16 @@ class OpDecision:
 class SessionProposals:
     """One session's proposals plus the per-stage accounting behind them."""
 
-    record: SessionRecord
+    record: InitVar[SessionRecord]
+    session: SessionIdentity = field(init=False)
     ops: list[ProposedOp] = field(default_factory=list)
     attests: list[ProposedOp] = field(default_factory=list)
     stage_stats: dict[str, Any] = field(default_factory=dict)
     judge_stats: list[Any] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+
+    def __post_init__(self, record: SessionRecord) -> None:
+        self.session = SessionIdentity.from_record(record)
 
 
 def _op_preview(op: ProposedOp, limit: int = 240) -> str:
@@ -913,26 +939,45 @@ class ExtractionRunner:
 
     # ---- proposal phase ----------------------------------------------------
 
+    def propose_many(
+        self, records: Iterable[SessionRecord], *, workers: int,
+    ) -> list[SessionProposals]:
+        """Consume records in selection order, with at most one submission per worker in flight."""
+        if workers <= 1:
+            return list(map(self.propose, records))
+
+        records = iter(records)
+        proposals = []
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            pending = deque(pool.submit(self.propose, record) for record in islice(records, workers))
+            while pending:
+                proposals.append(pending.popleft().result())
+                record = next(records, None)
+                if record is not None:
+                    pending.append(pool.submit(self.propose, record))
+                    del record
+        return proposals
+
     def propose(self, record: SessionRecord) -> SessionProposals:
         """Run the three producing stages over one session. Never raises."""
 
         proposals = SessionProposals(record=record)
         if "insights" in self.config.stages:
-            self._propose_insights(proposals)
+            self._propose_insights(record, proposals)
         if "corrections" in self.config.stages:
-            self._propose_corrections(proposals)
+            self._propose_corrections(record, proposals)
         if "attest" in self.config.stages:
-            self._propose_attests(proposals)
+            self._propose_attests(record, proposals)
         return proposals
 
-    def _propose_insights(self, proposals: SessionProposals) -> None:
+    def _propose_insights(self, record: SessionRecord, proposals: SessionProposals) -> None:
         if self.judge_factory is None:
             proposals.stage_stats["insights"] = {"skipped": "no judge configured"}
             return
         try:
             judge = self.judge_factory()
             result: SessionExtraction = extract_session(
-                proposals.record,
+                record,
                 judge=judge,
                 gate=self.gate,
                 deduper=self.deduper,
@@ -946,14 +991,14 @@ class ExtractionRunner:
         proposals.judge_stats.extend(getattr(judge, "stats", ()))
         proposals.stage_stats["insights"] = result.to_dict(include_ops=False)
 
-    def _propose_corrections(self, proposals: SessionProposals) -> None:
+    def _propose_corrections(self, record: SessionRecord, proposals: SessionProposals) -> None:
         if self.judge_factory is None:
             proposals.stage_stats["corrections"] = {"skipped": "no judge configured"}
             return
         try:
             judge = self.judge_factory()
             result: DetectionResult = detect_corrections(
-                proposals.record, judge, config=self.config.corrections
+                record, judge, config=self.config.corrections
             )
         except Exception as exc:  # noqa: BLE001
             proposals.errors.append(f"corrections: {exc}")
@@ -965,16 +1010,16 @@ class ExtractionRunner:
         proposals.judge_stats.extend(getattr(judge, "stats", ()))
         proposals.stage_stats["corrections"] = result.as_dict()
 
-    def _propose_attests(self, proposals: SessionProposals) -> None:
+    def _propose_attests(self, record: SessionRecord, proposals: SessionProposals) -> None:
         try:
-            ops = proposed_attestations(proposals.record)
+            ops = proposed_attestations(record)
         except Exception as exc:  # noqa: BLE001
             proposals.errors.append(f"attest: {exc}")
             proposals.stage_stats["attest"] = {"error": str(exc)[:300]}
             return
         proposals.attests.extend(ops)
         proposals.stage_stats["attest"] = {
-            "recall_events": len(proposals.record.recall_event_ids),
+            "recall_events": len(record.recall_event_ids),
             "proposed": len(ops),
         }
 
@@ -1282,7 +1327,7 @@ class ExtractionRunner:
         total_ops = 0
         total_attests = 0
         for proposals in all_proposals:
-            record = proposals.record
+            record = proposals.session
             session_ops = 0
             session_attests = 0
             for op in proposals.ops + proposals.attests:
@@ -1420,9 +1465,9 @@ def build_report(
         },
         "sessions": [
             {
-                "session_key": p.record.session_key,
-                "source": p.record.source,
-                "cli": p.record.cli,
+                "session_key": p.session.session_key,
+                "source": p.session.source,
+                "cli": p.session.cli,
                 "proposed_ops": len(p.ops),
                 "proposed_attests": len(p.attests),
                 "stages": p.stage_stats,
