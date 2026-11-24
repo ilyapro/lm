@@ -361,6 +361,7 @@ def hash_and_probe(path: Path) -> tuple[str, int, int, list[bytes], list[bytes]]
     digest = hashlib.sha256()
     head = _HeadLines(PROBE_HEAD)
     tail = bytearray()
+    starts_record = True
     total = 0
     newlines = 0
     last = b""
@@ -376,14 +377,23 @@ def hash_and_probe(path: Path) -> tuple[str, int, int, list[bytes], list[bytes]]
             head.feed(chunk)
             tail += chunk
             if len(tail) > TAIL_BYTES:
-                del tail[: len(tail) - TAIL_BYTES]
+                cut = len(tail) - TAIL_BYTES
+                starts_record = tail[cut - 1] == ord("\n")
+                del tail[:cut]
     records = newlines + (1 if total and last != b"\n" else 0)
     head_lines = head.finish()[:PROBE_HEAD]
-    tail_lines = bytes(tail).split(b"\n")
-    if len(tail) < total:
-        # the window opened mid-record
-        tail_lines = tail_lines[1:]
-    tail_lines = [line for line in tail_lines if line][-PROBE_TAIL:]
+    tail_lines = []
+    view = memoryview(tail)
+    end = len(tail)
+    while end > 0 and len(tail_lines) < PROBE_TAIL:
+        separator = tail.rfind(b"\n", 0, end)
+        if separator < 0 and not starts_record:
+            break
+        start = separator + 1
+        if start < end:
+            tail_lines.append(bytes(view[start:end]))
+        end = separator
+    tail_lines.reverse()
     return digest.hexdigest(), total, records, head_lines, tail_lines
 
 
