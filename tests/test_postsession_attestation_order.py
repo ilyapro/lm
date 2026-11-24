@@ -111,3 +111,53 @@ def test_batched_responses_cannot_assign_entry_level_file_content(tmp_path):
         call("new", "Write", file_path="new"), batch,
     ])
     assert proposed_attestations(record) == []
+
+
+def test_prepare_only_selected_actions_once_per_proposal(tmp_path, monkeypatch):
+    from living_memory.postsession import evidence
+
+    record = read(tmp_path, [
+        recall("old"), delivery("old"), call("old-command", "Bash", command="old"),
+        recall("one"), delivery("one"), recall("two"), delivery("two"),
+        call("write", "Write", file_path="sample"),
+        result("write", toolUseResult={"filePath": "sample", "content": "edit"}),
+        call("shell", "Bash", command="probe"), result("shell", "output"),
+    ])
+    prepared = []
+    parts = evidence._parts
+
+    def count_parts(text, *args):
+        prepared.append(text)
+        return parts(text, *args)
+
+    monkeypatch.setattr(evidence, "_parts", count_parts)
+    assert proposed_attestations(record, recall_event_ids=[]) == []
+    assert prepared == []
+    events = ["one", "two"]
+    ops = proposed_attestations(record, recall_event_ids=events)
+    assert [op.payload for op in ops] == [
+        {"recall_event_id": event, "evidence": ["edit", "$ probe\noutput"]} for event in events
+    ]
+    assert prepared == ["edit", "$ probe\noutput"]
+    record.tool_calls[-1].result_text = "updated"
+    ops = proposed_attestations(record, recall_event_ids=events)
+    assert ops[-1].payload["evidence"][-1] == "$ probe\nupdated"
+    assert prepared[2:] == ["edit", "$ probe\nupdated"]
+
+
+def test_stateful_redactor_sees_each_eligible_body_in_order(tmp_path):
+    record = read(tmp_path, [
+        recall("one"), delivery("one"), call("first", "Bash", command="first"),
+        recall("two"), delivery("two"), call("last", "Bash", command="last"),
+    ])
+    seen = []
+
+    def redact(text):
+        seen.append(text)
+        return f"{len(seen)} {text}"
+
+    ops = proposed_attestations(record, redactor=redact)
+    assert seen == ["$ first", "$ last", "$ last"]
+    assert [op.payload["evidence"] for op in ops] == [
+        ["1 $ first", "2 $ last"], ["3 $ last"],
+    ]
