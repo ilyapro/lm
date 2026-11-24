@@ -145,3 +145,24 @@ def test_correction_quotes_the_reply_after_the_tool(tmp_path):
     assert [(o.kind, o.text) for o in observations(record)] == [
         ("command_output", "tool-only"), ("operator_message", "No, keep example.py."),
     ]
+
+
+def test_tool_output_arrives_after_operator_message(tmp_path):
+    ref = dashboard(tmp_path, [
+        {"type": "tool_use", "tool_id": "pwd", "name": "exec_command",
+         "input_summary": '{"cmd":"pwd"}'},
+        {"type": "user_message", "origin": "operator", "text": "Which directory?"},
+        {"type": "tool_result", "tool_id": "pwd", "ok": True, "output_summary": "/demo/one"},
+    ])
+    record = load_transcript(ref)
+    message, output = observations(record)
+    assert (message.kind, message.record_index, message.text) == (
+        "operator_message", 1, "Which directory?",
+    )
+    span = SourceSpan("ae_chat", str(ref.path), 2, "output_summary")
+    assert (output.kind, output.record_index, output.locator, output.text) == (
+        "command_output", 2, span.locator(), "/demo/one",
+    )
+    call, = record.tool_calls
+    assert call.result_span == span
+    assert call.result_truncated

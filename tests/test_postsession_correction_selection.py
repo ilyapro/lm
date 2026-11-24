@@ -232,3 +232,59 @@ def test_repeated_deliveries_skip_already_taught_but_recovery_judges_once():
     recovered = C.recover_known_corrections(record, judge)
     assert recovered.judged == len(judge.calls) == len(recovered.ops) == 1
     assert recovered.ops[0].payload["trace_id"] == NODE_ID
+
+
+@pytest.mark.parametrize("output_after_delivery", [False, True])
+def test_interleaved_recall_and_command_results(tmp_path, output_after_delivery):
+    import json
+
+    from living_memory.postsession.transcripts import TranscriptRef, load_transcript
+
+    def call(key, name, args):
+        return {"type": "tool_use", "id": key, "name": name, "input": args}
+
+    def response(key, content):
+        return {"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": key, "content": content},
+        ]}}
+
+    delivery = response("recall", json.dumps({
+        "recall_event_id": "recall-1", "results": [{"id": NODE_ID, "content": NODE_CONTENT}],
+    }))
+    output = response("command", OUTPUT)
+    entries = [
+        {"type": "assistant", "message": {"content": [call("command", "Bash", {"command": COMMAND})]}},
+        {"type": "assistant", "message": {"content": [
+            call("recall", "mcp__living_memory__memory_recall", {"query": "cache"}),
+        ]}},
+        *([delivery, output] if output_after_delivery else [output, delivery]),
+    ]
+    path = tmp_path / "interleaved.jsonl"
+    path.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+    record = load_transcript(TranscriptRef("claude", "claude", path, "interleaved"))
+    observed, = C.observations(record)
+    index = 3 if output_after_delivery else 2
+    locator = f"claude:{path}#{index}:message.content.0.content"
+    assert (observed.kind, observed.text, observed.record_index, observed.locator) == (
+        "command_output", OUTPUT, index, locator,
+    )
+    result, judge = judged(record, answer(observation_locator=locator))
+    if output_after_delivery:
+        op, = result.ops
+        assert op.evidence[0].locator == locator
+        assert op.evidence[0].quote == QUOTE
+        assert len(judge.calls) == 1
+    else:
+        assert judge.calls == result.ops == []
+
+
+@pytest.mark.parametrize("field", [None, "", "payload.output"])
+def test_loaded_wire_record_keeps_available_result_coordinates(field):
+    data = make_record().to_dict()
+    call = data["tool_calls"][0]
+    del call["result_span"]
+    if field is not None:
+        call["result_span"] = {"source": SOURCE, "path": PATH, "record_index": 17, "field": field}
+    observed, = C.observations(SessionRecord.from_dict(data))
+    expected = _span(10, "tool_calls[0].result_text") if field is None else _span(17, field)
+    assert (observed.locator, observed.record_index) == (expected.locator(), expected.record_index)

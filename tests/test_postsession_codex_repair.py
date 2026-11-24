@@ -338,3 +338,22 @@ def test_invalid_tree_frames_yield_nothing(tmp_path):
         TREE_GOAL + HUMAN, TREE_GOAL + message[len(TREE_GOAL) + 1:],
     ):
         check_dispatch_passages(tmp_path, bad, [])
+
+
+def test_observed_output_uses_response_field_and_keeps_clipped_prefix(tmp_path):
+    from living_memory.postsession.corrections import DEFAULT_CONFIG
+    from living_memory.postsession.transcripts import MAX_BLOB_CHARS
+
+    text = "/demo/one\n" + "." * MAX_BLOB_CHARS
+    record = load(tmp_path, call("pwd", cmd="pwd"), event("user_message", message="Where?"),
+                  output("pwd", [{"type": "input_text", "text": text}]),
+                  event("exec_command_end", call_id="pwd", exit_code=0, aggregated_output="done"))
+    message, observed = observations(record)
+    assert (message.kind, message.record_index) == ("operator_message", 1)
+    assert (observed.record_index, observed.locator) == (
+        2, f"codex:{record.path}#2:payload.output.0.text",
+    )
+    assert observed.text == text[:DEFAULT_CONFIG.max_observation_chars]
+    tool, = record.tool_calls
+    assert tool.result_truncated and tool.result_text == text[:MAX_BLOB_CHARS]
+    assert tool.outcome_span.record_index == 3
