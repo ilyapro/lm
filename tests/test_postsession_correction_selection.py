@@ -1,6 +1,8 @@
 """Synthetic correction selection through the detector and default runner."""
 
 from dataclasses import replace
+import hashlib
+import json
 from typing import Any
 
 import pytest
@@ -10,6 +12,8 @@ from living_memory.postsession.judge import FakeJudge, PromptConfig
 from living_memory.postsession.session import (
     DeliveredNode, RecallInteraction, SessionRecord, SourceSpan, ToolCall, WriteInteraction,
 )
+
+from living_memory.postsession.transcripts import TranscriptRef, load_transcript
 
 SOURCE = "claude"
 PATH = "synthetic/correction-selection.jsonl"
@@ -236,9 +240,6 @@ def test_repeated_deliveries_skip_already_taught_but_recovery_judges_once():
 
 @pytest.mark.parametrize("output_after_delivery", [False, True])
 def test_interleaved_recall_and_command_results(tmp_path, output_after_delivery):
-    import json
-
-    from living_memory.postsession.transcripts import TranscriptRef, load_transcript
 
     def call(key, name, args):
         return {"type": "tool_use", "id": key, "name": name, "input": args}
@@ -261,7 +262,10 @@ def test_interleaved_recall_and_command_results(tmp_path, output_after_delivery)
     ]
     path = tmp_path / "interleaved.jsonl"
     path.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
-    record = load_transcript(TranscriptRef("claude", "claude", path, "interleaved"))
+    record = load_transcript(TranscriptRef("claude", "claude", path, "interleaved"),
+                             sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+    recall, = record.recalls
+    assert (recall.record_index, recall.span.record_index) == (1, 2 if output_after_delivery else 3)
     observed, = C.observations(record)
     index = 3 if output_after_delivery else 2
     locator = f"claude:{path}#{index}:message.content.0.content"
