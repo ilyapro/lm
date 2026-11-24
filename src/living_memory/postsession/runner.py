@@ -62,7 +62,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from itertools import islice
 from pathlib import Path
 from typing import Any
@@ -184,6 +184,53 @@ class GateDecision:
         }
 
 
+_ORGANIC_KINDS = ("organic", "organic_control", "organic_holdout")
+_EXTRACTED_KINDS = ("extracted", "extracted_eval", "extracted_holdout")
+
+
+def _fraction(value: Any) -> bool:
+    return type(value) in (int, float) and 0 <= value <= 1
+
+
+def _check_report(
+    report: Mapping[str, Any], label: str, now: datetime, max_age_days: float,
+    details: dict[str, Any],
+) -> GateDecision | None:
+    meta = report.get("meta")
+    if not isinstance(meta, dict) or meta.get("artifact") != "counterfactual_consumption":
+        return GateDecision("MISSING", reasons=(f"{label}: expected counterfactual_consumption artifact",), details=details)
+    generated_at = _parse_instant(meta.get("generated_at_utc"))
+    details[f"{label}_generated_at"] = meta.get("generated_at_utc")
+    if generated_at is None:
+        return GateDecision("STALE", reasons=(f"{label}: invalid meta.generated_at_utc",), details=details)
+    age = (now - generated_at).total_seconds() / 86400
+    details[f"{label}_age_days"] = round(age, 2)
+    if not -1 <= age <= max_age_days:
+        return GateDecision(
+            "STALE", reasons=(f"{label} age {age:.2f} days is outside the allowed window; "
+                              "re-run scripts/counterfactual_consumption.py before writing",),
+            details=details,
+        )
+
+    check = report.get("selfcheck")
+    protocol = report.get("protocol")
+    if not isinstance(check, dict) or not isinstance(protocol, dict):
+        return GateDecision("MISSING", reasons=(f"{label}: expected protocol and selfcheck blocks",), details=details)
+
+    problems = []
+    if type(check.get("cohort_nodes")) is not int or check["cohort_nodes"] <= 0:
+        problems.append(f"{label}: expected a positive cohort_nodes count")
+    if not _fraction(check.get("counterfactual_rate")):
+        problems.append(f"{label}: expected a counterfactual_rate in [0, 1]")
+    if _parse_instant(meta.get("as_of")) is None or _parse_instant(protocol.get("replay_since")) is None:
+        problems.append(f"{label}: expected as_of and replay_since instants")
+    if not _fraction(protocol.get("min_containment")) or type(protocol.get("within_days")) is not int:
+        problems.append(f"{label}: invalid min_containment or within_days")
+    if problems:
+        return GateDecision("INCONCLUSIVE", reasons=tuple(problems), details=details)
+    return None
+
+
 def _control_admissibility(
     selfcheck: Mapping[str, Any],
     bar: Mapping[str, Any],
@@ -199,9 +246,9 @@ def _control_admissibility(
     min_rate = float(min_rates.get(pinned) or 0.0)
 
     kind = str(selfcheck.get("cohort_kind") or "")
-    if not kind.startswith("organic"):
+    if kind not in _ORGANIC_KINDS:
         problems.append(f"{label}: cohort_kind {kind!r} is not an organic control")
-    if not selfcheck.get("passed"):
+    if selfcheck.get("passed") is not True:
         problems.append(
             f"{label}: the harness did not self-validate on this control "
             "(selfcheck.passed is false) — it may not judge anything"
@@ -298,42 +345,10 @@ def evaluate_gate(
         return GateDecision("MISSING", reasons=(f"gate verdict: {problem}",), details=details)
     details["verdict_sha256"] = hashlib.sha256(verdict_bytes).hexdigest()
 
-    meta = verdict.get("meta") or {}
-    if meta.get("artifact") != "counterfactual_consumption":
-        return GateDecision(
-            "MISSING",
-            reasons=(
-                f"{verdict_path} is not a scripts/counterfactual_consumption.py "
-                f"report (meta.artifact={meta.get('artifact')!r})",
-            ),
-            details=details,
-        )
-    generated_at = _parse_instant(meta.get("generated_at_utc"))
-    details["verdict_generated_at"] = meta.get("generated_at_utc")
-    if generated_at is None:
-        return GateDecision(
-            "STALE",
-            reasons=(f"{verdict_path} carries no parseable meta.generated_at_utc",),
-            details=details,
-        )
-    age = now - generated_at
-    details["verdict_age_days"] = round(age.total_seconds() / 86400.0, 2)
-    if age > timedelta(days=max_age_days) or age < timedelta(days=-1):
-        return GateDecision(
-            "STALE",
-            reasons=(
-                f"verdict is {details['verdict_age_days']} days old, over the "
-                f"{max_age_days}-day limit — re-run "
-                "scripts/counterfactual_consumption.py before writing",
-            ),
-            details=details,
-        )
-
-    selfcheck = verdict.get("selfcheck")
-    if not isinstance(selfcheck, dict):
-        return GateDecision(
-            "MISSING", reasons=(f"{verdict_path} carries no selfcheck block",), details=details
-        )
+    invalid = _check_report(verdict, "verdict", now, max_age_days, details)
+    if invalid:
+        return invalid
+    selfcheck = verdict["selfcheck"]
 
     replay_rule = bar.get("replay_set_rule") or {}
     validated_by = str(replay_rule.get("validated_by") or "")
@@ -341,7 +356,7 @@ def evaluate_gate(
     details["cohort_kind"] = cohort_kind
 
     # ---- bootstrap: the verdict IS the organic control ---------------------
-    if cohort_kind.startswith("organic") and control_path is None:
+    if cohort_kind in _ORGANIC_KINDS and control_path is None:
         problems = _control_admissibility(selfcheck, bar, pinned, "control")
         replay_since = str((_protocol_fields(verdict) or {}).get("replay_since") or "")
         if validated_by and replay_since < validated_by:
@@ -378,6 +393,11 @@ def evaluate_gate(
         )
 
     # ---- extracted cohort against a concurrent organic control ------------
+    if cohort_kind not in _EXTRACTED_KINDS:
+        return GateDecision(
+            "INCONCLUSIVE", reasons=(f"verdict cohort_kind {cohort_kind!r} "
+                                     "does not identify an extracted cohort",), details=details,
+        )
     if control_path is None:
         return GateDecision(
             "MISSING",
@@ -393,14 +413,10 @@ def evaluate_gate(
         return GateDecision(
             "MISSING", "extracted_vs_control", (f"organic control: {problem}",), details
         )
-    control_check = control.get("selfcheck")
-    if not isinstance(control_check, dict):
-        return GateDecision(
-            "MISSING",
-            "extracted_vs_control",
-            (f"{control_path} carries no selfcheck block",),
-            details,
-        )
+    invalid = _check_report(control, "control", now, max_age_days, details)
+    if invalid:
+        return invalid
+    control_check = control["selfcheck"]
 
     ours, theirs = _protocol_fields(verdict), _protocol_fields(control)
     mismatched = [key for key in ours if ours[key] != theirs[key]]
@@ -423,8 +439,8 @@ def evaluate_gate(
             f"replay set starts {replay_since!r}, before the validated arm "
             f"{validated_by!r} pinned by replay_set_rule"
         )
-    organic_rate = float(control_check.get("counterfactual_rate") or 0.0)
-    extracted_rate = float(selfcheck.get("counterfactual_rate") or 0.0)
+    organic_rate = control_check["counterfactual_rate"]
+    extracted_rate = selfcheck["counterfactual_rate"]
     details["organic_rate"] = organic_rate
     details["extracted_rate"] = extracted_rate
     details["required_relative"] = round(relative_floor * organic_rate, 4)
