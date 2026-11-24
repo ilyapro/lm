@@ -102,6 +102,13 @@ def _loop_passages(text: str, address: re.Match, result: re.Match) -> Iterator[t
         yield from _sections(text, start, _LOOP_OPERATOR, _LOOP_BOUNDARY, owner=owner)
 
 
+def _unique_fields(pairs: list[tuple[str, object]]) -> dict:
+    fields = dict(pairs)
+    if len(fields) != len(pairs):
+        raise ValueError("duplicate operator span metadata field")
+    return fields
+
+
 def _tree_passages(text: str) -> Iterator[tuple[int, str]]:
     if not text.startswith(_TREE_FRAME):
         return
@@ -112,7 +119,7 @@ def _tree_passages(text: str) -> Iterator[tuple[int, str]]:
     if "\r" in header:
         return
     try:
-        metadata = json.loads(header)
+        metadata = json.loads(header, object_pairs_hook=_unique_fields)
     except (ValueError, RecursionError):
         return
     if not isinstance(metadata, dict):

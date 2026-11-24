@@ -331,6 +331,7 @@ def test_invalid_tree_frames_yield_nothing(tmp_path):
     digest = hashlib.sha256(HUMAN.encode()).hexdigest()
     message = tree_prompt(HUMAN, {"ranges": [[0, len(HUMAN)]], "sha256": digest})
     for bad in (
+        message.replace('{"ranges"', '{"ranges": [], "ranges"'),
         message[:-1], message.replace("No,", "NO,"), message.replace(digest, digest.upper()),
         message.replace(" -->\n", " -->"), message.replace('{"ranges"', '{\n"ranges"'),
         TREE_FRAME + "broken -->\n" + HUMAN, TREE_FRAME + "null -->\n" + HUMAN,
