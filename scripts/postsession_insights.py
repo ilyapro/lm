@@ -99,10 +99,12 @@ from living_memory.postsession.judge import (  # noqa: E402
 )
 from living_memory.postsession.mining import (  # noqa: E402
     DEFAULT_MINING,
+    Candidate,
     hard_identifiers,
     mine,
     mining_stats,
 )
+from living_memory.postsession.session import SessionRecord  # noqa: E402
 
 DEFAULT_OUT = Path("artifacts/post-session/insights-eval.json")
 
@@ -318,44 +320,45 @@ def run_extraction(
     picked different sessions each run would make the eval numbers unreadable.
     """
 
-    mined: list[tuple[SessionEntry, Any, list[Any]]] = []
-    for index, entry in enumerate(entries):
-        if progress and index and index % 100 == 0:
-            print(f"  ... mined {index}/{len(entries)} sessions", file=sys.stderr, flush=True)
-        try:
-            record = load_session(entry)
-        except Exception:
-            continue
-        candidates = mine(record, config=config.mining)
-        if candidates:
-            mined.append((entry, record, candidates))
+    selected: list[tuple[SessionRecord, list[Candidate]]] = []
+    sessions_with_candidates = 0
 
-    mining_report = mining_stats(
-        [candidate for _, _, candidates in mined for candidate in candidates]
-    )
+    def mined_candidates() -> Iterator[Candidate]:
+        nonlocal sessions_with_candidates
+        spent = 0
+        # Rank lightweight index entries so each budget decision is final at load time.
+        ordered = sorted(entries, key=lambda entry: _sample_rank(entry.session_key))
+        for index, entry in enumerate(ordered):
+            if progress and index and index % 100 == 0:
+                print(f"  ... mined {index}/{len(entries)} sessions", file=sys.stderr, flush=True)
+            try:
+                record = load_session(entry)
+            except Exception:
+                continue
+            candidates = mine(record, config=config.mining)
+            if candidates:
+                sessions_with_candidates += 1
+                want = min(len(candidates), config.max_judge_calls)
+                if spent + want <= judge_budget:
+                    selected.append((record, candidates))
+                    spent += want
+            del record
+            yield from candidates
+
+    mining_report = mining_stats(mined_candidates())
     mining_report["sessions_scanned"] = len(entries)
-    mining_report["sessions_with_candidates"] = len(mined)
-
-    ordered = sorted(mined, key=lambda item: _sample_rank(item[0].session_key))
-    selected: list[tuple[SessionEntry, Any, list[Any]]] = []
-    spent = 0
-    for entry, record, candidates in ordered:
-        want = min(len(candidates), config.max_judge_calls)
-        if spent + want > judge_budget:
-            continue
-        selected.append((entry, record, candidates))
-        spent += want
+    mining_report["sessions_with_candidates"] = sessions_with_candidates
     mining_report["sessions_judged"] = len(selected)
     mining_report["judge_budget"] = judge_budget
     mining_report["candidates_in_judged_sessions"] = sum(
-        len(candidates) for _, _, candidates in selected
+        len(candidates) for _, candidates in selected
     )
 
     judges: list[Any] = []
     results: list[SessionExtraction] = []
 
-    def _one(item: tuple[SessionEntry, Any, list[Any]]) -> SessionExtraction:
-        entry, record, candidates = item
+    def _one(item: tuple[SessionRecord, list[Candidate]]) -> SessionExtraction:
+        record, candidates = item
         judge = judge_factory()
         judges.append(judge)
         return extract_session(
