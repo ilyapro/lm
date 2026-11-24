@@ -3,6 +3,8 @@
 from dataclasses import replace
 import json
 
+import pytest
+
 from living_memory.attestation import EVIDENCE_MAX_ITEMS
 from living_memory.postsession.evidence import assemble_evidence, proposed_attestations
 from living_memory.postsession.runner import ExtractionRunner, Ledger, RunnerConfig, op_fingerprint
@@ -31,6 +33,39 @@ def read(tmp_path, rows, source="claude"):
     path = tmp_path / "synthetic.jsonl"
     path.write_text("".join(json.dumps(row) + "\n" for row in rows))
     return load_transcript(TranscriptRef(source, source, path, "synthetic"), sha256=sha256_file(path))
+
+
+@pytest.mark.parametrize(("images", "expected"), [
+    ({"originalFile": "existing", "content": "existing"}, []),
+    ({"originalFile": "existing", "content": "existing\n"}, []),
+    ({"originalFile": "existing"}, []),
+    ({"originalFile": "old", "content": "new"},
+     ["--- a/sample\n+++ b/sample\n@@ -1 +1 @@\n-old\n+new"]),
+    ({"originalFile": "", "content": "new"},
+     ["--- a/sample\n+++ b/sample\n@@ -0,0 +1 @@\n+new"]),
+    ({"originalFile": "old", "content": ""},
+     ["--- a/sample\n+++ b/sample\n@@ -1 +0,0 @@\n-old"]),
+    ({"type": "create", "content": "new file"}, ["new file"]),
+])
+def test_write_evidence_from_recorded_images(tmp_path, images, expected):
+    rows = [
+        recall("event"), delivery("event"), call("write", "Write", file_path="sample"),
+        result("write", toolUseResult={"filePath": "sample", "type": "update", **images}),
+    ]
+    ops = proposed_attestations(read(tmp_path, rows))
+    assert [op.payload["evidence"] for op in ops] == ([expected] if expected else [])
+
+
+def test_unchanged_write_leaves_independent_evidence(tmp_path):
+    record = read(tmp_path, [
+        recall("event"), delivery("event"), call("write", "Write", file_path="sample"),
+        result("write", toolUseResult={"filePath": "sample", "type": "update",
+                                       "originalFile": "existing", "content": "existing"}),
+        call("check", "Bash", command="check"), result("check", "ok"),
+    ])
+    assert [op.payload for op in proposed_attestations(record)] == [
+        {"recall_event_id": "event", "evidence": ["$ check\nok"]},
+    ]
 
 
 def test_runner_bounds_each_delivery_after_selecting_actions(tmp_path):

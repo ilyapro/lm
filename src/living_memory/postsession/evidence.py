@@ -381,27 +381,24 @@ def _mutation_text(mutation: FileMutation) -> tuple[str, list[str]] | None:
     """``(category, texts)`` for one file mutation, or ``None`` when it carries
     no content to quote.
 
-    Order of preference: the recorded diff, then a diff synthesised against the
-    pre-image, then the post-image itself (a create has no unchanged part, so
-    all of it is the changed region).
+    Prefer recorded hunks. With both images available, only their changed
+    region qualifies. A write recorded with just its post-image supplies
+    that body directly.
     """
 
     if mutation.unified_diff:
         hunks = split_diff_hunks(mutation.unified_diff)
         if hunks:
             return DIFF_HUNK, hunks
-    if mutation.post_image:
-        if mutation.pre_image:
-            synthetic = synthesize_diff(
-                mutation.pre_image, mutation.post_image, mutation.path
-            )
-            if synthetic:
-                hunks = split_diff_hunks(synthetic)
-                if hunks:
-                    return FILE_WRITE, hunks
-        body = _canonical(mutation.post_image)
-        if body:
-            return FILE_WRITE, [body]
+    if mutation.post_image is None:
+        return None
+    if mutation.pre_image is not None:
+        synthetic = synthesize_diff(mutation.pre_image, mutation.post_image, mutation.path)
+        hunks = split_diff_hunks(synthetic) if synthetic else []
+        return (FILE_WRITE, hunks) if hunks else None
+    body = _canonical(mutation.post_image)
+    if body:
+        return FILE_WRITE, [body]
     return None
 
 
