@@ -199,3 +199,63 @@ def test_operator_evidence(tmp_path, messages, expected):
     assert [item.evidence[-1].quote for item in corrections] == [
         text for text in expected if text.startswith(("No,", "Stop,"))
     ]
+
+
+def loop_source(author, name, body):
+    return f"\n\n## Current {author} (/fixture/{name})\n\n{body}"
+
+
+def loop_augment(body, **fields):
+    metadata = {"author": "operator", "operator_authenticated": True, "source": "dashboard",
+                "owner": "fixture", "text_sha256": hashlib.sha256(body.encode()).hexdigest()} | fields
+    return loop_source("operator input", ".augment_ask.current.md", f"<!-- ae-augment {json.dumps(metadata)} -->\n{body}")
+
+
+def loop_prompt(inputs, assignment="Process the queue."):
+    return (assignment + "\n\n## Current loop assignment\nUse the expanded assignment.\n\n"
+            "Your reply address is `fixture:poll`.\n" + inputs +
+            '\n\n## Loop work result\nCurrent loop owner: "fixture"\n'
+            'LOOP_WORK_RESULT_V1 {"invocation_id": "current", "dispatch_id": "dispatch"}')
+
+
+LITERAL = "No, keep файл.py. I quoted this heading." + loop_source("peer input", "quoted.md", "End quote.")
+LOOP_PEER = loop_source("peer input", "peer.md", PEER)
+LOOP_DIRECT = loop_source("operator input", "operator_inject.md", HUMAN)
+LOOP_UNKNOWN = loop_source("input (authorship unknown)", ".augment_ask.old.md", HUMAN)
+REQUESTS = "\n\n## Addressed operator requests and answers\nInstructions.\n" + json.dumps([{"question": LOOP_DIRECT}])
+TREE = "# Tree Goal Node\n\n## Your Goal\n" + HUMAN + "\n\n## Execution Context\n\n### Execution Worktree\n"
+
+
+@pytest.mark.parametrize(("message", "bodies"), [
+    (loop_prompt(LOOP_PEER), []),
+    (loop_prompt(LOOP_DIRECT + LOOP_PEER), [HUMAN]),
+    (loop_prompt(REQUESTS + loop_augment(LITERAL) + LOOP_PEER, "Continue the interrupted invocation."), [LITERAL]),
+    (loop_prompt(loop_augment(HUMAN) + loop_augment(LITERAL) + LOOP_UNKNOWN), [HUMAN, LITERAL]),
+    (loop_prompt(LOOP_UNKNOWN + loop_augment(HUMAN)), []),
+    (loop_prompt(LOOP_PEER + loop_augment(HUMAN)), []),
+    (loop_prompt(loop_augment(HUMAN, owner="other")), []),
+    (loop_prompt(loop_augment(HUMAN, text_sha256="invalid")), []),
+    (loop_prompt(LOOP_DIRECT, assignment=loop_prompt(LOOP_DIRECT)), []),
+    (loop_prompt(LOOP_PEER, assignment=addressed(DIRECT)), []),
+    (addressed(section("peer", loop_prompt(LOOP_DIRECT))), []),
+    (addressed(augment(LITERAL + PEER_SECTION)), [LITERAL + PEER_SECTION]),
+    (DIRECT_HEADER + LITERAL + DIRECT_FOOTER, [LITERAL]),
+    (LITERAL, [LITERAL]),
+    (TREE, []),
+])
+def test_dispatch_passages_and_source_coordinates(tmp_path, message, bodies):
+    record = load(tmp_path, event("agent_message", message="I will edit."),
+                  event("user_message", message=message), call("edit"))
+    turn = record.turns[1]
+    assert turn.text == message
+    observed = [item for item in observations(record) if item.kind == "operator_message"]
+    candidates = [item for item in mine(record) if item.kind == "operator_correction"]
+    assert [item.text for item in observed] == bodies
+    assert len(candidates) == len(bodies)
+    for body, obs, candidate in zip(bodies, observed, candidates):
+        start = message.index(body)
+        suffix = f"[{start}:{start + len(body)}]" if start else ""
+        base = f"codex:{record.path}#1:"
+        assert obs.locator == base + "turns[1].text" + suffix
+        assert candidate.evidence[-1].locator == base + "text" + suffix
+        assert candidate.evidence[-1].quote in body
