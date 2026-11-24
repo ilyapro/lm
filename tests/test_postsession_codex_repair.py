@@ -248,6 +248,10 @@ TREE = "# Tree Goal Node\n\n## Your Goal\n" + HUMAN + "\n\n## Execution Context\
     (TREE, []),
 ])
 def test_dispatch_passages_and_source_coordinates(tmp_path, message, bodies):
+    check_dispatch_passages(tmp_path, message, bodies)
+
+
+def check_dispatch_passages(tmp_path, message, bodies):
     record = load(tmp_path, event("agent_message", message="I will edit."),
                   event("user_message", message=message), call("edit"))
     turn = record.turns[1]
@@ -263,3 +267,73 @@ def test_dispatch_passages_and_source_coordinates(tmp_path, message, bodies):
         assert obs.locator == base + "turns[1].text" + suffix
         assert candidate.evidence[-1].locator == base + "text" + suffix
         assert candidate.evidence[-1].quote in body
+
+
+TREE_GOAL = "# Tree Goal Node\n\n## Your Goal\n"
+TREE_FRAME = TREE_GOAL + "\n<!-- ae-operator-spans "
+
+
+def tree_prompt(body, metadata):
+    return TREE_FRAME + json.dumps(metadata) + " -->\n" + body
+
+
+@pytest.mark.parametrize("form", ["full", "with-history", "resume", "imitation"])
+def test_tree_source_coordinates(tmp_path, form):
+    # The assignment quotes the same prose as the operator. Only the later
+    # occurrence and the second operator passage belong in the evidence.
+    first = "No, keep пример.py."
+    second = "Stop, retain the old file."
+    assignment = "📋 " + first + "\n\n#### Current operator clarification\n\n"
+    body = assignment + first + "\n\nReference only.\n\n" + second
+    ranges = [[len(assignment), len(assignment + first)], [len(body) - len(second), len(body)]]
+    message = tree_prompt(body, {"ranges": ranges, "sha256": hashlib.sha256(body.encode()).hexdigest()})
+    base = len(message) - len(body)
+    message += "\n\n## Execution Context\n\n### Execution Worktree\nSynthetic checkout.\n"
+    if form != "resume":
+        message += "\n## Instructions\nContinue."
+    if form == "with-history":
+        message += "\n\n<historical_node_turns>\n" + first + "\n</historical_node_turns>"
+    if form == "imitation":
+        message = TREE_GOAL + "Quoted prompt:\n" + message
+        ranges = []
+
+    record = load(tmp_path, event("agent_message", message="I will edit."),
+                  event("user_message", message=message), call("edit"))
+    assert record.turns[1].text == message
+    obs = [item for item in observations(record) if item.kind == "operator_message"]
+    evidence = [item.evidence[-1] for item in mine(record) if item.kind == "operator_correction"]
+    locator = f"codex:{record.path}#1:"
+    assert [(item.locator, item.text) for item in obs] == [
+        (f"{locator}turns[1].text[{base + a}:{base + b}]", body[a:b]) for a, b in ranges
+    ]
+    assert [(item.locator, item.quote) for item in evidence] == [
+        (f"{locator}text[{base + a}:{base + b}]", body[a:b]) for a, b in ranges
+    ]
+
+
+@pytest.mark.parametrize("ranges", [
+    None, [], "0:3", [[0]], [[0, 2, 4]], [False, 3], [[False, 3]], [[0, True]],
+    [[0, 3.0]], [["0", 3]], [[-1, 3]], [[0, 0]], [[0, len(HUMAN) + 1]],
+    [[0, 3], [2, 4]], [[3, 5], [0, 2]], [[0, 3], None],
+])
+def test_invalid_tree_ranges_yield_nothing(tmp_path, ranges):
+    # Keep the digest valid for the final end whenever it is a usable index.
+    end = len(HUMAN)
+    if ranges and isinstance(ranges, list) and isinstance(ranges[-1], list):
+        if ranges[-1] and isinstance(ranges[-1][-1], int):
+            end = ranges[-1][-1]
+    digest = hashlib.sha256(HUMAN[:end].encode()).hexdigest()
+    message = tree_prompt(HUMAN, {"ranges": ranges, "sha256": digest})
+    check_dispatch_passages(tmp_path, message, [])
+
+
+def test_invalid_tree_frames_yield_nothing(tmp_path):
+    digest = hashlib.sha256(HUMAN.encode()).hexdigest()
+    message = tree_prompt(HUMAN, {"ranges": [[0, len(HUMAN)]], "sha256": digest})
+    for bad in (
+        message[:-1], message.replace("No,", "NO,"), message.replace(digest, digest.upper()),
+        message.replace(" -->\n", " -->"), message.replace('{"ranges"', '{\n"ranges"'),
+        TREE_FRAME + "broken -->\n" + HUMAN, TREE_FRAME + "null -->\n" + HUMAN,
+        TREE_GOAL + HUMAN, TREE_GOAL + message[len(TREE_GOAL) + 1:],
+    ):
+        check_dispatch_passages(tmp_path, bad, [])
