@@ -450,12 +450,21 @@ def observations(
     """
 
     found: list[Observation] = []
+    # Several tool results may share a native record, in a different order
+    # from their invocations. Native dotted paths include the block ordinal.
+    block_order: dict[str, int] = {}
 
     for call in record.tool_calls:
         if not call.result_text or is_memory_roundtrip(call):
             continue
         # Older normalized records have only the call position and item ordinal.
         span = call.result_span or replace(call.span, field=f"tool_calls[{call.ordinal}].result_text")
+        locator = span.locator()
+        if call.result_span:
+            for part in span.field.split("."):
+                if part.isascii() and part.isdecimal():
+                    block_order[locator] = int(part)
+                    break
         text = call.result_text[: config.max_observation_chars]
         command = _command_of(call.arguments)
         label = f"{call.name}: {command}" if command else call.name
@@ -467,7 +476,7 @@ def observations(
         found.append(
             Observation(
                 kind=kind,
-                locator=span.locator(),
+                locator=locator,
                 label=label[:200],
                 text=text,
                 record_index=span.record_index,
@@ -511,7 +520,11 @@ def observations(
                 )
             )
 
-    found.sort(key=lambda item: (item.record_index, item.kind, item.ordinal))
+    found.sort(key=lambda item: (
+        item.record_index,
+        "command_output" if item.locator in block_order else item.kind,
+        block_order.get(item.locator, item.ordinal),
+    ))
     return found
 
 
