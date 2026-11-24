@@ -364,6 +364,49 @@ def test_grounded_divides_by_closed_consumers_not_by_the_cohort(fixture_db: Path
     assert grounded["rate"] > grounded["rate_over_cohort"]
 
 
+@pytest.mark.parametrize(
+    ("cutoff", "closed"),
+    [("2026-08-19", 0), ("2026-08-20", 1), ("2026-08-21", 1), (None, 1)],
+)
+def test_late_closure_preserves_delivery(tmp_path: Path, cutoff: str | None, closed: int) -> None:
+    db = _make_db(
+        tmp_path / "late.sqlite3",
+        [
+            {"id": "n", "content": SCHEMA_CONTENT, "created_at": "2026-07-01T00:00:00Z"},
+            {"id": "t", "content": GROUNDING_TRACE, "created_at": "2026-08-20T00:00:00Z"},
+        ],
+        [{"id": "e", "results": ["n"], "feedback_trace_id": "t",
+          "created_at": "2026-07-02T00:00:00Z"}],
+    )
+    report = _run(db, as_of=cutoff)
+    cohort = _cohorts(report)["all"]
+    grounded = cohort["grounded"]
+    assert cohort["nodes"] == cohort["consumed_later"] == cohort["consumed_within_7d"] == 1
+    assert grounded["consumed_later"] == grounded["nodes_with_closed_consumer"] == closed
+    assert grounded["consumed_within_7d"] == grounded["consuming_events_closed_by_trace"] == closed
+    assert grounded["rate"] == (1.0 if closed else None)
+    assert report["meta"]["events_closed_by_trace"] == closed
+    assert report["meta"]["events_with_deliveries"] == 1
+    if closed:
+        assert report["grounding"]["diagnostics"]["graded_results"] == 1
+        assert report["grounding"]["live_path_crosscheck"]["sampled_pairs"] == 1
+    else:
+        assert report["grounding"] == {"diagnostics": None, "live_path_crosscheck": None}
+
+
+def test_missing_closing_trace_keeps_closed_consumer(tmp_path: Path) -> None:
+    db = _make_db(
+        tmp_path / "missing.sqlite3",
+        [{"id": "n", "content": SCHEMA_CONTENT, "created_at": "2026-07-01T00:00:00Z"}],
+        [{"id": "e", "results": ["n"], "feedback_trace_id": "missing",
+          "created_at": "2026-07-02T00:00:00Z"}],
+    )
+    report = _run(db)
+    grounded = _cohorts(report)["all"]["grounded"]
+    assert grounded["nodes_with_closed_consumer"] == 1
+    assert grounded["consumed_later"] == report["grounding"]["diagnostics"]["graded_results"] == 0
+
+
 def test_grounded_requires_containment_not_merely_a_closing_trace(fixture_db: Path) -> None:
     grounded = _cohorts(_run(fixture_db))["all"]["grounded"]
 

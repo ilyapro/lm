@@ -665,6 +665,38 @@ def test_grounded_variant_reports_its_own_denominator(fixture_db: Path) -> None:
     assert grounded["retrospective_rate"] == grounded["counterfactual_rate"]
 
 
+@pytest.mark.parametrize(
+    ("cutoff", "closed"),
+    [("2026-08-19", 0), ("2026-08-20", 1), ("2026-08-21", 2)],
+)
+def test_as_of_limits_closures_in_recorded_and_replayed_arms(
+    fixture_db: Path, cutoff: str, closed: int,
+) -> None:
+    with sqlite3.connect(fixture_db) as connection:
+        _set_created_at(connection, "trace-ground", "2026-08-20T00:00:00Z")
+        connection.execute(
+            "UPDATE recall_events SET feedback_applied_at = '2026-08-21T00:00:00Z' "
+            "WHERE feedback_trace_id = 'trace-silent'"
+        )
+        connection.execute("DELETE FROM recall_events WHERE id = 'event-dup'")
+    report = _run(fixture_db, as_of=cutoff, also_fresh_arm=True)
+    hits = int(closed > 0)
+    for arm in report["arms"].values():
+        assert arm["consumed_later"] == 4
+        grounded = arm["grounded"]
+        assert grounded["consumed_later"] == hits
+        assert grounded["nodes_with_closed_consumer"] == closed
+        assert grounded["consuming_events_closed_by_trace"] == closed
+        if closed:
+            assert arm["grounding_diagnostics"]["corpus_events"] == closed
+        else:
+            assert arm["grounding_diagnostics"] is None
+    summary = report["selfcheck"]["grounded"]
+    for name in ("retrospective", "counterfactual"):
+        assert summary[f"{name}_consumed_later"] == hits
+        assert summary[f"{name}_denominator"] == closed
+
+
 def test_fresh_arm_runs_on_its_own_working_copy(fixture_db: Path) -> None:
     report = _run(fixture_db, also_fresh_arm=True)
     assert "counterfactual_fresh" in report["arms"]
