@@ -35,7 +35,7 @@ class MeteredJudge(FakeJudge):
 
 
 def ask(judge, task):
-    return judge.judge(task, {}, {}, timeout_s=1)
+    return judge.judge(task, {"type": "object", "properties": {"answer": {}}}, {}, timeout_s=1)
 
 
 def test_factories_share_recordings_and_report_actual_spend(tmp_path, monkeypatch):
