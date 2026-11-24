@@ -557,6 +557,17 @@ def _result_span(call: ToolCall) -> SourceSpan:
     return SourceSpan(base.source, base.path, base.record_index, base.field or "result")
 
 
+def _follows_within(earlier: SourceSpan, later: SourceSpan, limit: int) -> bool:
+    """Compare complete, non-overlapping observations on one transcript's clock."""
+
+    end = earlier.end_record_index if earlier.end_record_index is not None else earlier.record_index
+    return (
+        earlier.source == later.source
+        and earlier.path == later.path
+        and 0 < later.record_index - end <= limit
+    )
+
+
 def _turn_span(turn: Turn) -> SourceSpan:
     base = turn.span
     return base if base.field else replace(base, field="text")
@@ -696,8 +707,8 @@ def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[
     worth a durable trace.
     """
 
-    later_texts: list[tuple[int, str, SourceSpan]] = [
-        (_at(turn), turn.text or "", _turn_span(turn))
+    later_texts = [
+        (_turn_span(turn), turn.text or "")
         for turn in record.turns
         if turn.role == "assistant"
     ]
@@ -708,8 +719,8 @@ def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[
             if line.startswith("+") and not line.startswith("+++")
         )
         if added:
-            later_texts.append((_at(mutation), added, mutation.span))
-    later_texts.sort()
+            later_texts.append((mutation.span, added))
+    later_texts.sort(key=lambda item: item[0].record_index)
 
     for call in record.tool_calls:
         if call.is_memory_tool:
@@ -729,14 +740,14 @@ def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[
         ]
         if not matches:
             continue
-        start = _at(call)
+        result_span = _result_span(call)
         reused: tuple[str, SourceSpan, str] | None = None
         for match in matches:
             token = match.group(0)
             if len(token.strip()) < 3:
                 continue
-            for index, later_text, span in later_texts:
-                if index <= start or index - start > config.lookahead_records:
+            for span, later_text in later_texts:
+                if not _follows_within(result_span, span, config.lookahead_records):
                     continue
                 position = later_text.find(token)
                 if position == -1:
@@ -770,7 +781,7 @@ def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[
         )
         evidence = [
             _evidence(call.span, f"$ {command}" if command else call.name),
-            _evidence(_result_span(call), result_quote),
+            _evidence(result_span, result_quote),
         ]
         if reuse_quote:
             evidence.append(_evidence(reuse_span, reuse_quote))
@@ -778,7 +789,7 @@ def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[
             kind="measurement",
             session_key=record.session_key,
             ordinal=0,
-            span=_result_span(call),
+            span=result_span,
             evidence=tuple(evidence),
             identifiers=hard_identifiers(result_quote),
             signals={
@@ -788,7 +799,7 @@ def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[
                 "numbers": [match.group(0) for match in matches[:8]],
             },
             at=call.at,
-            position=_position(record, start),
+            position=_position(record, result_span.record_index),
         )
 
 
@@ -797,17 +808,17 @@ def _mine_refuted_hypotheses(
 ) -> Iterator[Candidate]:
     """A stated expectation that a later observation about the same thing broke."""
 
-    observations: list[tuple[int, str, SourceSpan]] = [
-        (_at(turn), turn.text or "", _turn_span(turn))
+    observations = [
+        (_turn_span(turn), turn.text or "")
         for turn in record.turns
         if turn.role in ("assistant", "user")
     ]
     observations.extend(
-        (_at(call), call.result_text or "", _result_span(call))
+        (_result_span(call), call.result_text or "")
         for call in record.tool_calls
         if call.result_text and not call.is_memory_tool
     )
-    observations.sort()
+    observations.sort(key=lambda item: item[0].record_index)
 
     for turn in record.turns:
         if turn.role != "assistant":
@@ -822,12 +833,12 @@ def _mine_refuted_hypotheses(
         claim_ids = _anchor_identifiers(claim)
         if not claim_ids:
             continue
-        start = _at(turn)
+        claim_span = _turn_span(turn)
         paired = False
-        for index, observed, span in observations:
+        for span, observed in observations:
             if paired:
                 break
-            if index <= start or index - start > config.refutation_lookahead:
+            if not _follows_within(claim_span, span, config.refutation_lookahead):
                 continue
             # Every refutation match, not just the first: a long tool result
             # routinely says "actually" once in passing before it says the
@@ -847,8 +858,8 @@ def _mine_refuted_hypotheses(
                     kind="refuted_hypothesis",
                     session_key=record.session_key,
                     ordinal=0,
-                    span=_turn_span(turn),
-                    evidence=(_evidence(_turn_span(turn), claim), _evidence(span, window)),
+                    span=claim_span,
+                    evidence=(_evidence(claim_span, claim), _evidence(span, window)),
                     identifiers=tuple(sorted(shared)),
                     signals={
                         "hypothesis_marker": hit.group(0).strip(),
@@ -856,7 +867,7 @@ def _mine_refuted_hypotheses(
                         "shared_identifiers": sorted(shared)[:8],
                     },
                     at=turn.at,
-                    position=_position(record, start),
+                    position=_position(record, claim_span.record_index),
                 )
                 paired = True
                 break
