@@ -251,7 +251,7 @@ def build_payload(
     written = [
         _clip(write.content)
         for write in record.writes
-        if write.content
+        if write.content and (write.kind != "teach" or write.node_id)
     ][: config.max_context_items]
     recalled = [
         _clip(node.content)

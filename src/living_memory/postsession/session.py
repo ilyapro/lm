@@ -428,6 +428,8 @@ class WriteInteraction(Wire):
     position: float = 0.0
     truncated: bool = False
 
+    teach_outcome: Literal["confirmed", "failed", "unknown"] | None = None
+
     @property
     def feedback_applied(self) -> bool:
         return bool(self.implicit_feedback.get("feedback_applied"))

@@ -442,12 +442,40 @@ def parse_recall_payload(payload: dict[str, Any]) -> tuple[str | None, list[Deli
     return (str(event_id) if event_id else None), delivered
 
 
+def _receipt_id(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _confirmed_teach_node(payload: dict[str, Any], trace_id: Any) -> dict[str, Any] | None:
+    """Identify both ends of a teach using its reply and the paired request."""
+    if not _receipt_id(trace_id):
+        return None
+    edge = payload.get("supersedes")
+    if "corrective_trace" in payload or "original" in payload:
+        node = payload.get("corrective_trace")
+        original = payload.get("original")
+        if not isinstance(original, dict) or original.get("id") != trace_id:
+            return None
+        if not isinstance(edge, dict) or edge.get("type") != "supersedes" or not _receipt_id(edge.get("id")):
+            return None
+        if not isinstance(node, dict):
+            return None
+        if edge.get("source_id", node.get("id")) != node.get("id") or edge.get("target_id", trace_id) != trace_id:
+            return None
+    else:
+        node = payload.get("node")
+        if not isinstance(node, dict) or edge != trace_id:
+            return None
+    return node if _receipt_id(node.get("id")) and node["id"] != trace_id else None
+
+
 def parse_write_payload(
-    payload: dict[str, Any], arguments: dict[str, Any] | None = None
+    payload: dict[str, Any], arguments: dict[str, Any] | None = None,
+    *, tool: str = REMEMBER_TOOL, failed: bool = False,
 ) -> dict[str, Any]:
     """Project a ``memory_remember`` / ``memory_teach`` round trip into fields.
 
-    The server answers in two shapes and both are live in the corpus. The
+    The written node comes in two shapes and both are live in the corpus. The
     verbose one echoes the whole node (``node.content``, ``node.context``,
     ``node.provenance.prior_recalls``). The current compact one returns only
     ``node.{id,level,scope,created_at,prior_recall_count,...}`` -- there the
@@ -458,6 +486,19 @@ def parse_write_payload(
 
     arguments = arguments or {}
     node = payload.get("node") if isinstance(payload.get("node"), dict) else {}
+    teach_outcome = None
+    supersedes = None
+    if tool == TEACH_TOOL:
+        confirmed = _confirmed_teach_node(payload, arguments.get("trace_id"))
+        if failed or "error" in payload or payload.get("isError") or payload.get("ok") is False:
+            teach_outcome = "failed"
+            confirmed = None
+        elif confirmed is None:
+            teach_outcome = "unknown"
+        else:
+            teach_outcome = "confirmed"
+            supersedes = arguments["trace_id"]
+        node = confirmed or {}
     provenance = node.get("provenance") if isinstance(node.get("provenance"), dict) else {}
     prior_ids: list[str] = []
     prior = provenance.get("prior_recalls")
@@ -469,6 +510,8 @@ def parse_write_payload(
                 prior_ids.append(entry)
     feedback = payload.get("implicit_feedback")
     feedback = feedback if isinstance(feedback, dict) else {}
+    if tool == TEACH_TOOL and teach_outcome != "confirmed":
+        feedback = {}
     if not prior_ids:
         prior_ids = [str(item) for item in feedback.get("recall_event_ids") or ()]
     context = node.get("context") if isinstance(node.get("context"), dict) else {}
@@ -481,6 +524,8 @@ def parse_write_payload(
         written = arguments.get("correction")
     content, truncated = _clip(written)
     return {
+        "teach_outcome": teach_outcome,
+        "supersedes": supersedes,
         "node_id": str(node["id"]) if node.get("id") else None,
         "content": content,
         "context": context,
@@ -703,6 +748,7 @@ class TranscriptAdapter:
         turn_index: int = -1,
         record_index: int = -1,
         truncated: bool = False,
+        failed: bool = False,
         salvaged_recall_event_id: str | None = None,
         salvaged_node_id: str | None = None,
     ) -> None:
@@ -739,18 +785,19 @@ class TranscriptAdapter:
                 )
             )
         elif tool in {REMEMBER_TOOL, TEACH_TOOL}:
-            fields = parse_write_payload(payload, arguments)
+            fields = parse_write_payload(payload, arguments, tool=tool, failed=failed)
             record.writes.append(
                 WriteInteraction(
                     ordinal=len(record.writes),
                     kind="teach" if tool == TEACH_TOOL else "remember",
                     span=span,
-                    node_id=fields["node_id"] or salvaged_node_id,
+                    node_id=fields["node_id"] or (salvaged_node_id if tool == REMEMBER_TOOL else None),
                     content=fields["content"],
                     context=fields["context"],
                     implicit_feedback=fields["implicit_feedback"],
                     prior_recall_ids=fields["prior_recall_ids"],
-                    supersedes=arguments.get("trace_id") if tool == TEACH_TOOL else None,
+                    supersedes=fields["supersedes"],
+                    teach_outcome=fields["teach_outcome"],
                     transport_session_id=fields["transport_session_id"],
                     at=at,
                     turn_index=turn_index,
@@ -918,13 +965,14 @@ class ClaudeAdapter(TranscriptAdapter):
                 call.result_span = record.span(index, f"message.content.{block_index}.content")
             server = info["server"]
             tool = info["tool"]
-            if server == MEMORY_SERVER and isinstance(payload, dict):
+            if server == MEMORY_SERVER and (isinstance(payload, dict) or tool == TEACH_TOOL):
                 self._record_memory_call(
                     record,
                     tool,
                     info["arguments"],
                     payload,
-                    record.span(index, channel),
+                    record.span(index, channel or f"message.content.{block_index}"),
+                    failed=call.ok is False,
                     at=info.get("at"),
                     turn_index=turn_index,
                     record_index=info["index"],
@@ -1247,19 +1295,21 @@ class CodexAdapter(TranscriptAdapter):
             ok=ok,
         )
         record.tool_calls.append(call)
-        if server != MEMORY_SERVER or not isinstance(ok_body, dict):
+        if server != MEMORY_SERVER:
             return
+        ok_body = ok_body if isinstance(ok_body, dict) else {}
         structured = ok_body.get("structuredContent")
         if not isinstance(structured, dict):
             structured = self._structured_from_content(ok_body)
-        if not isinstance(structured, dict):
+        if not isinstance(structured, dict) and tool != TEACH_TOOL:
             return
         self._record_memory_call(
             record,
             tool,
             arguments,
             structured,
-            record.span(index, "payload.result.Ok.structuredContent"),
+            record.span(index, "payload.result" if tool == TEACH_TOOL else "payload.result.Ok.structuredContent"),
+            failed=ok is False or bool(ok_body.get("isError")) or "error" in ok_body,
             at=stamp,
             turn_index=turn_index,
             record_index=index,
@@ -1507,10 +1557,11 @@ class GigacodeAdapter(TranscriptAdapter):
         call.result_truncated = truncated
         if text is not None:
             call.result_span = record.span(index, f"message.parts.{part_index}.functionResponse.response")
-        if info["server"] != MEMORY_SERVER or not isinstance(response, dict):
+        if info["server"] != MEMORY_SERVER:
             return
+        response = response if isinstance(response, dict) else {}
         structured = self._structured(response, allow_sidecars=allow_sidecars)
-        if not isinstance(structured, dict):
+        if not isinstance(structured, dict) and info["tool"] != TEACH_TOOL:
             return
         self._record_memory_call(
             record,
@@ -1518,6 +1569,7 @@ class GigacodeAdapter(TranscriptAdapter):
             info["arguments"],
             structured,
             record.span(index, "message.parts.functionResponse"),
+            failed="error" in response or bool(response.get("isError")),
             at=info.get("at"),
             turn_index=turn_index,
             record_index=info["index"],
@@ -1685,13 +1737,14 @@ class DeepseekAdapter(TranscriptAdapter):
             # branch the recall event id and the delivered node ids would be
             # visible in ``result_text`` yet never recovered into the schema.
             structured = self._structured(block.get("content"))
-            if isinstance(structured, dict):
+            if isinstance(structured, dict) or info["tool"] == TEACH_TOOL:
                 self._record_memory_call(
                     record,
                     info["tool"],
                     info["arguments"],
                     structured,
                     record.span(index, "messages.content.tool_result"),
+                    failed=call.ok is False,
                     turn_index=turn_index,
                     record_index=info["index"],
                 )
@@ -1964,6 +2017,7 @@ class AeChatAdapter(TranscriptAdapter):
             turn_index=turn_index,
             record_index=info["index"],
             truncated=True,
+            failed=entry.get("ok") is False,
             salvaged_recall_event_id=self._salvage_recall_event_id(summary),
             salvaged_node_id=self._salvage_node_id(summary),
         )
@@ -1982,12 +2036,14 @@ class AeChatAdapter(TranscriptAdapter):
         outer = _loads(summary)
         if not isinstance(outer, dict):
             return None
+        if outer.get("isError") or "error" in outer:
+            return outer
         for block in outer.get("content") or []:
             if isinstance(block, dict) and block.get("type") == "text":
                 inner = _loads(block.get("text"))
                 if isinstance(inner, dict):
                     return inner
-        return outer if "recall_event_id" in outer or "node" in outer else None
+        return outer
 
     @staticmethod
     def _salvage_query(summary: Any) -> str:

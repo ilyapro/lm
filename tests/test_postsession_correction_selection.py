@@ -59,7 +59,7 @@ def make_record(*, nodes=((NODE_ID, NODE_CONTENT),), extra_outputs=(), teach_sup
         ))
     if teach_supersedes:
         record.writes.append(WriteInteraction(
-            ordinal=0, kind="teach", span=_span(20), supersedes=teach_supersedes,
+            ordinal=0, kind="teach", span=_span(20), node_id="new-trace", supersedes=teach_supersedes,
         ))
     return record
 

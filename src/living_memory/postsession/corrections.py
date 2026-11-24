@@ -709,9 +709,7 @@ def candidates(
     # multi-megabyte transcript is minutes of pure regex, not milliseconds.
     obs_anchors = {item.locator: item.anchors for item in observed}
     weights = _anchor_weights(list(obs_anchors.values()))
-    superseded = {
-        write.supersedes for write in record.writes if write.kind == "teach" and write.supersedes
-    }
+    superseded = set(taught_delivered_nodes(record))
 
     wanted = set(only_nodes) if only_nodes is not None else None
     seen: set[str] = set()
@@ -1464,7 +1462,7 @@ def taught_delivered_nodes(record: SessionRecord) -> tuple[str, ...]:
         dict.fromkeys(
             write.supersedes
             for write in record.writes
-            if write.kind == "teach" and write.supersedes in delivered
+            if write.kind == "teach" and write.node_id and write.supersedes in delivered
         )
     )
 
