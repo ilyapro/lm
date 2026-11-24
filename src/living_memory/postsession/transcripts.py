@@ -971,18 +971,14 @@ class ClaudeAdapter(TranscriptAdapter):
         allow_sidecars: bool,
     ) -> None:
         message = entry.get("message") or {}
-        blocks = message.get("content")
+        content = message.get("content")
+        if not isinstance(content, (str, list)):
+            return
+        blocks = content if isinstance(content, list) else [content]
         result_indices = [
             i for i, block in enumerate(blocks)
             if isinstance(block, dict) and block.get("type") == "tool_result"
-        ] if isinstance(blocks, list) else []
-        if not result_indices:
-            text = _first_text(blocks)
-            if text:
-                record.turns.append(
-                    Turn(len(record.turns), "user", text, entry.get("timestamp"), record.span(index))
-                )
-            return
+        ]
 
         # Entry-level metadata has no tool_use_id when several responses share a row.
         result_entry = entry if len(result_indices) == 1 else {}
@@ -1020,17 +1016,17 @@ class ClaudeAdapter(TranscriptAdapter):
                 self._add_mutation(record, tool, info, result_entry, index)
 
         # Messages permits additional user input only after the result prefix.
-        suffix = result_indices[-1] + 1
-        if suffix < len(blocks) and suffix == len(result_indices) and message.get("role") == "user":
-            self._read_mixed_text(record, entry, index, blocks, suffix)
+        suffix = len(result_indices)
+        if suffix == len(blocks) or (suffix and result_indices[-1] != suffix - 1):
+            return
+        if message.get("role", None if suffix else "user") != "user":
+            return
+        self._read_user_text(record, entry, index, blocks, suffix)
 
     @staticmethod
-    def _read_mixed_text(
+    def _read_user_text(
         record: SessionRecord, entry: dict[str, Any], index: int, blocks: list[Any], suffix: int
     ) -> None:
-        # Claude Code also constructs user-role result rows with host-written
-        # text. Require its keyboard-origin stamp, or the exact feedback the
-        # permission dialog recorded independently of the tool's response.
         if any(entry.get(flag) for flag in (
             "isMeta", "isSynthetic", "isSidechain", "isVirtual", "isVisibleInTranscriptOnly",
             "isCompactSummary", "turnCompanion", "parent_tool_use_id",
@@ -1039,7 +1035,9 @@ class ClaudeAdapter(TranscriptAdapter):
         human = {"kind": "human"}
         if entry.get("origin", human) != human or entry.get("queueOrigin", human) != human:
             return
-        from_human = entry.get("origin") == human and not any(
+        # Legacy ordinary rows have no origin stamp. Result rows need an
+        # explicit keyboard origin or the permission dialog's exact feedback.
+        from_human = (not suffix or entry.get("origin") == human) and not any(
             field in entry for field in ("toolUseResult", "sourceToolAssistantUUID", "mcpMeta")
         )
         feedback = None
@@ -1047,19 +1045,25 @@ class ClaudeAdapter(TranscriptAdapter):
             feedback = entry.get("userFeedback")
         for i in range(suffix, len(blocks)):
             block = blocks[i]
-            if not isinstance(block, dict) or block.get("type") != "text":
+            field = f"message.content.{i}"
+            if not suffix and isinstance(block, str):
+                text = block
+                if isinstance(entry["message"]["content"], str):
+                    field = "message.content"
+            elif isinstance(block, dict) and block.get("type") == "text":
+                # Extra fields can describe generated or attributed content.
+                if block.keys() - {"type", "text", "cache_control"}:
+                    continue
+                text = block.get("text")
+                field += ".text"
+            else:
                 continue
-            # Extra fields can describe generated or attributed content.
-            if block.keys() - {"type", "text", "cache_control"}:
-                continue
-            text = block.get("text")
             if not isinstance(text, str) or not text.strip() or not (from_human or text == feedback):
                 continue
             if INJECTED_TURN.search(text):
                 continue
             record.turns.append(Turn(
-                len(record.turns), "user", text, entry.get("timestamp"),
-                record.span(index, f"message.content.{i}.text"),
+                len(record.turns), "user", text, entry.get("timestamp"), record.span(index, field),
             ))
 
     def _structured_content(

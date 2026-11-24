@@ -98,7 +98,7 @@ def test_legacy_record_without_result_locator(tmp_path, example, order, kind):
     assert SourceSpan.parse(result.locator).record_index == order.split().index("call")
 
 
-def mixed_transcript(tmp_path, content, **metadata):
+def claude_transcript(tmp_path, content, **metadata):
     def call(key, name):
         return {"type": "tool_use", "name": name, "id": key, "input": {}}
 
@@ -125,7 +125,7 @@ def test_mixed_claude_keeps_result_and_human_coordinates(tmp_path):
     ]}
     reminder = {"type": "text", "text": "<system-reminder>No, host instruction.</system-reminder>"}
     extra = {"type": "text", "text": "Keep the heading."}
-    record = mixed_transcript(tmp_path, [memory, RESULT, reminder, FIX, extra], origin={"kind": "human"})
+    record = claude_transcript(tmp_path, [memory, RESULT, reminder, FIX, extra], origin={"kind": "human"})
     assert [(r.recall_event_id, r.turn_index) for r in record.recalls] == [("demo", 1)]
     expected = [
         ("command_output", RESULT["content"], "message.content.1.content"),
@@ -159,7 +159,7 @@ def test_mixed_claude_keeps_result_and_human_coordinates(tmp_path):
     ([RESULT, {**FIX, "origin": {"kind": "peer"}}], {"origin": {"kind": "human"}}),
 ])
 def test_mixed_claude_excludes_unattributed_text(tmp_path, content, metadata):
-    record = mixed_transcript(tmp_path, content, **metadata)
+    record = claude_transcript(tmp_path, content, **metadata)
     assert not any(o.kind == "operator_message" for o in observations(record))
     assert not any(c.kind == "operator_correction" for c in mine(record))
     assert record.tool_calls[0].ok
@@ -167,9 +167,38 @@ def test_mixed_claude_excludes_unattributed_text(tmp_path, content, metadata):
 
 def test_mixed_permission_result_binds_only_the_recorded_feedback(tmp_path):
     denied = {**RESULT, "is_error": True}
-    record = mixed_transcript(tmp_path, [denied, FIX, {"type": "text", "text": "No, host note."}],
+    record = claude_transcript(tmp_path, [denied, FIX, {"type": "text", "text": "No, host note."}],
                               sourceToolAssistantUUID="tool-owner", userFeedback=FIX["text"])
     assert not record.tool_calls[0].ok
     assert [(o.kind, o.text) for o in observations(record)] == [
         ("command_output", denied["content"]), ("operator_message", FIX["text"]),
     ]
+
+
+@pytest.mark.parametrize("metadata", [
+    {"isMeta": True}, {"isSynthetic": True}, {"isSidechain": True},
+    {"isVirtual": True}, {"isVisibleInTranscriptOnly": True}, {"isCompactSummary": True},
+    {"turnCompanion": True}, {"parent_tool_use_id": "parent"},
+    {"origin": {"kind": "peer"}}, {"queueOrigin": {"kind": "peer"}},
+    {"origin": {"kind": "human"}, "sourceToolAssistantUUID": "tool-owner"},
+    {"toolUseResult": {}}, {"mcpMeta": {}},
+])
+def test_claude_origin_vetoes_ordinary_correction(tmp_path, metadata):
+    record = claude_transcript(tmp_path, FIX["text"], **metadata)
+    assert not any(o.kind == "operator_message" for o in observations(record))
+    assert not any(c.kind == "operator_correction" for c in mine(record))
+
+
+@pytest.mark.parametrize(("content", "metadata", "field"), [
+    (FIX["text"], {}, "message.content"),
+    ([FIX["text"]], {}, "message.content.0"),
+    ([FIX], {"origin": {"kind": "human"}}, "message.content.0.text"),
+    ([{**FIX, "origin": {"kind": "peer"}}, FIX], {}, "message.content.1.text"),
+    (["<system-reminder>No, host note.</system-reminder>", FIX], {}, "message.content.1.text"),
+])
+def test_claude_ordinary_correction_keeps_its_source(tmp_path, content, metadata, field):
+    record = claude_transcript(tmp_path, content, **metadata)
+    obs, = [o for o in observations(record) if o.kind == "operator_message"]
+    candidate, = [c for c in mine(record) if c.kind == "operator_correction"]
+    assert obs.text == FIX["text"]
+    assert obs.locator == candidate.span.locator() == record.span(1, field).locator()
