@@ -28,7 +28,8 @@ deprecated scalar is never read, exactly as the artifact instructs. Anything
 but PASS means exit :data:`EXIT_GATE` and zero writes. Before the first
 extracted cohort exists there is nothing to measure, so a self-validated
 organic-control verdict authorizes a *bounded* bootstrap
-(``control_bootstrap``): once the ledger shows more than
+(``control_bootstrap``). Each node claim reserves one slot under the ledger
+lock. Once the ledger shows more than
 ``bootstrap_write_allowance`` nodes ever written, a control-only verdict stops
 authorizing and the runner demands a measurement of its own cohort — an
 extractor whose traces are not recalled must signal and stop, not keep
@@ -690,8 +691,9 @@ class Ledger:
 
     def begin(
         self, op: ProposedOp, recipient: str, *, receipt: _Receipt | None = None,
-    ) -> tuple[bool, dict[str, Any]]:
-        """Claim one operation durably, or return its existing admission state."""
+        bootstrap_allowance: int | None = None,
+    ) -> tuple[bool, dict[str, Any] | None]:
+        """Return a durable claim, an existing row, or (False, None) at the bootstrap limit."""
         key = (op.provenance.transcript_sha256, op_fingerprint(op))
         with self._locked():
             # Recheck receipt identity against the current row under the claim lock.
@@ -700,6 +702,9 @@ class Ledger:
                 return False, dict(prior)
             if prior and prior["recipient"] != recipient:
                 return False, dict(prior)
+            if (bootstrap_allowance is not None and op.kind != "attest"
+                    and _written_nodes_total(self._seen.values()) >= bootstrap_allowance):
+                return False, None
             if prior:
                 key = (prior["transcript_sha256"], prior["fingerprint"])
             entry = dict(prior) if prior else {
@@ -832,6 +837,7 @@ class RunnerConfig:
     max_total_attests: int = 64
     insights: ExtractionConfig = DEFAULT_EXTRACTION
     corrections: DetectorConfig = DEFAULT_CORRECTIONS
+    bootstrap_allowance: int | None = None
 
 
 @dataclass
@@ -1233,7 +1239,13 @@ class ExtractionRunner:
         if self.client is None:
             decision.status, decision.reason = "failed", "no_client"
             return
-        claimed, entry = self.ledger.begin(op, getattr(self.client, "url", ""), receipt=receipt)
+        claimed, entry = self.ledger.begin(
+            op, getattr(self.client, "url", ""), receipt=receipt,
+            bootstrap_allowance=self.config.bootstrap_allowance,
+        )
+        if entry is None:
+            decision.status, decision.reason = "dropped", "bootstrap_allowance"
+            return
         if not claimed and self._prior(entry, decision, persist=True, receipt=receipt):
             return
         decision.fingerprint = entry["fingerprint"]
@@ -1329,6 +1341,9 @@ class ExtractionRunner:
         decisions: list[OpDecision] = []
         total_ops = 0
         total_attests = 0
+        preview_slots = None
+        if self.config.dry_run and self.config.bootstrap_allowance is not None:
+            preview_slots = self.config.bootstrap_allowance - self.ledger.written_nodes_total()
         for proposals in all_proposals:
             session_ops = 0
             session_attests = 0
@@ -1390,6 +1405,10 @@ class ExtractionRunner:
                 except LedgerError as exc:
                     decision.status, decision.reason = "unknown", "ledger_error"
                     decision.detail = str(exc)
+                    continue
+
+                if op.kind != "attest" and preview_slots is not None and total_ops >= preview_slots:
+                    decision.status, decision.reason = "dropped", "bootstrap_allowance"
                     continue
 
                 # The op is accepted; it consumes budget whether or not this

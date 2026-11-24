@@ -360,7 +360,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
     ledger = Ledger(args.state_dir.expanduser())
 
     if args.reconcile and not args.write:
-        return _reconcile(args, ledger, log)
+        return _reconcile(args, ledger, log, RunnerConfig(dry_run=True))
 
     # The gate, before any session is read or any judge is paid.
     gate_decision = evaluate_gate(
@@ -396,8 +396,20 @@ def _main(argv: Sequence[str] | None = None) -> int:
         + "; ".join(gate_decision.reasons or ("bar cleared",))
     )
 
+    config = RunnerConfig(
+        stages=stages,
+        dry_run=dry_run,
+        bootstrap_allowance=(
+            args.bootstrap_write_allowance if gate_decision.mode == "control_bootstrap" else None
+        ),
+        max_ops_per_session=args.max_ops_per_session,
+        max_total_ops=args.max_total_ops,
+        max_attests_per_session=args.max_attests_per_session,
+        max_total_attests=args.max_total_attests,
+        insights=ExtractionConfig(max_judge_calls=args.max_judge_calls),
+    )
     if args.reconcile:
-        return _reconcile(args, ledger, log, gate_decision=gate_decision)
+        return _reconcile(args, ledger, log, config, gate_decision=gate_decision)
 
     try:
         records, splits_read, notes = select_records(args, log)
@@ -415,15 +427,6 @@ def _main(argv: Sequence[str] | None = None) -> int:
             log(f"cannot reach the Living Memory host: {exc}")
             return EXIT_USAGE
 
-    config = RunnerConfig(
-        stages=stages,
-        dry_run=dry_run,
-        max_ops_per_session=args.max_ops_per_session,
-        max_total_ops=args.max_total_ops,
-        max_attests_per_session=args.max_attests_per_session,
-        max_total_attests=args.max_total_attests,
-        insights=ExtractionConfig(max_judge_calls=args.max_judge_calls),
-    )
     runner = ExtractionRunner(
         config=config,
         ledger=ledger,
@@ -484,18 +487,12 @@ def _outcome(ledger: Ledger, decisions, log, *, operation: str = "") -> int:
     return EXIT_OK
 
 
-def _reconcile(args, ledger: Ledger, log, *, gate_decision=None) -> int:
+def _reconcile(args, ledger: Ledger, log, config: RunnerConfig, *, gate_decision=None) -> int:
     client = LiveMemoryClient(
         args.url, token=resolve_token(args.token, env_file=args.env_file), timeout=args.timeout,
     )
     runner = ExtractionRunner(
-        config=RunnerConfig(
-            dry_run=not args.write,
-            max_ops_per_session=args.max_ops_per_session,
-            max_total_ops=args.max_total_ops,
-            max_attests_per_session=args.max_attests_per_session,
-            max_total_attests=args.max_total_attests,
-        ), ledger=ledger, client=client,
+        config=config, ledger=ledger, client=client,
     )
     try:
         decisions = runner.reconcile(operation=args.operation or "", node_id=args.node_id or "")
