@@ -171,47 +171,64 @@ def _result_summaries(text: str) -> list[str]:
     return found
 
 
-def collect_cohorts(
-    entries: Iterable[SessionEntry], *, max_bytes: int, progress: bool = False
-) -> dict[str, list[dict[str, str]]]:
-    """Build the journal and organic cohorts straight out of the corpus.
+def _read_session(entry: SessionEntry) -> SessionRecord | None:
+    try:
+        return load_session(entry)
+    except Exception:  # An unreadable row does not invalidate the rest of the corpus.
+        return None
 
-    Both labels come from the *producer*: a node result summary was written by
-    the goal-tree runtime to describe finished work, and a ``memory_remember``
-    content was written by an agent following the in-session write policy.
-    Neither label is a judgement about the individual text, which is the whole
-    point -- a hand-labelled set here would be the answer key this stage is
-    forbidden to have.
-    """
 
-    cohorts: dict[str, list[dict[str, str]]] = {"journal": [], "organic": []}
-    seen = 0
-    for entry in entries:
-        if entry.bytes > max_bytes:
-            continue
-        seen += 1
-        if progress and seen % 250 == 0:
-            print(f"  ... {seen} sessions scanned", file=sys.stderr, flush=True)
-        try:
-            record = load_session(entry)
-        except Exception:  # a corpus-level parse failure is the normalizer's problem
-            continue
+def _coverage(verified: int, failed: int) -> dict[str, Any]:
+    """Read coverage of the rows selected by the phase's limits."""
+    return {
+        "sessions_attempted": verified + failed,
+        "sessions_verified": verified,
+        "sessions_skipped": failed,
+        "complete": failed == 0,
+    }
+
+
+class CalibrationSample:
+    def __init__(self) -> None:
+        self.cohorts: dict[str, list[dict[str, str]]] = {"journal": [], "organic": []}
+        self.verified: Counter[str] = Counter()
+        self.failed: Counter[str] = Counter()
+
+    def observe(self, entry: SessionEntry, record: SessionRecord | None) -> None:
+        if record is None:
+            self.failed[entry.split] += 1
+            return
+        self.verified[entry.split] += 1
         if entry.source == "ae_node_result":
             for turn in record.turns:
                 for summary in _result_summaries(turn.text or ""):
-                    cohorts["journal"].append(
+                    self.cohorts["journal"].append(
                         {"split": entry.split, "source": entry.source, "text": summary}
                     )
         for write in record.writes:
             if write.kind == "remember" and write.content and len(write.content) >= 40:
-                cohorts["organic"].append(
+                self.cohorts["organic"].append(
                     {
                         "split": entry.split,
                         "source": entry.source,
                         "text": write.content[:2000],
                     }
                 )
-    return cohorts
+
+    def collect(self, entries: Iterable[SessionEntry], max_bytes: int, progress: bool) -> None:
+        for index, entry in enumerate(entries, 1):
+            if entry.bytes <= max_bytes:
+                self.observe(entry, _read_session(entry))
+            if progress and index % 250 == 0:
+                print(f"  ... considered {index} calibration rows", file=sys.stderr, flush=True)
+
+
+def collect_cohorts(
+    entries: Iterable[SessionEntry], *, max_bytes: int, progress: bool = False
+) -> dict[str, list[dict[str, str]]]:
+    sample = CalibrationSample()
+    sample.collect(entries, max_bytes, progress)
+    return sample.cohorts
 
 
 def calibrate(cohorts: dict[str, list[dict[str, str]]], gate: Gate) -> dict[str, Any]:
@@ -311,6 +328,7 @@ def run_extraction(
     judge_budget: int,
     workers: int,
     progress: bool = False,
+    calibration_sample: CalibrationSample | None = None,
 ) -> tuple[list[SessionExtraction], dict[str, Any], list[Any]]:
     """Mine every entry; judge as many as the budget allows, deterministically.
 
@@ -321,20 +339,23 @@ def run_extraction(
     """
 
     selected: list[tuple[SessionRecord, list[Candidate]]] = []
+    sessions_verified = 0
     sessions_with_candidates = 0
 
     def mined_candidates() -> Iterator[Candidate]:
-        nonlocal sessions_with_candidates
+        nonlocal sessions_verified, sessions_with_candidates
         spent = 0
         # Rank lightweight index entries so each budget decision is final at load time.
         ordered = sorted(entries, key=lambda entry: _sample_rank(entry.session_key))
         for index, entry in enumerate(ordered):
             if progress and index and index % 100 == 0:
                 print(f"  ... mined {index}/{len(entries)} sessions", file=sys.stderr, flush=True)
-            try:
-                record = load_session(entry)
-            except Exception:
+            record = _read_session(entry)
+            if calibration_sample is not None:
+                calibration_sample.observe(entry, record)
+            if record is None:
                 continue
+            sessions_verified += 1
             candidates = mine(record, config=config.mining)
             if candidates:
                 sessions_with_candidates += 1
@@ -346,7 +367,8 @@ def run_extraction(
             yield from candidates
 
     mining_report = mining_stats(mined_candidates())
-    mining_report["sessions_scanned"] = len(entries)
+    mining_report["sessions_scanned"] = sessions_verified
+    mining_report["coverage"] = _coverage(sessions_verified, len(entries) - sessions_verified)
     mining_report["sessions_with_candidates"] = sessions_with_candidates
     mining_report["sessions_judged"] = len(selected)
     mining_report["judge_budget"] = judge_budget
@@ -637,28 +659,24 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     gate = Gate(DEFAULT_GATE)
     started = time.monotonic()
-    splits_read: list[str] = []
     calibration = None
     mining_report = None
     results: list[SessionExtraction] = []
     judges: list[Any] = []
 
-    if do_calibrate:
-        splits_read.extend(ALLOWED_SPLITS)
-        entries = index_entries(index_path, ALLOWED_SPLITS)
-        if args.progress:
-            print(f"calibrating over {len(entries)} sessions", file=sys.stderr)
-        cohorts = collect_cohorts(entries, max_bytes=args.max_bytes, progress=args.progress)
-        calibration = calibrate(cohorts, gate)
-
+    splits_read = ALLOWED_SPLITS if do_calibrate else ("eval",)
+    entries = index_entries(index_path, splits_read)
+    sample = CalibrationSample() if do_calibrate else None
     if do_run:
-        if "eval" not in splits_read:
-            splits_read.append("eval")
-        entries = index_entries(index_path, ("eval",))
+        eval_entries = [entry for entry in entries if entry.split == "eval"]
+        calibration_only = [entry for entry in entries if entry.split == "train"]
         if args.max_sessions:
-            entries = sorted(entries, key=lambda item: _sample_rank(item.session_key))
-            entries = entries[: args.max_sessions]
-        entries = [entry for entry in entries if entry.bytes <= args.max_bytes]
+            eval_entries.sort(key=lambda item: _sample_rank(item.session_key))
+            calibration_only.extend(eval_entries[args.max_sessions :])
+            eval_entries = eval_entries[: args.max_sessions]
+        if sample is not None:
+            sample.collect(calibration_only, args.max_bytes, args.progress)
+        entries = [entry for entry in eval_entries if entry.bytes <= args.max_bytes]
         config = ExtractionConfig(
             mining=DEFAULT_MINING, max_judge_calls=args.max_judge_calls
         )
@@ -679,13 +697,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                     judge_budget=args.judge_budget,
                     workers=args.workers,
                     progress=args.progress,
+                    calibration_sample=sample,
                 )
         except sqlite3.Error as exc:
             print(f"postsession dedup: {exc}", file=sys.stderr)
             return 2
 
+    elif sample is not None:
+        sample.collect(entries, args.max_bytes, args.progress)
+
+    if sample is not None:
+        calibration = calibrate(sample.cohorts, gate)
+        for split in splits_read:
+            calibration[split]["coverage"] = _coverage(sample.verified[split], sample.failed[split])
+
     report = build_report(
-        splits_read=sorted(dict.fromkeys(splits_read)),
+        splits_read=sorted(splits_read),
         manifest=manifest,
         calibration=calibration,
         mining_report=mining_report,
@@ -705,13 +732,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"rule={block['journal']['journal_rule']:.3f} | "
                 f"organic n={block['organic']['n']} "
                 f"rule={block['organic']['journal_rule']:.3f} | "
-                f"gap={block['discrimination']['journal_rule_gap']:+.3f}"
+                f"gap={block['discrimination']['journal_rule_gap']:+.3f} | "
+                f"{block['coverage']['sessions_verified']} verified, "
+                f"{block['coverage']['sessions_skipped']} skipped"
             )
     if mining_report:
         print(
             f"  mining: {mining_report['candidates']} candidates over "
             f"{mining_report['sessions_scanned']} sessions "
-            f"({mining_report['sessions_with_candidates']} with >=1)"
+            f"({mining_report['sessions_with_candidates']} with >=1, "
+            f"{mining_report['coverage']['sessions_skipped']} skipped)"
         )
         print(f"  by kind: {json.dumps(mining_report['by_kind'], sort_keys=True)}")
     if results:
