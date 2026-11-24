@@ -987,6 +987,8 @@ def _mine_operator_corrections(
             )
             prior_text = prior.text or ""
             claim = prior_text[-config.quote_after :].strip()
+            if not claim:
+                continue
             span = _turn_span(turn)
             if offset:
                 span = replace(span, field=f"{span.field}[{offset}:{offset + len(text)}]")
@@ -996,7 +998,7 @@ def _mine_operator_corrections(
                 ordinal=0,
                 span=span,
                 evidence=(
-                    _evidence(_turn_span(prior), claim or "(empty assistant turn)"),
+                    _evidence(_turn_span(prior), claim),
                     _evidence(span, correction),
                 ),
                 identifiers=hard_identifiers(f"{claim}\n{correction}"),

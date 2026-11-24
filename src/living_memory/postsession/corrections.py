@@ -497,7 +497,7 @@ def observations(
             text = passage.strip()
             if not text or _INJECTED_TURN.match(text):
                 continue
-            field = f"turns[{turn.index}].text"
+            field = turn.span.field or f"turns[{turn.index}].text"
             if offset:
                 field += f"[{offset}:{offset + len(passage)}]"
             found.append(

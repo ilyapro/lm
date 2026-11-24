@@ -69,7 +69,7 @@ def test_dashboard_correction_and_native_twin(tmp_path):
         assert span == SourceSpan("ae_chat", str(ref.path), bounds[0], "text", bounds[1])
         end = span.record_index if span.end_record_index is None else span.end_record_index
         assert evidence.quote == "".join(row[span.field] for row in rows[span.record_index:end + 1])
-    assert observations(record)[0].record_index == 4
+    assert observations(record)[0].locator == candidate.evidence[1].locator
     assert record.linked_session_ids == ("native",)
     wrapper, provider = assign_splits([probe(ref), probe(native)])
     assert wrapper.split_key == provider.split_key
@@ -114,3 +114,16 @@ def test_adjacent_events_from_different_messages_and_missing_events(tmp_path):
     ]
     assert record.turns[2].truncated and record.turns[3].truncated
     assert mine(record) == observations(record) == []
+
+
+@pytest.mark.parametrize("visible", [[], [{"type": "thinking", "text": "hidden"}],
+                                     [{"type": "text_delta", "text": " "}]])
+def test_no_correction_quote_without_recorded_claim(tmp_path, visible):
+    ref = dashboard(tmp_path, [
+        *visible, {"type": "user_message", "text": "No, keep example.py."},
+        {"type": "tool_use", "name": "exec_command"},
+    ])
+    record = load_transcript(ref)
+    assert mine(record) == []
+    observation, = observations(record)
+    assert observation.text == "No, keep example.py."

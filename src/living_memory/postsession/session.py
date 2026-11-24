@@ -265,7 +265,7 @@ class SourceSpan(Wire):
 
         base = f"{self.source}:{self.path}#{self.record_index}"
         if self.end_record_index is not None:
-            base += f"-{self.end_record_index}"
+            base += f"..{self.end_record_index}"
         return f"{base}:{self.field}" if self.field else base
 
     @classmethod
@@ -273,7 +273,7 @@ class SourceSpan(Wire):
         head, _, tail = locator.rpartition("#")
         source, _, path = head.partition(":")
         index, _, field_path = tail.partition(":")
-        first, _, last = index.rpartition("-") if "-" in index[1:] else (index, "", "")
+        first, _, last = index.partition("..")
         return cls(
             source=source, path=path, record_index=int(first or 0), field=field_path,
             end_record_index=int(last) if last else None,
