@@ -255,7 +255,7 @@ def test_interleaved_recall_and_command_results(tmp_path, output_after_delivery)
     entries = [
         {"type": "assistant", "message": {"content": [call("command", "Bash", {"command": COMMAND})]}},
         {"type": "assistant", "message": {"content": [
-            call("recall", "mcp__living_memory__memory_recall", {"query": "cache"}),
+            call("recall", "mcp__living-memory__memory_recall", {"query": "cache"}),
         ]}},
         *([delivery, output] if output_after_delivery else [output, delivery]),
     ]
