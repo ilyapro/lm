@@ -76,14 +76,18 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
+from io import TextIOWrapper
+from itertools import chain
 import json
 from pathlib import Path
+from tempfile import SpooledTemporaryFile
 from typing import Any, BinaryIO, Callable, Iterable, Iterator, Sequence
 
 from .session import SessionRecord
 from .transcripts import (
     ADAPTERS,
     AeChatMetadata,
+    AeNodeResultAdapter,
     IndexedPrefix,
     Roots,
     TranscriptRef,
@@ -359,6 +363,11 @@ def hash_and_probe(path: Path) -> tuple[str, int, int, list[bytes], list[bytes]]
     a 102 MB ``result.md`` is read in 1 MiB chunks and never materialized.
     """
 
+    with open(path, "rb") as handle:
+        return _probe_chunks(iter(lambda: handle.read(_CHUNK), b""))
+
+
+def _probe_chunks(chunks: Iterable[bytes]) -> tuple[str, int, int, list[bytes], list[bytes]]:
     digest = hashlib.sha256()
     head = _HeadLines(PROBE_HEAD)
     tail = bytearray()
@@ -366,21 +375,17 @@ def hash_and_probe(path: Path) -> tuple[str, int, int, list[bytes], list[bytes]]
     total = 0
     newlines = 0
     last = b""
-    with open(path, "rb") as handle:
-        while True:
-            chunk = handle.read(_CHUNK)
-            if not chunk:
-                break
-            digest.update(chunk)
-            total += len(chunk)
-            newlines += chunk.count(b"\n")
-            last = chunk[-1:]
-            head.feed(chunk)
-            tail += chunk
-            if len(tail) > TAIL_BYTES:
-                cut = len(tail) - TAIL_BYTES
-                starts_record = tail[cut - 1] == ord("\n")
-                del tail[:cut]
+    for chunk in chunks:
+        digest.update(chunk)
+        total += len(chunk)
+        newlines += chunk.count(b"\n")
+        last = chunk[-1:]
+        head.feed(chunk)
+        tail += chunk
+        if len(tail) > TAIL_BYTES:
+            cut = len(tail) - TAIL_BYTES
+            starts_record = tail[cut - 1] == ord("\n")
+            del tail[:cut]
     records = newlines + (1 if total and last != b"\n" else 0)
     head_lines = head.finish()[:PROBE_HEAD]
     tail_lines = []
@@ -519,6 +524,20 @@ def _probe_ae_chat(
     entry.cwd = meta.cwd
 
 
+def _result_banner_chunks(handle: BinaryIO, banner: BinaryIO) -> Iterator[bytes]:
+    # Either count alone bounds the universal-newline banner from above.
+    # readline(size) also bounds a single unterminated line in memory.
+    cr = lf = 0
+    while max(cr, lf) < AeNodeResultAdapter.HEADER_LINES:
+        piece = handle.readline(_CHUNK)
+        if not piece:
+            break
+        banner.write(piece)
+        yield piece
+        cr += piece.count(b"\r")
+        lf += piece.endswith(b"\n")
+
+
 def _probe_ae_node_result(entry: SessionEntry, head: Sequence[bytes]) -> None:
     """The CLI banner lives in the head records the hashing pass already kept."""
 
@@ -546,17 +565,27 @@ def probe(ref: TranscriptRef) -> SessionEntry:
     """Hash a transcript and read the cheap metadata around its edges."""
 
     path = Path(ref.path)
-    digest, size, records, head, tail = hash_and_probe(path)
+    cli, session_id, links = ref.cli, ref.cli_session_id, ref.linked_session_ids
+    if ref.source == "ae_node_result":
+        with path.open("rb") as handle, SpooledTemporaryFile(max_size=_CHUNK) as banner:
+            chunks = chain(_result_banner_chunks(handle, banner), iter(lambda: handle.read(_CHUNK), b""))
+            digest, size, records, head, tail = _probe_chunks(chunks)
+            banner.seek(0)
+            with TextIOWrapper(banner, encoding="utf-8", errors="replace") as text:
+                cli, session_id = AeNodeResultAdapter.read_identity(text)
+            links = (session_id,) if session_id else ()
+    else:
+        digest, size, records, head, tail = hash_and_probe(path)
     entry = SessionEntry(
         session_key=ref.session_key,
         source=ref.source,
-        cli=ref.cli,
+        cli=cli,
         path=str(path),
         bytes=size,
         sha256=digest,
         records=records,
-        cli_session_id=ref.cli_session_id,
-        linked_session_ids=tuple(sorted(set(ref.linked_session_ids))),
+        cli_session_id=session_id,
+        linked_session_ids=tuple(sorted(set(links))),
     )
     if ref.source == "claude":
         _probe_claude(entry, head, tail)

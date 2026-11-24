@@ -2107,15 +2107,14 @@ class AeNodeResultAdapter(TranscriptAdapter):
                 continue
             try:
                 with open(path, encoding="utf-8", errors="replace") as handle:
-                    header = self._read_header(handle, handle.read(self._CHUNK), ("session id",))
+                    cli, session_id = self.read_identity(handle)
             except OSError:
-                header = {}
-            session_id = header.get("session id")
+                cli, session_id = self.cli, None
             project = path.relative_to(root).parts[0]
             goal_path = self._goal_path(path, root)
             yield TranscriptRef(
                 source=self.source,
-                cli=header.get("_cli", "unknown"),
+                cli=cli,
                 path=path,
                 session_key=f"ae_node:{project}:{goal_path}",
                 cli_session_id=session_id,
@@ -2133,11 +2132,16 @@ class AeNodeResultAdapter(TranscriptAdapter):
         {"session id", "model", "provider", "workdir", "reasoning effort"}
     )
 
-    _HEADER_LINES = 24
+    HEADER_LINES = 24
     _CHUNK = 1 << 15
 
     @classmethod
-    def parse_header(cls, lines: Iterable[str], limit: int = _HEADER_LINES) -> dict[str, str]:
+    def read_identity(cls, handle: TextIO) -> tuple[str, str | None]:
+        header = cls._read_header(handle, handle.read(cls._CHUNK), ("session id",))
+        return header.get("_cli", cls.cli), header.get("session id")
+
+    @classmethod
+    def parse_header(cls, lines: Iterable[str], limit: int = HEADER_LINES) -> dict[str, str]:
         """Parse the CLI banner from the first ``limit`` lines of stdout."""
 
         header: dict[str, str] = {}
@@ -2154,14 +2158,14 @@ class AeNodeResultAdapter(TranscriptAdapter):
     @classmethod
     def _read_header(cls, handle: TextIO, first: str, keys: tuple[str, ...]) -> dict[str, str]:
         """Locate the final selected fields before materializing large values."""
-        if len(first) < cls._CHUNK or first.count("\n") >= cls._HEADER_LINES:
+        if len(first) < cls._CHUNK or first.count("\n") >= cls.HEADER_LINES:
             return cls.parse_header(StringIO(first))
 
         handle.seek(0)
         header: dict[str, str] = {}
         ranges: dict[str, tuple[int, int, int]] = {}
         longest = max(map(len, keys))
-        for _ in range(cls._HEADER_LINES):
+        for _ in range(cls.HEADER_LINES):
             cookie = handle.tell()
             piece = handle.readline(cls._CHUNK)
             if not piece:
