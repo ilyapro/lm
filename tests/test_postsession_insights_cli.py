@@ -1,8 +1,10 @@
 """Disposable read-only evaluation checks; no corpus or external judge."""
 
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from dataclasses import replace
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -337,7 +339,10 @@ def test_extraction_budget_releases_skipped_records(cli, monkeypatch, workers, b
             assert len(groups[i]) == count
     expected_report = cli.mining_stats(candidate for group in groups.values() for candidate in group)
     assert report == {
-        **expected_report, "sessions_scanned": len(entries), "sessions_with_candidates": 4,
+        **expected_report, "sessions_scanned": 5, "sessions_with_candidates": 4,
+        "coverage": {
+            "sessions_attempted": 6, "sessions_verified": 5, "sessions_skipped": 1, "complete": False,
+        },
         "sessions_judged": len(selected), "judge_budget": budget,
         "candidates_in_judged_sessions": sum(counts[i] for i in selected),
     }
@@ -350,6 +355,60 @@ def test_extraction_budget_releases_skipped_records(cli, monkeypatch, workers, b
     assert actual == expected
     assert len(judges) == len(selected)
     assert sum(len(judge.calls) for judge in judges) == sum(result.judge_calls for result in expected)
+
+
+@pytest.mark.parametrize("mode", ["--report", "--run", "--calibrate"])
+def test_cli_verified_phase_coverage(cli, tmp_path, monkeypatch, mode):
+    text = b"RESULT: DONE A synthetic private journal entry for calibration.\n"
+    rows = []
+    for name, split in [
+        ("train", "train"), ("large", "eval"), ("good", "eval"), ("bad", "eval"),
+        ("outside", "eval"), ("reserved", cli.RESERVED_SPLIT),
+    ]:
+        path = tmp_path / name
+        prefix = text * (2 if name == "large" else 1)
+        path.write_bytes(prefix + text)
+        # Equal eval keys exercise stable hash ties and per-row identity.
+        rows.append({
+            "session_key": "private-key", "source": "ae_node_result", "path": str(path),
+            "split": split, "bytes": len(prefix),
+            "sha256": "0" * 64 if name == "bad" else hashlib.sha256(prefix).hexdigest(),
+        })
+    (tmp_path / "index.jsonl").write_text("\n".join(json.dumps(row) for row in rows))
+    reads = Counter()
+    load = cli.load_session
+
+    def counted(entry):
+        reads[Path(entry.path).name] += 1
+        return load(entry)
+
+    monkeypatch.setattr(cli, "load_session", counted)
+    assert cli.main(_args(tmp_path, mode, "--judge-budget", "0", "--max-sessions", "3",
+                          "--max-bytes", str(len(text)))) == 0
+    raw = (tmp_path / "report.json").read_text()
+    report = json.loads(raw)
+    assert all(token not in raw for token in (str(tmp_path), "private-key", "synthetic private"))
+    expected = {"good": 1, "bad": 1}
+
+    def coverage(verified, skipped):
+        return {"sessions_attempted": verified + skipped, "sessions_verified": verified,
+                "sessions_skipped": skipped, "complete": skipped == 0}
+
+    if mode != "--run":
+        expected.update(train=1, outside=1)
+        for split, verified, skipped in [("train", 1, 0), ("eval", 2, 1)]:
+            block = report["gate_calibration"][split]
+            assert block["coverage"] == coverage(verified, skipped)
+            assert block["journal"]["n"] == verified  # Appended text is outside the prefix.
+    else:
+        assert "gate_calibration" not in report
+    if mode != "--calibrate":
+        assert report["mining"]["coverage"] == coverage(1, 1)
+        assert report["mining"]["sessions_scanned"] == 1
+        assert report["mining"]["sessions_judged"] == 0
+    else:
+        assert "mining" not in report
+    assert reads == expected
 
 
 @pytest.mark.parametrize("mode", ["--run", "--report"])
