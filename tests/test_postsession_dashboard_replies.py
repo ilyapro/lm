@@ -127,3 +127,21 @@ def test_no_correction_quote_without_recorded_claim(tmp_path, visible):
     assert mine(record) == []
     observation, = observations(record)
     assert observation.text == "No, keep example.py."
+
+
+def test_correction_quotes_the_reply_after_the_tool(tmp_path):
+    ref = dashboard(tmp_path, [
+        {"type": "text_delta", "text": "First reply."},
+        {"type": "tool_use", "name": "exec_command", "tool_id": "read"},
+        {"type": "tool_result", "tool_id": "read", "ok": True, "output_summary": "tool-only"},
+        {"type": "thinking", "text": "reasoning-only"},
+        {"type": "text_delta", "text": "Second reply."},
+        {"type": "user_message", "text": "No, keep example.py."},
+        {"type": "tool_use", "name": "exec_command", "tool_id": "act"},
+    ])
+    record = load_transcript(ref)
+    candidate, = mine(record)
+    assert [e.quote for e in candidate.evidence] == ["Second reply.", "No, keep example.py."]
+    assert [(o.kind, o.text) for o in observations(record)] == [
+        ("command_output", "tool-only"), ("operator_message", "No, keep example.py."),
+    ]
