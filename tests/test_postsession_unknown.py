@@ -8,7 +8,9 @@ import multiprocessing
 import os
 import socket
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 from types import SimpleNamespace
 
 import pytest
@@ -21,6 +23,7 @@ from living_memory.postsession.runner import (
     EXIT_GATE, EXIT_UNKNOWN, EXIT_USAGE, ExtractionRunner, GateDecision, Ledger, LedgerError, RunnerConfig,
     SessionProposals, enforce_attribution, op_fingerprint,
 )
+from living_memory.postsession.session import ProposedOp
 from postsession_support import (
     ORIGINAL_FACT, TOKEN, _live_record, _load_cli, live_server,
     make_record, make_remember, make_teach,
@@ -430,6 +433,130 @@ def test_concurrent_cli_writers_share_one_claim(tmp_path):
             if proc.is_alive():
                 proc.terminate()
                 proc.join(5)
+
+
+@pytest.fixture
+def bootstrap_cli(tmp_path, monkeypatch):
+    class BootstrapRecipient(Recipient):
+        def ping(self):
+            return {}
+
+        def lookup_nodes(self, *args, **kwargs):
+            return {"results": []}
+
+        def teach(self, trace_id, correction, **kwargs):
+            self.effects.append((correction, kwargs["context"]))
+            return {"corrective_trace": {"id": "corrected"}, "supersedes": {"id": "edge"}}
+
+        def attest(self, event, evidence, **kwargs):
+            self.effects.append((event, kwargs["context"]))
+            return {"attestation_id": "attested"}
+
+    client = BootstrapRecipient()
+    cli = _load_cli()
+    fixtures = Path(__file__).parent / "fixtures" / "postsession"
+    control = fixtures / "gate-control.json"
+    batches = {}
+    monkeypatch.setattr(cli, "LiveMemoryClient", lambda *args, **kwargs: client)
+    monkeypatch.setattr(cli, "select_records", lambda args, log: ([str(args.transcript)], [], {}))
+    monkeypatch.setattr(ExtractionRunner, "propose", lambda self, name: batches[name])
+
+    def invoke(*args, measured=False):
+        verdict = control
+        if measured:
+            data = json.loads(control.read_text())
+            data["selfcheck"]["cohort_kind"] = "extracted"
+            verdict = tmp_path / "extracted.json"
+            verdict.write_text(json.dumps(data))
+            args += ("--gate-control", str(control))
+        return cli.main([
+            "--state-dir", str(tmp_path), "--url", client.url, "--token", TOKEN,
+            "--baseline", str(fixtures / "gate-baseline.json"), "--gate-verdict", str(verdict),
+            "--max-verdict-age-days", "100000", "--bootstrap-write-allowance", "1",
+            "--judge", "none", *args,
+        ])
+
+    return invoke, batches, client
+
+
+def test_cli_last_bootstrap_slot_in_batch(tmp_path, bootstrap_cli):
+    invoke, batches, client = bootstrap_cli
+    record = make_record()
+    teach = make_teach(record, "original", "Correction")
+    remember = make_remember(record, "New fact")
+    attest = ProposedOp(kind="attest", payload={"recall_event_id": "event", "evidence": ["quote"]},
+                        provenance=teach.provenance, evidence=teach.evidence).validate()
+    batches["batch"] = SessionProposals(record, ops=[teach, remember], attests=[attest])
+    report = tmp_path / "report.json"
+    args = ("--transcript", "batch", "--out", str(report))
+
+    assert invoke(*args) == 0
+    assert client.effects == []
+    assert Ledger(tmp_path).entries() == []
+    preview = json.loads(report.read_text())["decisions"]
+
+    assert invoke(*args, "--write") == 0
+    assert [e[0] for e in client.effects] == ["Correction", "event"]
+    assert [d["status"] for d in preview] == ["would_write", "dropped", "would_write"]
+    decisions = json.loads(report.read_text())["decisions"]
+    assert decisions[1]["reason"] == preview[1]["reason"] == "bootstrap_allowance"
+    assert Ledger(tmp_path).written_nodes_total() == 1
+    assert invoke(*args, "--write", measured=True) == 0
+    assert [e[0] for e in client.effects] == ["Correction", "event", "New fact"]
+
+
+def test_cli_concurrent_bootstrap_admission(tmp_path, bootstrap_cli, monkeypatch):
+    invoke, batches, client = bootstrap_cli
+    record = make_record()
+    both_admitted_by_gate = Barrier(2)
+    propose = ExtractionRunner.propose
+
+    def synchronized_propose(self, name):
+        both_admitted_by_gate.wait(timeout=10)
+        return propose(self, name)
+
+    monkeypatch.setattr(ExtractionRunner, "propose", synchronized_propose)
+    for name in ("first", "second"):
+        batches[name] = SessionProposals(record, ops=[make_remember(record, name)])
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        codes = list(pool.map(lambda name: invoke("--write", "--transcript", name), batches))
+    assert codes == [0, 0] or sorted(codes) == [0, EXIT_UNKNOWN]
+    assert len(client.effects) == 1
+    entry, = Ledger(tmp_path).entries()
+    assert entry["state"] == "applied"
+    assert entry["operation"]["payload"]["content"] == client.effects[0][0]
+
+
+def test_cli_bootstrap_ready_retry_and_unknown(tmp_path, bootstrap_cli):
+    invoke, batches, client = bootstrap_cli
+    record = make_record()
+    batches["batch"] = SessionProposals(record, ops=[make_remember(record, "First")])
+    args = ("--write", "--transcript", "batch")
+    client.failure = PreDispatchError("not connected")
+    assert invoke(*args) == 1
+    assert client.effects == []
+    client.failure = ClientError("reply lost")
+    assert invoke("--reconcile", "--write") == EXIT_UNKNOWN
+    client.failure = None
+    batches["batch"].ops.append(make_teach(record, "original", "Second"))
+    assert invoke(*args) == EXIT_UNKNOWN
+    assert [e[0] for e in client.effects] == ["First"]
+    entry, = Ledger(tmp_path).entries()
+    assert entry["state"] == "unknown"
+
+
+def test_cli_bootstrap_ready_reconcile_counts_legacy_applied(tmp_path, bootstrap_cli):
+    invoke, batches, client = bootstrap_cli
+    record = make_record()
+    batches["batch"] = SessionProposals(record, ops=[make_remember(record, "First")])
+    client.failure = PreDispatchError("not connected")
+    assert invoke("--write", "--transcript", "batch") == 1
+    client.failure = None
+    with Ledger(tmp_path).path.open("a") as handle:
+        handle.write(json.dumps({"transcript_sha256": "sha", "fingerprint": "fp", "kind": "teach"}) + "\n")
+    assert invoke("--reconcile", "--write") == 1
+    assert client.effects == []
+    assert [e["state"] for e in Ledger(tmp_path).entries()] == ["ready", "applied"]
 
 
 class LostReplyClient(LiveMemoryClient):
