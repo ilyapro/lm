@@ -895,7 +895,7 @@ class ClaudeAdapter(TranscriptAdapter):
         if not isinstance(blocks, list):
             return False
         consumed = False
-        for block in blocks:
+        for block_index, block in enumerate(blocks):
             if not isinstance(block, dict) or block.get("type") != "tool_result":
                 continue
             consumed = True
@@ -911,6 +911,8 @@ class ClaudeAdapter(TranscriptAdapter):
             )
             call.result_text = text
             call.result_truncated = truncated
+            if text is not None:
+                call.result_span = record.span(index, f"message.content.{block_index}.content")
             server = info["server"]
             tool = info["tool"]
             if server == MEMORY_SERVER and isinstance(payload, dict):
@@ -1387,7 +1389,7 @@ class GigacodeAdapter(TranscriptAdapter):
                 continue
             role = str(message.get("role") or entry.get("type") or "")
             texts: list[str] = []
-            for part in message.get("parts") or []:
+            for part_index, part in enumerate(message.get("parts") or []):
                 if not isinstance(part, dict):
                     continue
                 if "text" in part:
@@ -1396,7 +1398,7 @@ class GigacodeAdapter(TranscriptAdapter):
                     self._read_call(record, part["functionCall"], index, stamp, pending)
                 elif "functionResponse" in part:
                     self._read_response(
-                        record, part["functionResponse"], index, pending, turn_index,
+                        record, part["functionResponse"], index, part_index, pending, turn_index,
                         allow_sidecars=ref.indexed is None,
                     )
             text = "\n".join(part for part in texts if part)
@@ -1477,6 +1479,7 @@ class GigacodeAdapter(TranscriptAdapter):
         record: SessionRecord,
         payload: Any,
         index: int,
+        part_index: int,
         pending: dict[str, dict[str, Any]],
         turn_index: int,
         *,
@@ -1493,6 +1496,8 @@ class GigacodeAdapter(TranscriptAdapter):
         text, truncated = _clip(response)
         call.result_text = text
         call.result_truncated = truncated
+        if text is not None:
+            call.result_span = record.span(index, f"message.parts.{part_index}.functionResponse.response")
         if info["server"] != MEMORY_SERVER or not isinstance(response, dict):
             return
         structured = self._structured(response, allow_sidecars=allow_sidecars)
@@ -1568,7 +1573,7 @@ class DeepseekAdapter(TranscriptAdapter):
                 if isinstance(blocks, str):
                     blocks = [{"type": "text", "text": blocks}]
                 texts: list[str] = []
-                for block in blocks or []:
+                for block_index, block in enumerate(blocks or []):
                     if not isinstance(block, dict):
                         continue
                     kind = block.get("type")
@@ -1577,7 +1582,7 @@ class DeepseekAdapter(TranscriptAdapter):
                     elif kind == "tool_use":
                         self._read_call(record, block, index, pending)
                     elif kind == "tool_result":
-                        self._read_result(record, block, index, pending, turn_index)
+                        self._read_result(record, block, index, block_index, pending, turn_index)
                 text = "\n".join(part for part in texts if part)
                 if text:
                     normalized = "assistant" if role == "assistant" else role or "user"
@@ -1651,6 +1656,7 @@ class DeepseekAdapter(TranscriptAdapter):
         record: SessionRecord,
         block: dict[str, Any],
         index: int,
+        block_index: int,
         pending: dict[str, dict[str, Any]],
         turn_index: int,
     ) -> None:
@@ -1661,6 +1667,8 @@ class DeepseekAdapter(TranscriptAdapter):
         text, truncated = _clip(block.get("content"))
         call.result_text = text
         call.result_truncated = truncated
+        if text is not None:
+            call.result_span = record.span(index, f"content.{block_index}.content")
         call.ok = not block.get("is_error")
         if info.get("server") == MEMORY_SERVER:
             # The blocks here are Anthropic's own, so a Living Memory reply
@@ -1920,8 +1928,9 @@ class AeChatAdapter(TranscriptAdapter):
         call: ToolCall = info["call"]
         call.ok = bool(entry.get("ok"))
         summary = entry.get("output_summary")
-        text, clipped = _clip(summary)
-        call.result_text = text
+        call.result_text, _ = _clip(summary)
+        if call.result_text is not None:
+            call.result_span = record.span(index, "output_summary")
         call.result_truncated = True
         if info["server"] != MEMORY_SERVER:
             return

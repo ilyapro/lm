@@ -405,7 +405,7 @@ class Observation:
 
     ``text`` is the *raw* session text; it is what every verbatim check runs
     against. ``locator`` is unique within a record because the field path names
-    the collection and the ordinal, so a judge cannot point at "record 42" and
+    the output field or normalized item, so a judge cannot point at "record 42" and
     leave the validator guessing which of its three tool results was meant.
     """
 
@@ -454,6 +454,8 @@ def observations(
     for call in record.tool_calls:
         if not call.result_text or is_memory_roundtrip(call):
             continue
+        # Older normalized records have only the call position and item ordinal.
+        span = call.result_span or replace(call.span, field=f"tool_calls[{call.ordinal}].result_text")
         text = call.result_text[: config.max_observation_chars]
         command = _command_of(call.arguments)
         label = f"{call.name}: {command}" if command else call.name
@@ -465,12 +467,10 @@ def observations(
         found.append(
             Observation(
                 kind=kind,
-                locator=_observation_span(
-                    record, call.span, f"tool_calls[{call.ordinal}].result_text"
-                ),
+                locator=span.locator(),
                 label=label[:200],
                 text=text,
-                record_index=call.span.record_index,
+                record_index=span.record_index,
                 ordinal=call.ordinal,
             )
         )
@@ -662,6 +662,11 @@ class Candidate:
         return tuple(item[0] for item in self.scored)
 
 
+def _delivery_index(recall: RecallInteraction) -> int:
+    """Use the latest known boundary of the recall round trip."""
+    return max(recall.record_index, recall.span.record_index, recall.span.end_record_index or 0)
+
+
 def candidates(
     record: SessionRecord,
     *,
@@ -718,8 +723,9 @@ def candidates(
                 continue
 
             scored: list[tuple[Observation, float, tuple[str, ...]]] = []
+            delivery_index = _delivery_index(recall)
             for item in observed:
-                if item.record_index <= recall.record_index:
+                if item.record_index <= delivery_index:
                     continue
                 shared = node_anchors & obs_anchors[item.locator]
                 if len(shared) < config.min_shared_anchors:
@@ -1103,12 +1109,13 @@ def validate_verdict(
         return _reject(candidate, session_key, "unknown_locator", locator)
     locator = resolved
     observation = next(item for item in candidate.observations if item.locator == locator)
-    if observation.record_index <= candidate.recall.record_index:
+    delivery_index = _delivery_index(candidate.recall)
+    if observation.record_index <= delivery_index:
         return _reject(
             candidate,
             session_key,
             "observation_not_after_recall",
-            f"{observation.record_index} <= {candidate.recall.record_index}",
+            f"{observation.record_index} <= {delivery_index}",
         )
 
     # -- verbatim: the claim is really in the delivered node ----------------
