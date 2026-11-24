@@ -115,6 +115,7 @@ __all__ = [
     "default_redactor",
     "extract_json_object",
     "redact_value",
+    "redacted_report_json",
     "run_cli_subprocess",
     "sha256_text",
     "validation_errors",
@@ -196,14 +197,19 @@ Redactor = Callable[[str], str]
 
 _REDACTED = "<redacted>"
 
+_SECRET_NAME = (
+    r"\b(?:[A-Za-z][A-Za-z0-9_]*?)?"
+    r"(?:TOKEN|SECRET|PASSWORD|PASSWD|APIKEY|API_KEY|ACCESS_KEY|PRIVATE_KEY)"
+)
+_SECRET_FIELD = re.compile(_SECRET_NAME + r"\Z", re.IGNORECASE)
+
 # Ordered: the assignment rule must win over the generic key-shape rules so
 # `LM_AUTH_TOKEN=sk-abc` redacts once, cleanly.
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     # NAME=value / NAME: value for token-ish names, quoted or bare.
     (
         re.compile(
-            r"\b((?:[A-Za-z][A-Za-z0-9_]*?)?"
-            r"(?:TOKEN|SECRET|PASSWORD|PASSWD|APIKEY|API_KEY|ACCESS_KEY|PRIVATE_KEY))"
+            rf"({_SECRET_NAME})"
             r"([\"']?\s*[=:]\s*)"
             r"(\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;)\"']+)",
             re.IGNORECASE | re.DOTALL,
@@ -256,12 +262,13 @@ def default_redactor(text: str) -> str:
     return _HOME_PATTERN.sub("~", text)
 
 
-def redact_value(value: Any, redactor: Redactor) -> Any:
+def redact_value(value: Any, redactor: Redactor, *, redact_secret_fields: bool = False) -> Any:
     """Apply ``redactor`` to every string in a JSON-shaped value, keys included.
 
     Mapping keys are redacted too — payloads are routinely keyed by file path.
     Two keys that collide after redaction raise :class:`ValueError` rather than
-    silently dropping one of them.
+    silently dropping one of them. With redact_secret_fields, replace the entire
+    value of a credential-named field regardless of its JSON type.
     """
 
     if isinstance(value, str):
@@ -272,10 +279,13 @@ def redact_value(value: Any, redactor: Redactor) -> Any:
             key = redactor(raw_key) if isinstance(raw_key, str) else raw_key
             if key in out:
                 raise ValueError(f"redaction collapsed two payload keys into {key!r}")
-            out[key] = redact_value(raw_value, redactor)
+            if redact_secret_fields and isinstance(raw_key, str) and _SECRET_FIELD.search(raw_key):
+                out[key] = _REDACTED
+            else:
+                out[key] = redact_value(raw_value, redactor, redact_secret_fields=redact_secret_fields)
         return out
     if isinstance(value, (list, tuple)):
-        return [redact_value(item, redactor) for item in value]
+        return [redact_value(item, redactor, redact_secret_fields=redact_secret_fields) for item in value]
     return value
 
 
@@ -292,6 +302,11 @@ def canonical_json(value: Any, *, indent: int | None = 2) -> str:
     """
 
     return json.dumps(value, ensure_ascii=False, sort_keys=True, indent=indent)
+
+
+def redacted_report_json(report: Mapping[str, Any]) -> str:
+    """Redact extraction report fields and text before JSON escaping."""
+    return canonical_json(redact_value(report, default_redactor, redact_secret_fields=True))
 
 
 def sha256_text(text: str) -> str:

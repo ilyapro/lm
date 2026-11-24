@@ -75,8 +75,7 @@ from living_memory.postsession.judge import (  # noqa: E402
     CassetteJudge,
     ClaudeCliJudge,
     FakeJudge,
-    canonical_json,
-    default_redactor,
+    redacted_report_json,
 )
 from living_memory.postsession.runner import (  # noqa: E402
     DEFAULT_BASELINE,
@@ -514,7 +513,7 @@ def _write_report(path: Path, report: dict[str, Any], *, splits_read: Sequence[s
     """Redact, mask the sealed split's name (unless this IS the sealed run),
     and write the report."""
 
-    text = default_redactor(canonical_json(report))
+    text = redacted_report_json(report)
     if not any(split in reserved_splits() for split in splits_read):
         text = mask_reserved_splits(text)
     path.parent.mkdir(parents=True, exist_ok=True)
