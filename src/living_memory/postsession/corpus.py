@@ -1193,20 +1193,16 @@ def _verify_by_rederiving(
         }
         for name in SPLITS
     }
-    report["checked"] = fresh_counts["sessions"]
-    report["verified"] = fresh_counts["sessions"]
+    index_matches = rebuilt.manifest["index_sha256"] == manifest.get("index_sha256")
     report["rederived"] = {
         "counts": fresh_counts,
         "counts_drift": drift,
         "seal": seal,
         "index_sha256": rebuilt.manifest["index_sha256"],
-        "index_sha256_match": rebuilt.manifest["index_sha256"] == manifest.get("index_sha256"),
-        "note": (
-            "no index on disk: the rolling Claude window makes drift expected, "
-            "so it is reported; rebuild with --build to re-seal"
-        ),
+        "index_sha256_match": index_matches,
+        "note": "Compared rebuilt aggregates and index digest; no rows checked individually.",
     }
-    if strict and (drift or not all(seal[name]["match"] for name in SPLITS)):
+    if strict and (not index_matches or drift or not all(seal[name]["match"] for name in SPLITS)):
         report["ok"] = False
 
 

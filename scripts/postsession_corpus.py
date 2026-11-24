@@ -151,7 +151,9 @@ def _verify(args: argparse.Namespace) -> int:
             seal = rederived["seal"][name]
             print(f"  seal[{name}]: {'same' if seal['match'] else 'DRIFTED'}")
         print(f"  count drift: {json.dumps(rederived['counts_drift'], sort_keys=True)}")
-        print("  (rebuild with --build to re-seal; drift is reported, not failed)")
+        state = "same" if rederived["index_sha256_match"] else "MISMATCH"
+        print(f"  rederived index SHA-256: {state}")
+        print(f"  {rederived['note']}")
 
     if not report["content_ok"]:
         print(f"  CONTENT LEAK: {report.get('content_error')}", file=sys.stderr)

@@ -774,6 +774,42 @@ def test_cli_deep_stats_honours_the_source_filter(roots: Roots, tmp_path: Path) 
     assert {s for s in reports["claude"]["by_source"]} == {"claude"}
 
 
+@pytest.mark.parametrize("rewrite", [False, True])
+@pytest.mark.parametrize("strict", [False, True])
+def test_cli_verify_without_index(
+    sealed: tuple[Path, Path], tmp_path: Path, rewrite: bool, strict: bool
+) -> None:
+    manifest, index = sealed
+    holdout = next(e for e in read_index(index) if e.session_key == HOLDOUT_FILLERS[0])
+    index.unlink()
+    if rewrite:
+        path = Path(holdout.path)
+        original = path.read_bytes()
+        changed = original.replace(b"REDACTED", b"REPLACED", 1)
+        assert changed != original and len(changed) == len(original)
+        path.write_bytes(changed)
+
+    report_path = tmp_path / "report.json"
+    args = ["--verify", "--manifest", str(manifest), "--report", str(report_path)]
+    if strict:
+        args.append("--strict")
+    result = run_cli(*args)
+    ok = not (strict and rewrite)
+    assert result.returncode == (0 if ok else 1), result.stderr
+    assert result.stdout.splitlines()[-1] == ("OK" if ok else "FAILED")
+    assert f"rederived index SHA-256: {'MISMATCH' if rewrite else 'same'}" in result.stdout
+
+    report = json.loads(report_path.read_text())
+    assert report["ok"] is ok
+    assert report["mode"] == "rederive"
+    assert report["checked"] == report["verified"] == report["unchanged_bytes"] == 0
+    rederived = report["rederived"]
+    assert rederived["counts"]["sessions"] == 10
+    assert rederived["counts_drift"] == {}
+    assert all(rederived["seal"][name]["match"] for name in SPLITS)
+    assert rederived["index_sha256_match"] is (not rewrite)
+
+
 def test_cli_verify_fails_when_the_seal_moved(roots: Roots, tmp_path: Path) -> None:
     target = tmp_path / "corpus.json"
     common = cli_args(roots, target)
