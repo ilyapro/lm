@@ -19,7 +19,81 @@ _DIRECT_END = (
 _SECTION = "\n\nCurrent addressed input ("
 _END = "\n\nPreserve each source's author and recipient."
 _BOUNDARY = re.compile(f"{re.escape(_SECTION)}|{re.escape(_END)}")
-_OPERATOR_SECTION = re.compile(r"Current addressed input \([^\n]+; operator\):\n\n")
+_OPERATOR_SECTION = re.compile(r"\n\nCurrent addressed input \([^\n]+; operator\):\n\n")
+
+
+# loop_state joins these sections after the assignment (or the resume preface).
+# Every dispatch has the reply address before the input block and the result
+# contract after it. Neither the assignment nor a peer body escapes headings.
+_LOOP_ADDRESS = re.compile(r"\nYour reply address is `[^`\n]+`\.\n")
+_LOOP_RESULT = re.compile(r"\n\n## (?:Loop work result|Diagnostic result)\nCurrent loop owner: ([^\n]+)\n")
+_LOOP_OPERATOR = re.compile(r"\n\n## Current operator input \((/[^\n]+)\)\n\n")
+_LOOP_BOUNDARY = re.compile(
+    r"\n\n## (?:Current (?:operator input|peer input|input \(authorship unknown\)) \(/[^\n]+\)\n\n"
+    r"|Current input unavailable\n|(?:Loop work result|Diagnostic result)\nCurrent loop owner: )"
+)
+
+
+def _sections(text, start, header_pattern, boundaries, *, owner=None):
+    """Walk from an established input boundary. Only a bound body permits advancing."""
+    while header := header_pattern.match(text, start):
+        start = header.end()
+        if not text.startswith("<!-- ae-augment ", start) or (
+            owner is not None and header[1].endswith("/operator_inject.md")
+        ):
+            boundary = boundaries.search(text, start)
+            if boundary:
+                yield start, text[start:boundary.start()]
+            return
+
+        end = text.find("\n", start)
+        if end < 0 or text[end - 4:end] != " -->":
+            return
+        try:
+            metadata = json.loads(text[start + len("<!-- ae-augment "):end - 4])
+        except (ValueError, RecursionError):
+            return
+        if not (
+            isinstance(metadata, dict)
+            and metadata.get("author") == "operator"
+            and metadata.get("operator_authenticated") is True
+            and metadata.get("source") == "dashboard"
+            and (owner is None or metadata.get("owner") == owner)
+        ):
+            return
+        start = end + 1
+        # An operator can quote a complete section header. The producer's
+        # digest binds the actual end without treating quoted labels as facts.
+        digest = hashlib.sha256()
+        previous = start
+        for boundary in boundaries.finditer(text, start):
+            end = boundary.start()
+            digest.update(text[previous:end].encode("utf-8", errors="surrogatepass"))
+            if digest.hexdigest() == metadata.get("text_sha256"):
+                yield start, text[start:end]
+                start = end
+                break
+            previous = end
+        else:
+            return
+
+
+def _loop_passages(text, result):
+    address = _LOOP_ADDRESS.search(text, 0, result.start())
+    if not address or _LOOP_ADDRESS.search(text, address.end()) or _LOOP_RESULT.search(text, result.end()):
+        return
+    try:
+        owner = json.loads(result[1])
+    except (ValueError, RecursionError):
+        return
+    if not isinstance(owner, str) or not owner:
+        return
+    start = address.end()
+    if text.startswith("\n\n## Addressed operator requests and answers\n", start):
+        # Request fields are JSON-escaped on physical lines in this section.
+        start = text.find("\n\n", start + 2)
+    if start >= 0:
+        yield from _sections(text, start, _LOOP_OPERATOR, _LOOP_BOUNDARY, owner=owner)
 
 
 def operator_passages(turn: Turn) -> Iterator[tuple[int, str]]:
@@ -32,7 +106,12 @@ def operator_passages(turn: Turn) -> Iterator[tuple[int, str]]:
             yield len(_DIRECT), text[len(_DIRECT):-len(_DIRECT_END)]
         return
     if not text.lstrip().startswith("[current input]"):
-        yield 0, text
+        result = _LOOP_RESULT.search(text)
+        if result and _LOOP_ADDRESS.search(text):
+            yield from _loop_passages(text, result)
+        elif not (text.startswith("# Tree Goal Node\n\n## Your Goal\n")
+                  and "\n## Execution Context\n\n### Execution Worktree\n" in text):
+            yield 0, text
         return
     if not text.startswith(_CURRENT):
         return
@@ -47,42 +126,4 @@ def operator_passages(turn: Turn) -> Iterator[tuple[int, str]]:
         yield start, text[start:end]
         start = end + len(_DIRECT_END)
 
-    # AE places an optional direct message first, then appends unescaped
-    # addressed sources. Never search forward for an operator section after
-    # reaching peer, unknown or unrecognised input.
-    while text.startswith(_SECTION, start):
-        header = _OPERATOR_SECTION.match(text, start + 2)
-        if not header:
-            return
-        start = header.end()
-        # The rendered label comes from the producer. Its bound digest also
-        # lets us tell a real next section from one quoted in this body.
-        metadata = None
-        if text.startswith("<!-- ae-augment ", start):
-            end = text.find("\n", start)
-            if end < 0 or text[end - 4:end] != " -->":
-                return
-            try:
-                metadata = json.loads(text[start + len("<!-- ae-augment "):end - 4])
-            except (ValueError, RecursionError):
-                return
-            if not (
-                isinstance(metadata, dict)
-                and metadata.get("author") == "operator"
-                and metadata.get("operator_authenticated") is True
-                and metadata.get("source") == "dashboard"
-            ):
-                return
-            start = end + 1
-        boundary = _BOUNDARY.search(text, start)
-        if not boundary:
-            return
-        passage = text[start:boundary.start()]
-        if metadata is not None and metadata.get("text_sha256") != hashlib.sha256(
-            passage.encode("utf-8", errors="surrogatepass")
-        ).hexdigest():
-            return
-        yield start, passage
-        if metadata is None:
-            return
-        start = boundary.start()
+    yield from _sections(text, start, _OPERATOR_SECTION, _BOUNDARY)
