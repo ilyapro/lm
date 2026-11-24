@@ -616,6 +616,44 @@ class Roots:
 
 
 @dataclass(frozen=True, slots=True)
+class AeChatMetadata:
+    model: str | None = None
+    cwd: str | None = None
+    linked_session_ids: tuple[str, ...] = ()
+    unreadable: bool = False
+
+    @classmethod
+    def read(cls, path: Path) -> AeChatMetadata:
+        limit = 4 << 20
+        try:
+            if not path.is_file() or path.stat().st_size > limit:
+                return cls()
+            with path.open("rb") as handle:
+                raw = handle.read(limit + 1)
+            if len(raw) > limit:
+                return cls()
+            meta = json.loads(raw.decode("utf-8", errors="replace"))
+        except (OSError, ValueError, RecursionError):
+            return cls(unreadable=True)
+        if not isinstance(meta, dict):
+            return cls()
+        linked: set[str] = set()
+        by_provider = meta.get("sessions_by_provider")
+        if isinstance(by_provider, dict):
+            linked.update(v for v in by_provider.values() if isinstance(v, str) and v)
+        session = meta.get("session")
+        if isinstance(session, dict) and isinstance(session.get("token"), str):
+            linked.add(session["token"])
+        model = meta.get("model")
+        cwd = meta.get("workspace")
+        return cls(
+            model=model if isinstance(model, str) else None,
+            cwd=cwd if isinstance(cwd, str) else None,
+            linked_session_ids=tuple(sorted(linked)),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class IndexedPrefix:
     """Byte identity and AE sidecar metadata captured by the indexer."""
 
@@ -643,6 +681,14 @@ class TranscriptRef:
     cli_session_id: str | None = None
     linked_session_ids: tuple[str, ...] = ()
     indexed: IndexedPrefix | None = None
+    ae_metadata: AeChatMetadata | None = None
+
+    def ae_chat_metadata(self) -> AeChatMetadata:
+        if self.indexed is not None:
+            return AeChatMetadata(model=self.indexed.model, cwd=self.indexed.cwd)
+        if self.ae_metadata is not None:
+            return self.ae_metadata
+        return AeChatMetadata.read(self.path.parent / "meta.json")
 
 
 # --------------------------------------------------------------------------
@@ -1798,50 +1844,24 @@ class AeChatAdapter(TranscriptAdapter):
             return
         for path in sorted(root.glob("*/state/chats/*/transcript.jsonl")):
             chat_id = path.parent.name
-            linked = self._linked_ids(path.parent / "meta.json")
+            meta = AeChatMetadata.read(path.parent / "meta.json")
             yield TranscriptRef(
                 source=self.source,
                 cli=self.cli,
                 path=path,
                 session_key=f"ae_chat:{chat_id}",
                 cli_session_id=chat_id,
-                linked_session_ids=linked,
+                linked_session_ids=meta.linked_session_ids,
+                ae_metadata=meta,
             )
-
-    @staticmethod
-    def _linked_ids(meta_path: Path) -> tuple[str, ...]:
-        try:
-            if not meta_path.is_file() or meta_path.stat().st_size > 4 << 20:
-                return ()
-            with open(meta_path, "r", encoding="utf-8", errors="replace") as handle:
-                meta = json.load(handle)
-        except (OSError, ValueError):
-            return ()
-        linked: set[str] = set()
-        by_provider = meta.get("sessions_by_provider")
-        if isinstance(by_provider, dict):
-            for value in by_provider.values():
-                if isinstance(value, str) and value:
-                    linked.add(value)
-        session = meta.get("session")
-        if isinstance(session, dict) and isinstance(session.get("token"), str):
-            linked.add(session["token"])
-        return tuple(sorted(linked))
 
     def _parse(self, ref: TranscriptRef, path: Path, sha256: str | None) -> SessionRecord:
         record = self._new_record(ref, sha256)
-        meta_path = ref.path.parent / "meta.json"
-        meta: dict[str, Any] = {}
-        try:
-            if ref.indexed is not None:
-                meta = {"model": ref.indexed.model, "workspace": ref.indexed.cwd}
-            elif meta_path.is_file():
-                with open(meta_path, "r", encoding="utf-8", errors="replace") as handle:
-                    loaded = json.load(handle)
-                meta = loaded if isinstance(loaded, dict) else {}
-        except (OSError, ValueError):
+        meta = ref.ae_chat_metadata()
+        if meta.unreadable:
             record.parse_warnings.append("meta.json unreadable")
-        record.model = meta.get("model")
+        record.model = meta.model
+        record.cwd = meta.cwd or None
         count = 0
         pending: dict[str, dict[str, Any]] = {}
         providers: dict[int, str | None] = {}
@@ -1924,7 +1944,6 @@ class AeChatAdapter(TranscriptAdapter):
         # A user message can precede its own turn_start, including a provider switch.
         for message, turn in numbered_turns:
             message.cli = providers.get(turn)
-        record.cwd = meta.get("workspace") or record.cwd
         record.record_count = count
         return self._finalize(record)
 

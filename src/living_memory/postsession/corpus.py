@@ -83,6 +83,7 @@ from typing import Any, BinaryIO, Callable, Iterable, Iterator, Sequence
 from .session import SessionRecord
 from .transcripts import (
     ADAPTERS,
+    AeChatMetadata,
     IndexedPrefix,
     Roots,
     TranscriptRef,
@@ -503,7 +504,7 @@ def _epoch_ms(value: Any) -> str | None:
 
 
 def _probe_ae_chat(
-    entry: SessionEntry, path: Path, head: Sequence[bytes], tail: Sequence[bytes]
+    entry: SessionEntry, meta: AeChatMetadata, head: Sequence[bytes], tail: Sequence[bytes]
 ) -> None:
     for record in _decode_records(head):
         entry.started_at = entry.started_at or _epoch_ms(record.get("ts"))
@@ -514,16 +515,8 @@ def _probe_ae_chat(
         if moment:
             entry.ended_at = moment
             break
-    meta_path = path.parent / "meta.json"
-    try:
-        if meta_path.is_file() and meta_path.stat().st_size <= (4 << 20):
-            with open(meta_path, "r", encoding="utf-8", errors="replace") as handle:
-                meta = json.load(handle)
-            if isinstance(meta, dict):
-                entry.model = entry.model or meta.get("model")
-                entry.cwd = entry.cwd or meta.get("workspace")
-    except (OSError, ValueError):
-        pass
+    entry.model = entry.model or meta.model
+    entry.cwd = meta.cwd
 
 
 def _probe_ae_node_result(entry: SessionEntry, head: Sequence[bytes]) -> None:
@@ -572,7 +565,7 @@ def probe(ref: TranscriptRef) -> SessionEntry:
     elif ref.source == "gigacode":
         _probe_gigacode(entry, head, tail)
     elif ref.source == "ae_chat":
-        _probe_ae_chat(entry, path, head, tail)
+        _probe_ae_chat(entry, ref.ae_chat_metadata(), head, tail)
     elif ref.source == "ae_node_result":
         _probe_ae_node_result(entry, head)
     elif ref.source == "deepseek":
