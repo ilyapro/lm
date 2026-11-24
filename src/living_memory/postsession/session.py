@@ -345,6 +345,8 @@ class FileMutation(Wire):
     at: str | None = None
     tool: str = ""
     truncated: bool = False
+    # Invocation that selected the edit; span locates the quoted file content.
+    action_span: SourceSpan | None = None
 
 
 @dataclass(slots=True)

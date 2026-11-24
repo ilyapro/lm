@@ -926,7 +926,7 @@ class ClaudeAdapter(TranscriptAdapter):
                     turn_index=turn_index,
                     record_index=info["index"],
                 )
-            elif tool in {"Edit", "Write", "MultiEdit", "NotebookEdit"}:
+            elif call.ok and tool in {"Edit", "Write", "MultiEdit", "NotebookEdit"}:
                 self._add_mutation(record, tool, info, entry, index)
         return consumed
 
@@ -993,6 +993,7 @@ class ClaudeAdapter(TranscriptAdapter):
                 path=str(path),
                 kind=kind,  # type: ignore[arg-type]
                 span=record.span(index, "toolUseResult"),
+                action_span=info["call"].span,
                 unified_diff=diff_clipped,
                 pre_image=pre,
                 post_image=post,
@@ -1175,7 +1176,9 @@ class CodexAdapter(TranscriptAdapter):
             if kind == "mcp_tool_call_end":
                 self._read_mcp_end(record, payload, index, stamp, turn_index)
             elif envelope == "event_msg" and kind == "patch_apply_end":
-                self._read_patch(record, payload, index, stamp)
+                call_id = payload.get("call_id")
+                call = calls.pending.get(call_id) if isinstance(call_id, str) else None
+                self._read_patch(record, payload, index, stamp, call)
             elif envelope == "response_item" and kind in {"custom_tool_call", "function_call"}:
                 calls.invoked(self._read_call(record, payload, index, stamp))
             elif envelope == "response_item" and kind in {"custom_tool_call_output", "function_call_output"}:
@@ -1285,7 +1288,8 @@ class CodexAdapter(TranscriptAdapter):
         return None
 
     def _read_patch(
-        self, record: SessionRecord, payload: dict[str, Any], index: int, stamp: Any
+        self, record: SessionRecord, payload: dict[str, Any], index: int, stamp: Any,
+        call: ToolCall | None,
     ) -> None:
         success = payload.get("success", payload.get("status") == "completed")
         if success is not True or payload.get("status", "completed") != "completed":
@@ -1308,6 +1312,8 @@ class CodexAdapter(TranscriptAdapter):
                     path=str(path),
                     kind=kind,  # type: ignore[arg-type]
                     span=record.span(index, "payload.changes"),
+                    action_span=(call.span if call and call.name == "apply_patch"
+                                 and call.server in {None, "functions"} else None),
                     unified_diff=diff,
                     post_image=post,
                     at=stamp,
@@ -1687,6 +1693,8 @@ class DeepseekAdapter(TranscriptAdapter):
                     record_index=info["index"],
                 )
             return
+        if not call.ok:
+            return
         arguments = info["arguments"]
         path = arguments.get("path") or arguments.get("file_path")
         if not path:
@@ -1705,7 +1713,8 @@ class DeepseekAdapter(TranscriptAdapter):
                 ordinal=len(record.file_mutations),
                 path=str(path),
                 kind="create" if info["tool"] == "write_file" else "update",
-                span=record.span(index, "messages.content.tool_use"),
+                span=call.span,
+                action_span=call.span,
                 unified_diff=diff,
                 pre_image=pre,
                 post_image=post,
