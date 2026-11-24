@@ -114,8 +114,13 @@ def operator_passages(turn: Turn) -> Iterator[tuple[int, str]]:
         return
     result = _LOOP_RESULT.search(text)
     if result and (address := _LOOP_ADDRESS.search(text)):
-        yield from _loop_passages(text, address, result)
-        return
+        if not text.startswith(_CURRENT):
+            yield from _loop_passages(text, address, result)
+            return
+        # The loop scaffold can itself be quoted inside a live source, or
+        # the assignment can begin with a live frame. Don't mine its prefix.
+        if text.rfind(_END) < result.end():
+            return
     if not text.startswith(_CURRENT):
         if not text.startswith(_DIRECT) and not text.lstrip().startswith("[current input]"):
             yield 0, text
