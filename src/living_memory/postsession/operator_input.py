@@ -27,20 +27,23 @@ _OPERATOR_SECTION = re.compile(r"\n\nCurrent addressed input \([^\n]+; operator\
 # contract after it. Neither the assignment nor a peer body escapes headings.
 _LOOP_ADDRESS = re.compile(r"\nYour reply address is `[^`\n]+`\.\n")
 _LOOP_RESULT = re.compile(r"\n\n## (?:Loop work result|Diagnostic result)\nCurrent loop owner: ([^\n]+)\n")
-_LOOP_OPERATOR = re.compile(r"\n\n## Current operator input \((/[^\n]+)\)\n\n")
+_LOOP_OPERATOR = re.compile(r"\n\n## Current operator input \((?P<source>/[^\n]+)\)\n\n")
 _LOOP_BOUNDARY = re.compile(
-    r"\n\n## (?:Current (?:operator input|peer input|input \(authorship unknown\)) \(/[^\n]+\)\n\n"
+    r"\n\n## (?:Current (?:operator input|peer input|input \(authorship unknown\)) \("
     r"|Current input unavailable\n|(?:Loop work result|Diagnostic result)\nCurrent loop owner: )"
 )
 
 
-def _sections(text, start, header_pattern, boundaries, *, owner=None):
+def _sections(
+    text: str, start: int, header_pattern: re.Pattern, boundaries: re.Pattern, *, owner: str | None = None
+) -> Iterator[tuple[int, str]]:
     """Walk from an established input boundary. Only a bound body permits advancing."""
     while header := header_pattern.match(text, start):
         start = header.end()
-        if not text.startswith("<!-- ae-augment ", start) or (
-            owner is not None and header[1].endswith("/operator_inject.md")
-        ):
+        direct = owner is not None and header["source"].endswith("/operator_inject.md")
+        if direct or not text.startswith("<!-- ae-augment ", start):
+            if owner is not None and not direct:
+                return
             boundary = boundaries.search(text, start)
             if boundary:
                 yield start, text[start:boundary.start()]
@@ -78,9 +81,9 @@ def _sections(text, start, header_pattern, boundaries, *, owner=None):
             return
 
 
-def _loop_passages(text, result):
-    address = _LOOP_ADDRESS.search(text, 0, result.start())
-    if not address or _LOOP_ADDRESS.search(text, address.end()) or _LOOP_RESULT.search(text, result.end()):
+def _loop_passages(text: str, address: re.Match, result: re.Match) -> Iterator[tuple[int, str]]:
+    if (address.end() > result.start() or _LOOP_ADDRESS.search(text, address.end())
+            or _LOOP_RESULT.search(text, result.end())):
         return
     try:
         owner = json.loads(result[1])
@@ -101,19 +104,21 @@ def operator_passages(turn: Turn) -> Iterator[tuple[int, str]]:
     if turn.role not in {"user", "operator", "human"}:
         return
     text = turn.text or ""
-    if text.startswith(_DIRECT):
-        if text.endswith(_DIRECT_END):
-            yield len(_DIRECT), text[len(_DIRECT):-len(_DIRECT_END)]
+    if text.startswith(_DIRECT) and text.endswith(_DIRECT_END):
+        yield len(_DIRECT), text[len(_DIRECT):-len(_DIRECT_END)]
         return
-    if not text.lstrip().startswith("[current input]"):
-        result = _LOOP_RESULT.search(text)
-        if result and _LOOP_ADDRESS.search(text):
-            yield from _loop_passages(text, result)
-        elif not (text.startswith("# Tree Goal Node\n\n## Your Goal\n")
-                  and "\n## Execution Context\n\n### Execution Worktree\n" in text):
-            yield 0, text
+    # A tree assignment and its rendered guidance can both contain literal
+    # source headings. The flattened prompt doesn't delimit the assignment.
+    if (text.startswith("# Tree Goal Node\n\n## Your Goal\n")
+            and "\n## Execution Context\n\n### Execution Worktree\n" in text):
+        return
+    result = _LOOP_RESULT.search(text)
+    if result and (address := _LOOP_ADDRESS.search(text)):
+        yield from _loop_passages(text, address, result)
         return
     if not text.startswith(_CURRENT):
+        if not text.startswith(_DIRECT) and not text.lstrip().startswith("[current input]"):
+            yield 0, text
         return
 
     start = len(_CURRENT)
