@@ -1042,7 +1042,9 @@ class ClaudeAdapter(TranscriptAdapter):
         from_human = entry.get("origin") == human and not any(
             field in entry for field in ("toolUseResult", "sourceToolAssistantUUID", "mcpMeta")
         )
-        feedback = entry.get("userFeedback") if suffix == 1 else None
+        feedback = None
+        if suffix == 1 and blocks[0].get("is_error") is True:
+            feedback = entry.get("userFeedback")
         for i in range(suffix, len(blocks)):
             block = blocks[i]
             if not isinstance(block, dict) or block.get("type") != "text":

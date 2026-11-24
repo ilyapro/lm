@@ -148,6 +148,7 @@ def test_mixed_claude_keeps_result_and_human_coordinates(tmp_path):
 
 @pytest.mark.parametrize(("content", "metadata"), [
     ([RESULT, FIX], {}),
+    ([RESULT, FIX], {"userFeedback": FIX["text"]}),
     ([RESULT, FIX], {"origin": {"kind": "peer"}}),
     ([RESULT, FIX], {"origin": {"kind": "human"}, "isMeta": True}),
     ([RESULT, FIX], {"origin": {"kind": "human"}, "sourceToolAssistantUUID": "tool-owner"}),
