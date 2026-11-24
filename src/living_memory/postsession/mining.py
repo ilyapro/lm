@@ -735,7 +735,6 @@ def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[
         if not text or not command:
             continue
         measuring = MEASURE_COMMANDS.search(command) is not None
-        eligible = _MEASURED_NUMBER if measuring else UNIT_NUMBER
         command_numbers = set(_WHOLE_VALUE.findall(command))
         counts = Counter(_WHOLE_VALUE.findall(text))
         matches = []
@@ -744,7 +743,8 @@ def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[
             if token in command_numbers or counts[token] > 3 or _noise_number(token):
                 continue
             magnitude = token.lstrip("+-")
-            if eligible.match(magnitude):
+            qualified = _MEASURED_NUMBER.match(magnitude)
+            if qualified and (measuring or UNIT_NUMBER.fullmatch(qualified.group())):
                 matches.append(match)
         if not matches:
             continue

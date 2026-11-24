@@ -4,19 +4,19 @@ import json
 
 import pytest
 
-from living_memory.postsession.insights import extract_session
+from living_memory.postsession.insights import ExtractionConfig, extract_session
 from living_memory.postsession.judge import FakeJudge
 from living_memory.postsession.mining import MiningConfig, mine
 from living_memory.postsession.transcripts import TranscriptRef, load_transcript
 
 
-def transcript(tmp_path, output, decisions, *, diff=False):
+def transcript(tmp_path, output, decisions, *, diff=False, command="wc -l demo.txt"):
     def message(role, block, **fields):
         return {"type": role, "message": {"role": role, "content": [block]}, **fields}
 
     rows = [
         message("assistant", {"type": "tool_use", "id": "count", "name": "Bash",
-                              "input": {"command": "wc -l demo.txt"}}),
+                              "input": {"command": command}}),
         message("user", {"type": "tool_result", "tool_use_id": "count", "content": output}),
     ]
     if diff:
@@ -76,3 +76,59 @@ def test_output_order_then_first_eligible_decision(tmp_path):
     candidate, = mine(record, config=MiningConfig(lookahead_records=2))
     assert candidate.signals["reused_number"] == "812"
     assert candidate.evidence[-1].locator == record.span(2, "text").locator()
+
+
+@pytest.mark.parametrize("noise", ["9" * 4500, "13740 23740 33740", "-374 +374 -374"])
+def test_useful_measurement_survives_other_output_fields(tmp_path, noise):
+    output = noise + "\n" + " " * 500 + "374 demo.txt"
+    decision = "limit = 374"
+    record = transcript(tmp_path, output, [decision])
+    judge = FakeJudge([{"verdict": "none", "reason": "synthetic"}])
+    result = extract_session(record, judge=judge)
+    assert result.candidates == result.judge_calls == 1
+    assert judge.calls[0]["payload"]["evidence"][1:] == [
+        {"quote": "374 demo.txt", "locator": record.tool_calls[0].result_span.locator()},
+        {"quote": decision, "locator": record.span(2, "text").locator()},
+    ]
+
+
+@pytest.mark.parametrize("diff", [False, True])
+@pytest.mark.parametrize(("value", "other"), [
+    ("-374", "374"), ("+374", "-374"), ("374", "+374"),
+    ("-3,74 ms", "+3,74 ms"), ("+0.25 MB", "0.25 MB"),
+])
+def test_only_same_signed_value_can_supply_evidence(tmp_path, diff, value, other):
+    prefix = "+" if diff else ""
+    false = prefix + "limit = " + other
+    exact = "limit = " + value
+    record = transcript(tmp_path, value, [false], diff=diff)
+    judge = FakeJudge()
+    assert extract_session(record, judge=judge).candidates == 0
+    assert not judge.calls
+    record = transcript(tmp_path, value, [false, prefix + exact], diff=diff)
+    judge = FakeJudge([{"verdict": "none", "reason": "synthetic"}])
+    assert extract_session(record, judge=judge).judge_calls == 1
+    source = record.span(3, "toolUseResult") if diff else record.span(3, "text")
+    assert judge.calls[0]["payload"]["evidence"][-1] == {"quote": exact, "locator": source.locator()}
+
+
+@pytest.mark.parametrize(("output", "value", "command"), [
+    ("-374 -374 -374 -374", "-374", "wc -l demo.txt"),
+    ("100644 2026 1755561234567", "100644 2026 1755561234567", "wc -l demo.txt"),
+    ("-374", "-374", "wc -l sample-374"),
+    ("374", "374", "cat demo.txt"),
+])
+def test_noise_and_command_filters_precede_judging(tmp_path, output, value, command):
+    record = transcript(tmp_path, output, ["limit = " + value], command=command)
+    judge = FakeJudge()
+    assert extract_session(record, judge=judge).candidates == 0
+    assert not judge.calls
+
+
+def test_three_exact_repetitions_remain_eligible_within_lookahead(tmp_path):
+    record = transcript(tmp_path, "-374 -374 -374 -3740", ["limit = +374", "limit = -374"])
+    for window, expected in [(1, 0), (2, 1)]:
+        judge = FakeJudge([{"verdict": "none", "reason": "synthetic"}])
+        config = ExtractionConfig(mining=MiningConfig(lookahead_records=window))
+        result = extract_session(record, judge=judge, config=config)
+        assert result.candidates == result.judge_calls == expected
