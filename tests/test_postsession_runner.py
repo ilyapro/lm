@@ -209,6 +209,35 @@ def test_gate_extracted_vs_control_decision_rule(
         assert any(needle in reason for reason in decision.reasons)
 
 
+@pytest.mark.parametrize(("role", "block", "field", "value"), [
+    ("verdict", "selfcheck", "cohort_kind", "extracted_unsupported"),
+    ("verdict", "selfcheck", "cohort_kind", None),
+    ("verdict", "selfcheck", "cohort_nodes", 0),
+    ("verdict", "selfcheck", "counterfactual_rate", float("nan")),
+    ("control", "selfcheck", "cohort_kind", "organicity"),
+    ("control", "selfcheck", "passed", "false"),
+    ("control", "selfcheck", "counterfactual_rate", True),
+    ("control", "meta", "artifact", "other"),
+    ("control", "meta", "generated_at_utc", "2025-01-01"),
+    ("both", "meta", "as_of", None),
+    ("both", "protocol", "min_containment", None),
+    ("both", "protocol", "within_days", None),
+])
+def test_gate_requires_measured_report_facts(tmp_path, role, block, field, value):
+    verdict = write_verdict(tmp_path / "verdict.json", cohort_kind="extracted_eval", passed=False)
+    control = write_verdict(tmp_path / "control.json")
+    assert evaluate_gate(BASELINE, verdict, control, now=NOW).authorized
+    for name, path in (("verdict", verdict), ("control", control)):
+        if role in (name, "both"):
+            report = json.loads(path.read_text())
+            if value is None:
+                del report[block][field]
+            else:
+                report[block][field] = value
+            path.write_text(json.dumps(report))
+    assert not evaluate_gate(BASELINE, verdict, control, now=NOW).authorized
+
+
 def test_gate_inadmissible_control_is_inconclusive_never_pass(tmp_path: Path) -> None:
     # Control below min_control_rate_by_protocol[counterfactual]=0.1, and an
     # extracted rate that would clear every floor if the control were usable.

@@ -505,6 +505,43 @@ def test_cli_last_bootstrap_slot_in_batch(tmp_path, bootstrap_cli):
     assert [e[0] for e in client.effects] == ["Correction", "event", "New fact"]
 
 
+def test_cli_measured_pair_with_over_limit_ledger(tmp_path, bootstrap_cli):
+    invoke, batches, client = bootstrap_cli
+    record = make_record()
+    batches["batch"] = SessionProposals(record, ops=[make_remember(record, "Applied")])
+    args = ("--write", "--transcript", "batch")
+    assert invoke(*args) == 0
+    batches["batch"].ops.append(make_remember(record, "Reply lost"))
+    client.failure = ClientError("reply lost")
+    assert invoke(*args, measured=True) == EXIT_UNKNOWN
+    client.failure = None
+    assert Ledger(tmp_path).written_nodes_total() == 2
+
+    fixtures = Path(__file__).parent / "fixtures" / "postsession"
+    control = tmp_path / "organic.json"
+    data = json.loads((fixtures / "gate-control.json").read_text())
+    data["selfcheck"]["cohort_kind"] = "organic_holdout"
+    control.write_text(json.dumps(data))
+    verdict = tmp_path / "verdict.json"
+    verdict.write_bytes(control.read_bytes())
+    batches["batch"].ops.extend(make_remember(record, name) for name in ("Third", "Fourth"))
+    report = tmp_path / "report.json"
+    args += ("--gate-verdict", str(verdict), "--out", str(report), "--max-total-ops", "1")
+
+    assert invoke(*args) == EXIT_GATE
+    assert json.loads(report.read_text())["gate"]["status"] == "FAIL"
+    assert invoke(*args, "--gate-control", str(control)) == EXIT_GATE
+    assert [e[0] for e in client.effects] == ["Applied", "Reply lost"]
+
+    data["selfcheck"].update(cohort_kind="extracted_holdout", cohort_nodes=25,
+                             counterfactual_rate=0.16, passed=False)
+    verdict.write_text(json.dumps(data))
+    assert invoke(*args, "--gate-control", str(control)) == EXIT_UNKNOWN
+    assert json.loads(report.read_text())["gate"]["mode"] == "extracted_vs_control"
+    assert [e[0] for e in client.effects] == ["Applied", "Reply lost", "Third"]
+    assert [e["state"] for e in Ledger(tmp_path).entries()] == ["applied", "unknown", "applied"]
+
+
 def test_cli_concurrent_bootstrap_admission(tmp_path, bootstrap_cli, monkeypatch):
     invoke, batches, client = bootstrap_cli
     record = make_record()
