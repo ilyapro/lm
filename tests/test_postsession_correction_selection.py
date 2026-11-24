@@ -12,7 +12,6 @@ from living_memory.postsession.judge import FakeJudge, PromptConfig
 from living_memory.postsession.session import (
     DeliveredNode, RecallInteraction, SessionRecord, SourceSpan, ToolCall, WriteInteraction,
 )
-
 from living_memory.postsession.transcripts import TranscriptRef, load_transcript
 
 SOURCE = "claude"
@@ -240,7 +239,6 @@ def test_repeated_deliveries_skip_already_taught_but_recovery_judges_once():
 
 @pytest.mark.parametrize("output_after_delivery", [False, True])
 def test_interleaved_recall_and_command_results(tmp_path, output_after_delivery):
-
     def call(key, name, args):
         return {"type": "tool_use", "id": key, "name": name, "input": args}
 

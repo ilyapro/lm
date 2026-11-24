@@ -677,7 +677,7 @@ class Candidate:
 
 def _delivery_index(recall: RecallInteraction) -> int:
     """Use the latest known boundary of the recall round trip."""
-    return max(recall.record_index, recall.span.record_index, recall.span.end_record_index or 0)
+    return max(recall.record_index, recall.span.end_record_index or recall.span.record_index)
 
 
 def candidates(
@@ -717,6 +717,7 @@ def candidates(
     seen: set[str] = set()
     built: list[Candidate] = []
     for recall in record.recalls:
+        delivery_index = _delivery_index(recall)
         for node in recall.delivered:
             if wanted is not None and node.node_id not in wanted:
                 continue
@@ -736,7 +737,6 @@ def candidates(
                 continue
 
             scored: list[tuple[Observation, float, tuple[str, ...]]] = []
-            delivery_index = _delivery_index(recall)
             for item in observed:
                 if item.record_index <= delivery_index:
                     continue
