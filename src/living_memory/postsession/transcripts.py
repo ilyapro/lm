@@ -58,7 +58,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
-from typing import Any, Iterable, Iterator
+from typing import Any, Iterable, Iterator, TextIO
 
 from .session import (
     MEMORY_SERVER,
@@ -2085,7 +2085,7 @@ class AeNodeResultAdapter(TranscriptAdapter):
                     continue
             except OSError:
                 continue
-            header = self._read_header(path)
+            header = self._read_header(path, keys=("session id",))
             session_id = header.get("session id")
             project = path.relative_to(root).parts[0]
             goal_path = self._goal_path(path, root)
@@ -2126,31 +2126,116 @@ class AeNodeResultAdapter(TranscriptAdapter):
                 header[match.group(1).strip()] = match.group(2).strip()
         return header
 
-    @classmethod
-    def _read_header(cls, path: Path, limit: int = 24) -> dict[str, str]:
-        """Parse the banner without reading past it."""
+    _CHUNK = 1 << 15
 
+    @classmethod
+    def _read_header(cls, path: Path, *, keys: tuple[str, ...]) -> dict[str, str]:
+        """Locate the final selected fields before materializing their values."""
+        header: dict[str, str] = {}
+        ranges: dict[str, tuple[int, int, int]] = {}
+        longest = max(map(len, keys))
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as handle:
-                return cls.parse_header(handle, limit)
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                for _ in range(24):
+                    cookie = handle.tell()
+                    piece = handle.readline(cls._CHUNK)
+                    if not piece:
+                        break
+                    if piece.startswith("OpenAI Codex"):
+                        header["_cli"] = "codex"
+                    key: str | None = ""
+                    in_value = False
+                    start = end = None
+                    offset = 0
+                    while piece:
+                        part = piece.removesuffix("\n")
+                        if key is not None and not in_value:
+                            left, colon, part = part.partition(":")
+                            offset += len(left) + len(colon)
+                            candidate = key + (left if key else left.lstrip())
+                            # Padding before the colon may span many chunks.
+                            key = (None if candidate[longest:].strip(" ")
+                                   else candidate[:longest])
+                            if colon and key is not None:
+                                key = key.rstrip(" ")
+                                in_value = key in keys
+                                if not in_value:
+                                    key = None
+                        if in_value and part:
+                            if start is None:
+                                stripped = part.lstrip()
+                                if stripped:
+                                    start = offset + len(part) - len(stripped)
+                            trimmed = part.rstrip()
+                            if trimmed:
+                                end = offset + len(trimmed)
+                            # A whitespace-only value matches, an absent value doesn't.
+                            ranges[key] = (cookie, start or 0, (end or 0) - (start or 0))
+                        offset += len(part)
+                        if piece.endswith("\n"):
+                            break
+                        piece = handle.readline(cls._CHUNK)
+
+                for key, (cookie, skip, length) in ranges.items():
+                    handle.seek(cookie)
+                    while skip:
+                        skip -= len(handle.read(min(skip, cls._CHUNK)))
+                    header[key] = handle.read(length)
         except OSError:
             return {}
+        return header
+
+    @classmethod
+    def _read_tail(cls, handle: TextIO) -> tuple[int, str, bool]:
+        # Keep a seek position per chunk containing a newline. At most 400
+        # such chunks can separate the start of the selected lines from EOF.
+        chunks: deque[tuple[int, int]] = deque(maxlen=RESULT_TAIL_LINES + 1)
+        newlines = 0
+        cookie = 0
+        chunk = handle.read(cls._CHUNK)
+        if not chunk:
+            return 0, "", False
+        while True:
+            breaks = chunk.count("\n")
+            if breaks:
+                chunks.append((newlines, cookie))
+                newlines += breaks
+            if len(chunk) < cls._CHUNK:
+                break
+            next_cookie = handle.tell()
+            following = handle.read(cls._CHUNK)
+            if not following:
+                break
+            cookie, chunk = next_cookie, following
+
+        count = newlines + int(not chunk.endswith("\n"))
+        omit = max(0, count - RESULT_TAIL_LINES)
+        before, anchor = next(((n, c) for n, c in reversed(chunks) if n < omit), (0, 0))
+        last_chunk = anchor == cookie
+        if not last_chunk:
+            handle.seek(anchor)
+            chunk = handle.read(cls._CHUNK)
+        start = 0
+        for _ in range(omit - before):
+            start = chunk.index("\n", start) + 1
+        text = chunk[start:]
+        if not last_chunk:
+            # One lookahead character for clipping and one for a final newline.
+            text += handle.read(MAX_BLOB_CHARS + 2 - len(text))
+        text = text.removesuffix("\n")
+        return count, text[:MAX_BLOB_CHARS], len(text) > MAX_BLOB_CHARS or bool(omit)
 
     def _parse(self, ref: TranscriptRef, path: Path, sha256: str | None) -> SessionRecord:
         record = self._new_record(ref, sha256)
-        header = self._read_header(path)
+        header = self._read_header(path, keys=("session id", "model", "workdir"))
         record.model = header.get("model")
         record.cwd = header.get("workdir")
         record.cli_session_id = header.get("session id") or ref.cli_session_id
-        tail: deque[tuple[int, str]] = deque(maxlen=RESULT_TAIL_LINES)
-        count = 0
-        for index, line in iter_text_lines(path):
-            count = index + 1
-            tail.append((index, line))
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            count, text, truncated = self._read_tail(handle)
         record.record_count = count
-        if tail:
-            start = tail[0][0]
-            text, truncated = _clip("\n".join(line for _, line in tail))
+        if count:
+            start = max(0, count - RESULT_TAIL_LINES)
             record.turns.append(
                 Turn(
                     0,
@@ -2159,7 +2244,7 @@ class AeNodeResultAdapter(TranscriptAdapter):
                     None,
                     record.span(start, "tail"),
                     cli=ref.cli,
-                    truncated=truncated or count > RESULT_TAIL_LINES,
+                    truncated=truncated,
                 )
             )
         if not ref.linked_session_ids and record.cli_session_id:
