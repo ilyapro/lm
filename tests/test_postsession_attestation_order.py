@@ -6,7 +6,7 @@ import json
 from living_memory.attestation import EVIDENCE_MAX_ITEMS
 from living_memory.postsession.evidence import assemble_evidence, proposed_attestations
 from living_memory.postsession.runner import ExtractionRunner, Ledger, RunnerConfig, op_fingerprint
-from living_memory.postsession.transcripts import TranscriptRef, load_transcript
+from living_memory.postsession.transcripts import TranscriptRef, load_transcript, sha256_file
 
 
 def call(call_id, name, **arguments):
@@ -30,7 +30,7 @@ def delivery(event):
 def read(tmp_path, rows, source="claude"):
     path = tmp_path / "synthetic.jsonl"
     path.write_text("".join(json.dumps(row) + "\n" for row in rows))
-    return load_transcript(TranscriptRef(source, source, path, "synthetic"))
+    return load_transcript(TranscriptRef(source, source, path, "synthetic"), sha256=sha256_file(path))
 
 
 def test_runner_bounds_each_delivery_after_selecting_actions(tmp_path):
