@@ -28,6 +28,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from uuid import UUID
 
 import pytest
 
@@ -60,7 +61,11 @@ from living_memory.postsession.corpus import (  # noqa: E402
     write_corpus,
     write_manifest,
 )
-from living_memory.postsession.transcripts import Roots  # noqa: E402
+from living_memory.postsession.transcripts import (  # noqa: E402
+    AeNodeResultAdapter,
+    IndexedTranscriptMismatch,
+    Roots,
+)
 from test_postsession_transcripts import (  # noqa: E402
     AE_CODEX_SID,
     AGENT_STEM,
@@ -177,6 +182,73 @@ def test_corpus_covers_every_fixture_transcript(corpus: Corpus) -> None:
         "gigacode": 1,
     }
     assert {entry.split for entry in corpus.entries} == set(SPLITS)
+
+
+@pytest.mark.parametrize("linked", [True, False])
+def test_result_replacement_groups_and_loads_the_sealed_banner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, linked: bool
+) -> None:
+    old_id, new_id = str(UUID(int=1)), str(UUID(int=4))
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    for sid in (old_id, new_id):
+        (sessions / f"rollout-{sid}.jsonl").write_text("{}\n")
+    path = tmp_path / "demo/state/goals/g3/result.md"
+    path.parent.mkdir(parents=True)
+    old = f"OpenAI Codex v1\nsession id: {old_id}\nmodel: A\n".encode()
+    new = b"model: B\nworkdir: /demo\n"
+    if linked:
+        # A late override on a line too wide for the generic head sampler.
+        new += f"session id: {old_id}\r".encode() + b" " * (MAX_PROBE_LINE + 1)
+        new += f"session id: {new_id}\r\n".encode()
+    path.write_bytes(new)
+    roots = Roots(ae_projects=tmp_path, codex_sessions=(sessions,))
+    stable = build_corpus(roots, generated_at="fixed")
+    (direct,) = AeNodeResultAdapter().discover(roots)
+    expected_id = new_id if linked else None
+    expected_links = (new_id,) if linked else ()
+    assert (direct.cli, direct.cli_session_id, direct.linked_session_ids) == (
+        "unknown", expected_id, expected_links
+    )
+    direct_record = AeNodeResultAdapter().load(direct)
+    assert direct_record.cli_session_id == expected_id
+    assert direct_record.linked_session_ids == expected_links
+
+    path.write_bytes(old)
+    discover = AeNodeResultAdapter.discover
+
+    def replace_after_discovery(adapter, roots):
+        for ref in discover(adapter, roots):
+            assert ref.cli_session_id == old_id
+            replacement = path.with_suffix(".new")
+            replacement.write_bytes(new)
+            replacement.replace(path)
+            yield ref
+
+    monkeypatch.setattr(AeNodeResultAdapter, "discover", replace_after_discovery)
+    corpus = build_corpus(roots, generated_at="fixed")
+    assert corpus == stable
+    _, index = write_corpus(corpus, tmp_path / "manifest.json")
+    rows = {entry.session_key: entry for entry in read_index(index)}
+    node = rows["ae_node:demo:g3"]
+    twin = rows[f"codex:{new_id}"]
+    assert node.cli == "unknown"
+    assert node.cli_session_id == expected_id
+    assert node.linked_session_ids == expected_links
+    assert node.sha256 == hashlib.sha256(new).hexdigest()
+    assert node.group_size == (2 if linked else 1)
+    assert node.split == "train"
+    assert twin.split == ("train" if linked else "holdout")
+    assert (node.split_key == twin.split_key) == linked
+    assert rows[f"codex:{old_id}"].group_size == 1
+    record = load_session(node)
+    assert record.cli_session_id == expected_id
+    assert record.linked_session_ids == expected_links
+    assert record.transcript_sha256 == node.sha256
+    assert record.model == "B"
+    path.write_bytes(old)
+    with pytest.raises(IndexedTranscriptMismatch):
+        load_session(node)
 
 
 def test_index_records_hashes_and_metadata(corpus: Corpus) -> None:
