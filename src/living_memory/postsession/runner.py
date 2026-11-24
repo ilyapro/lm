@@ -198,24 +198,34 @@ def _check_report(
 ) -> GateDecision | None:
     meta = report.get("meta")
     if not isinstance(meta, dict) or meta.get("artifact") != "counterfactual_consumption":
-        return GateDecision("MISSING", reasons=(f"{label}: expected counterfactual_consumption artifact",), details=details)
+        return GateDecision(
+            "MISSING", reasons=(f"{label}: expected counterfactual_consumption artifact",),
+            details=details,
+        )
     generated_at = _parse_instant(meta.get("generated_at_utc"))
     details[f"{label}_generated_at"] = meta.get("generated_at_utc")
     if generated_at is None:
-        return GateDecision("STALE", reasons=(f"{label}: invalid meta.generated_at_utc",), details=details)
+        return GateDecision(
+            "STALE", reasons=(f"{label}: invalid meta.generated_at_utc",), details=details,
+        )
     age = (now - generated_at).total_seconds() / 86400
     details[f"{label}_age_days"] = round(age, 2)
     if not -1 <= age <= max_age_days:
         return GateDecision(
-            "STALE", reasons=(f"{label} age {age:.2f} days is outside the allowed window; "
-                              "re-run scripts/counterfactual_consumption.py before writing",),
+            "STALE",
+            reasons=(
+                f"{label} age {age:.2f} days is outside the allowed window; "
+                "re-run scripts/counterfactual_consumption.py before writing",
+            ),
             details=details,
         )
 
     check = report.get("selfcheck")
     protocol = report.get("protocol")
     if not isinstance(check, dict) or not isinstance(protocol, dict):
-        return GateDecision("MISSING", reasons=(f"{label}: expected protocol and selfcheck blocks",), details=details)
+        return GateDecision(
+            "MISSING", reasons=(f"{label}: expected protocol and selfcheck blocks",), details=details,
+        )
 
     problems = []
     if type(check.get("cohort_nodes")) is not int or check["cohort_nodes"] <= 0:
@@ -224,8 +234,10 @@ def _check_report(
         problems.append(f"{label}: expected a counterfactual_rate in [0, 1]")
     if _parse_instant(meta.get("as_of")) is None or _parse_instant(protocol.get("replay_since")) is None:
         problems.append(f"{label}: expected as_of and replay_since instants")
-    if not _fraction(protocol.get("min_containment")) or type(protocol.get("within_days")) is not int:
-        problems.append(f"{label}: invalid min_containment or within_days")
+    if not _fraction(protocol.get("min_containment")):
+        problems.append(f"{label}: invalid min_containment")
+    if type(protocol.get("within_days")) is not int or protocol["within_days"] < 0:
+        problems.append(f"{label}: invalid within_days")
     if problems:
         return GateDecision("INCONCLUSIVE", reasons=tuple(problems), details=details)
     return None
@@ -253,14 +265,14 @@ def _control_admissibility(
             f"{label}: the harness did not self-validate on this control "
             "(selfcheck.passed is false) — it may not judge anything"
         )
-    nodes = int(selfcheck.get("cohort_nodes") or 0)
+    nodes = selfcheck["cohort_nodes"]
     if nodes < min_nodes:
         problems.append(
             f"{label}: control cohort holds {nodes} nodes, below "
             f"min_control_nodes {min_nodes} — it cannot discriminate"
         )
-    rate = selfcheck.get("counterfactual_rate")
-    if rate is None or float(rate) < min_rate:
+    rate = selfcheck["counterfactual_rate"]
+    if rate < min_rate:
         problems.append(
             f"{label}: control rate {rate!r} falls below "
             f"min_control_rate_by_protocol[{pinned}]={min_rate}"
@@ -269,8 +281,8 @@ def _control_admissibility(
 
 
 def _protocol_fields(report: Mapping[str, Any]) -> dict[str, Any]:
-    protocol = report.get("protocol") or {}
-    meta = report.get("meta") or {}
+    protocol = report["protocol"]
+    meta = report["meta"]
     return {
         "as_of": meta.get("as_of"),
         "replay_since": protocol.get("replay_since"),
@@ -358,7 +370,7 @@ def evaluate_gate(
     # ---- bootstrap: the verdict IS the organic control ---------------------
     if cohort_kind in _ORGANIC_KINDS and control_path is None:
         problems = _control_admissibility(selfcheck, bar, pinned, "control")
-        replay_since = str((_protocol_fields(verdict) or {}).get("replay_since") or "")
+        replay_since = verdict["protocol"]["replay_since"]
         if validated_by and replay_since < validated_by:
             problems.append(
                 f"control replayed traffic from {replay_since!r}, before the "
@@ -395,8 +407,9 @@ def evaluate_gate(
     # ---- extracted cohort against a concurrent organic control ------------
     if cohort_kind not in _EXTRACTED_KINDS:
         return GateDecision(
-            "INCONCLUSIVE", reasons=(f"verdict cohort_kind {cohort_kind!r} "
-                                     "does not identify an extracted cohort",), details=details,
+            "INCONCLUSIVE",
+            reasons=(f"verdict cohort_kind {cohort_kind!r} does not identify an extracted cohort",),
+            details=details,
         )
     if control_path is None:
         return GateDecision(
@@ -432,7 +445,7 @@ def evaluate_gate(
             ),
             details,
         )
-    replay_since = str(ours.get("replay_since") or "")
+    replay_since = ours["replay_since"]
     problems = _control_admissibility(control_check, bar, pinned, "control")
     if validated_by and replay_since < validated_by:
         problems.append(
