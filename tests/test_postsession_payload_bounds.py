@@ -158,3 +158,50 @@ def test_bounding_redacts_complete_values_before_cutting():
     assert built.payload_truncated
     assert "dummy-value" not in built.user_prompt
     assert "API_TOKEN=<redacted>" in built.user_prompt
+
+
+def _prompt_payload(payload, budget):
+    built = build_prompt("check", SCHEMA, payload, config=PromptConfig(max_payload_bytes=budget))
+    assert built.payload_truncated
+    text = built.user_prompt.split("# Payload\n", 1)[1].split("\n\nReply", 1)[0]
+    assert len(text.encode("utf-8")) <= budget
+    return json.loads(text)
+
+
+@pytest.mark.parametrize("key", ["file.name", "array[0]", ""])
+@pytest.mark.parametrize("source", ["x" * 2500, list(range(400))], ids=["string", "list"])
+def test_prompt_cuts_literal_key_only(key, source):
+    siblings = {"file": {"name": "keep"}, "array": ["keep"]}
+    payload = {**siblings, key: source}
+    before = canonical_json(payload)
+    bounded = _prompt_payload(payload, 800)
+    cut = bounded.pop(key)
+    assert bounded == siblings
+    if isinstance(source, str):
+        kept, marker = cut.split("… [truncated, ")
+        assert kept == source[:len(kept)]
+        assert marker == f"{len(source) - len(kept)} chars omitted]"
+    else:
+        assert cut[:-1] == source[:len(cut) - 1]
+        assert cut[-1] == f"… [truncated, {len(source) - len(cut) + 1} items omitted]"
+    assert canonical_json(payload) == before
+    with pytest.raises(JudgePayloadTooLarge):
+        _prompt_payload(payload, 1)
+
+
+def test_same_display_path_counts_each_string_separately():
+    payload = {"array[0]": "a" * 900, "array": ["b" * 900]}
+    expected = {
+        "array[0]": "a" * 630 + "… [truncated, 270 chars omitted]",
+        "array": ["b" * 630 + "… [truncated, 270 chars omitted]"],
+    }
+    budget = len(canonical_json(expected).encode("utf-8"))
+    assert _prompt_payload(payload, budget) == expected
+    assert _prompt_payload(dict(reversed(payload.items())), budget) == expected
+
+
+def test_index_tie_uses_display_order():
+    payload = [""] * 9 + ["x" * 300, "y" * 300]
+    expected = payload.copy()
+    expected[9] = "x" * 210 + "… [truncated, 90 chars omitted]"
+    assert _prompt_payload(payload, len(canonical_json(expected).encode("utf-8"))) == expected
