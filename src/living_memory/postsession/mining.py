@@ -390,11 +390,13 @@ MEASURE_COMMANDS = re.compile(
     re.IGNORECASE,
 )
 
+_WORD_UNITS = r"ms|µs|us|ns|sec|s|min|MB|KB|GB|TB|kb|mb|gb|req/s|rps|qps"
+
 #: A number carrying a unit, a percentage or real precision -- the shape that
 #: means "we measured something" rather than "a digit occurred".
 UNIT_NUMBER = re.compile(
-    r"\b\d+(?:[.,]\d+)?\s?(?:%|ms|µs|us|ns|sec|s|min|MB|KB|GB|TB|kb|mb|gb"
-    r"|req/s|rps|qps)\b|\b\d+\.\d{2,}\b"
+    rf"\b\d+(?:[.,]\d+)?\s?(?:%|{_WORD_UNITS})\b"
+    r"|\b\d+\.\d{2,}\b"
 )
 
 #: File modes, years and epoch stamps look like measurements and never are.
@@ -446,8 +448,14 @@ CORRECTION_MARKERS = re.compile(
 
 #: Numbers worth calling a measurement: a unit, a decimal, or >= 3 digits.
 _MEASURED_NUMBER = re.compile(
-    r"\b\d+(?:[.,]\d+)?\s?(?:%|ms|µs|us|ns|sec|s|min|MB|KB|GB|TB|kb|mb|gb"
-    r"|req/s|rps|qps|px)\b|\b\d+\.\d{2,}\b|\b\d{3,}\b"
+    rf"\b\d+(?:[.,]\d+)?\s?(?:%|{_WORD_UNITS}|px)\b"
+    r"|\b\d+\.\d{2,}\b|\b\d{3,}\b"
+)
+
+# Reuse compares the entire value, including precision and any unit, even
+# when only its integer part qualified it as a measurement.
+_WHOLE_VALUE = re.compile(
+    rf"(?<!\d[.,])\b\d+(?:[.,]\d+)?(?:\s?(?:%|(?:{_WORD_UNITS}|px)\b)|\b)(?![.,]\d)"
 )
 
 
@@ -713,13 +721,11 @@ def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[
         if turn.role == "assistant"
     ]
     for mutation in record.file_mutations:
-        added = "\n".join(
-            line[1:]
+        later_texts.extend(
+            (mutation.span, line[1:])
             for line in (mutation.unified_diff or "").splitlines()
             if line.startswith("+") and not line.startswith("+++")
         )
-        if added:
-            later_texts.append((mutation.span, added))
     later_texts.sort(key=lambda item: item[0].record_index)
 
     for call in record.tool_calls:
@@ -741,24 +747,30 @@ def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[
         if not matches:
             continue
         result_span = _result_span(call)
-        reused: tuple[str, SourceSpan, str] | None = None
+        reused: tuple[re.Match[str], SourceSpan, str] | None = None
         for match in matches:
-            token = match.group(0)
-            if len(token.strip()) < 3:
+            value = _WHOLE_VALUE.match(text, match.start())
+            if value is None or len(match.group(0).strip()) < 3:
                 continue
+            token = value.group()
             for span, later_text in later_texts:
                 if not _follows_within(result_span, span, config.lookahead_records):
                     continue
-                position = later_text.find(token)
-                if position == -1:
+                if token not in later_text:
+                    continue
+                occurrence = next(
+                    (other for other in _WHOLE_VALUE.finditer(later_text) if other.group() == token),
+                    None,
+                )
+                if occurrence is None:
                     continue
                 reused = (
-                    token,
+                    value,
                     span,
                     quote_window(
                         later_text,
-                        position,
-                        position + len(token),
+                        occurrence.start(),
+                        occurrence.end(),
                         before=config.quote_before,
                         after=config.quote_before,
                     ),
@@ -768,10 +780,7 @@ def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[
                 break
         if reused is None and config.require_number_reuse:
             continue
-        token, reuse_span, reuse_quote = reused or ("", call.span, "")
-        anchor = next(
-            (match for match in matches if match.group(0) == token), matches[0]
-        )
+        anchor, reuse_span, reuse_quote = reused or (matches[0], call.span, "")
         result_quote = quote_window(
             text,
             anchor.start(),
@@ -794,7 +803,7 @@ def _mine_measurements(record: SessionRecord, config: MiningConfig) -> Iterator[
             identifiers=hard_identifiers(result_quote),
             signals={
                 "command": command,
-                "reused_number": token,
+                "reused_number": anchor.group() if reused else "",
                 "measuring_command": measuring,
                 "numbers": [match.group(0) for match in matches[:8]],
             },
