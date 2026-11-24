@@ -2,12 +2,14 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+from dataclasses import replace
 import importlib.util
 import json
 from pathlib import Path
 import sqlite3
 import subprocess
 import sys
+import weakref
 
 import pytest
 
@@ -251,6 +253,103 @@ def _record():
         ],
         file_mutations=[FileMutation(0, "src/app.py", "update", span(20), unified_diff="@@\n+ok\n")],
     )
+
+
+class _TrackedRecord(SessionRecord):
+    __slots__ = ("__weakref__",)
+
+
+def _mining_record(entry, count):
+    template = _record()
+    record = _TrackedRecord(
+        entry.session_key, "claude", "claude", entry.path, repo=template.repo,
+        transcript_sha256=entry.sha256, transport_session_ids=template.transport_session_ids,
+    )
+    for index in range(count):
+        def shifted(span):
+            return replace(span, path=entry.path, record_index=span.record_index + 40 * index)
+
+        for call in template.tool_calls:
+            record.tool_calls.append(replace(call, span=shifted(call.span)))
+        mutation, = template.file_mutations
+        record.file_mutations.append(replace(mutation, span=shifted(mutation.span)))
+    return record
+
+
+@pytest.mark.parametrize("workers", [1, 3])
+@pytest.mark.parametrize(("budget", "cap", "selected"), [
+    (-1, 2, []),
+    (0, 2, []),
+    (1, 2, [0]),
+    (3, 2, [2, 0]),
+    (5, 2, [2, 3, 0]),
+    (100, 2, [2, 3, 0, 1]),
+    (0, 0, [2, 3, 0, 1]),
+])
+def test_extraction_budget_releases_skipped_records(cli, monkeypatch, workers, budget, cap, selected):
+    # Stable SHA-256 order is d, d, f, c, b, a. The d rows share a rank.
+    keys = ["f", "a", "d", "d", "c", "b"]
+    counts = [1, 2, 3, 2, None, 0]
+    entries = [
+        cli.SessionEntry(key, "claude", "claude", f"/tmp/{i}.jsonl", sha256=f"{i:064x}")
+        for i, key in enumerate(keys)
+    ]
+    config = replace(cli.DEFAULT_EXTRACTION, max_judge_calls=cap)
+    references = {}
+    reads = []
+    retained = set()
+
+    def load(entry):
+        retained.update(i for i, ref in references.items() if ref() is not None)
+        i = entries.index(entry)
+        reads.append(i)
+        if counts[i] is None:
+            raise OSError("unreadable synthetic session")
+        record = _mining_record(entry, counts[i])
+        references[i] = weakref.ref(record)
+        return record
+
+    def answer(task, schema, payload):
+        return {
+            "verdict": "insight", "fact": FACT,
+            "why_durable": "rediscovering this costs a debugging cycle",
+            "identifiers": ["pyproject.toml", "src/app.py"],
+            "evidence_locator": payload["evidence"][1]["locator"],
+        }
+
+    def factory():
+        return FakeJudge([answer])
+
+    monkeypatch.setattr(cli, "load_session", load)
+    actual, report, judges = cli.run_extraction(
+        entries, judge_factory=factory, deduper=Deduper(), gate=cli.Gate(cli.DEFAULT_GATE),
+        config=config, judge_budget=budget, workers=workers,
+    )
+    assert sorted(reads) == list(range(len(entries)))
+    assert retained <= set(selected)
+    assert all(ref() is None for ref in references.values())
+
+    groups = {}
+    expected = []
+    for i, count in enumerate(counts):
+        if count is not None:
+            groups[i] = mine(_mining_record(entries[i], count))
+            assert len(groups[i]) == count
+    expected_report = cli.mining_stats(candidate for group in groups.values() for candidate in group)
+    assert report == {
+        **expected_report, "sessions_scanned": len(entries), "sessions_with_candidates": 4,
+        "sessions_judged": len(selected), "judge_budget": budget,
+        "candidates_in_judged_sessions": sum(counts[i] for i in selected),
+    }
+    deduper = Deduper()
+    for i in selected:
+        expected.append(cli.extract_session(
+            _mining_record(entries[i], counts[i]), judge=factory(), gate=cli.Gate(cli.DEFAULT_GATE),
+            deduper=deduper, config=config, candidates=groups[i],
+        ))
+    assert actual == expected
+    assert len(judges) == len(selected)
+    assert sum(len(judge.calls) for judge in judges) == sum(result.judge_calls for result in expected)
 
 
 @pytest.mark.parametrize("mode", ["--run", "--report"])
