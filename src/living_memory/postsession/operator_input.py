@@ -8,6 +8,8 @@ import re
 from .session import Turn
 
 
+_TREE_TITLE = "# Tree Goal Node\n"
+_TREE_FRAME = _TREE_TITLE + "\n## Your Goal\n\n<!-- ae-operator-spans "
 _CURRENT = "[current input] Addressed messages delivered into this turn:\n\n"
 _DIRECT = "[operator] Mid-turn message from the operator, delivered live into this turn:\n\n"
 _DIRECT_END = (
@@ -100,6 +102,45 @@ def _loop_passages(text: str, address: re.Match, result: re.Match) -> Iterator[t
         yield from _sections(text, start, _LOOP_OPERATOR, _LOOP_BOUNDARY, owner=owner)
 
 
+def _tree_passages(text: str) -> Iterator[tuple[int, str]]:
+    if not text.startswith(_TREE_FRAME):
+        return
+    newline = text.find("\n", len(_TREE_FRAME))
+    if newline < 0 or not text.endswith(" -->", 0, newline):
+        return
+    header = text[len(_TREE_FRAME):newline - 4]
+    if "\r" in header:
+        return
+    try:
+        metadata = json.loads(header)
+    except (ValueError, RecursionError):
+        return
+    if not isinstance(metadata, dict):
+        return
+    ranges = metadata.get("ranges")
+    if not isinstance(ranges, list) or not ranges:
+        return
+
+    base = newline + 1
+    last_end = 0
+    for pair in ranges:
+        if not isinstance(pair, list) or len(pair) != 2:
+            return
+        start, end = pair
+        if type(start) is not int or type(end) is not int:
+            return
+        if not last_end <= start < end <= len(text) - base:
+            return
+        last_end = end
+    try:
+        digest = hashlib.sha256(text[base:base + last_end].encode("utf-8")).hexdigest()
+    except UnicodeEncodeError:
+        return
+    if digest == metadata.get("sha256"):
+        for start, end in ranges:
+            yield base + start, text[base + start:base + end]
+
+
 def operator_passages(turn: Turn) -> Iterator[tuple[int, str]]:
     """Yield verbatim passages. A section body can imitate every later header."""
     if turn.role not in {"user", "operator", "human"}:
@@ -108,10 +149,8 @@ def operator_passages(turn: Turn) -> Iterator[tuple[int, str]]:
     if text.startswith(_DIRECT) and text.endswith(_DIRECT_END):
         yield len(_DIRECT), text[len(_DIRECT):-len(_DIRECT_END)]
         return
-    # A tree assignment and its rendered guidance can both contain literal
-    # source headings. The flattened prompt doesn't delimit the assignment.
-    if (text.startswith("# Tree Goal Node\n\n## Your Goal\n")
-            and "\n## Execution Context\n\n### Execution Worktree\n" in text):
+    if text.startswith(_TREE_TITLE):
+        yield from _tree_passages(text)
         return
     address = _LOOP_ADDRESS.search(text)
     result = _LOOP_RESULT.search(text)
