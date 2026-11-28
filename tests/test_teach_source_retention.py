@@ -19,12 +19,10 @@ CONTEXT = {"scope": "project:teach-sources", "session_id": "caller", "task": "ro
 def runtime(tmp_path, monkeypatch):
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     monkeypatch.setenv("LIVING_MEMORY_CHUNK_TOKENIZER", "heuristic")
-    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "fixed")
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
     monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "0")
     monkeypatch.setenv("LM_RECALL_MAP", "0")
     mcp = create_mcp_server(tmp_path / "memory.sqlite3")
-    # Exercise the required native write without launching optional maintenance.
-    monkeypatch.setattr(mcp.auto_consolidation, "request", lambda *args, **kwargs: None)
     try:
         yield mcp, mcp.memory_store
     finally:

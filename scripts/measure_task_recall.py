@@ -213,7 +213,8 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     # Avoid optional periodic jobs changing the isolated fixture during reads.
-    os.environ.setdefault("LM_AUTO_CONSOLIDATE_POLICY", "off")
+    os.environ["LM_AUTO_CONSOLIDATE_POLICY"] = "off"
+    os.environ["LM_DECAY_SWEEP_INTERVAL_SEC"] = "0"
     report = asyncio.run(measure())
     encoded = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     if args.output:

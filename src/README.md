@@ -50,3 +50,8 @@ Active traces supply the material and determine the existing merge floors in
 `consolidation.py`, independently of cadence. Scheduling follows the required
 knowledge/feedback commit and is nonfatal. The scheduler coalesces requests,
 backs off after failures and resumes durable pending scopes on server start.
+Start an isolated server with `LM_AUTO_CONSOLIDATE_POLICY=off` to suspend
+automatic passes. Pending requests stay in the database until a server starts
+with consolidation enabled. Explicit `memory_consolidate` calls still run.
+For measurements that also need to disable periodic decay sweeps, set
+`LM_DECAY_SWEEP_INTERVAL_SEC=0`.

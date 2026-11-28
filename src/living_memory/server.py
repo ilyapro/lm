@@ -1013,8 +1013,11 @@ def _register_tools(
     # which only holds if the thing remembering the structure outlives a call.
     recall_map_builder = RecallMapBuilder(store)
     consolidation_service = ConsolidationService(store)
-    auto_consolidation = _build_auto_consolidation(store, runtime_lock, consolidation_service)
-    _attach(mcp, "auto_consolidation", auto_consolidation)
+    scheduler = _build_auto_consolidation(store, runtime_lock, consolidation_service)
+    _attach(mcp, "auto_consolidation", scheduler)
+    auto_consolidation = scheduler if _auto_consolidate_policy() != "off" else None
+    if auto_consolidation is not None:
+        auto_consolidation.resume()
     # Read once per server, like every description: the experiment switches
     # arms by restarting a sandbox server with LM_EXPLICIT_FEEDBACK_PROMPT.
     prompt_arm = _explicit_feedback_prompt_arm()
@@ -2081,10 +2084,12 @@ def _auto_consolidation_due(
 
 
 def _record_auto_consolidation_if_due(
-    store: MemoryStore, scheduler: AutoConsolidationScheduler, scope: str,
+    store: MemoryStore, scheduler: AutoConsolidationScheduler | None, scope: str,
     last_trace_id: str, admitted_traces: int = 1,
 ) -> tuple[int, str | None] | None:
     """Record only crossed intervals, using the trace identity as the pending mark."""
+    if scheduler is None:
+        return None
     try:
         trace_count = _auto_consolidation_due(store, scope, last_trace_id, admitted_traces)
         if trace_count is None:
@@ -2103,9 +2108,11 @@ def _record_auto_consolidation_if_due(
 
 
 def _schedule_auto_consolidation(
-    scheduler: AutoConsolidationScheduler, scope: str, due: tuple[int, str | None] | None,
+    scheduler: AutoConsolidationScheduler | None, scope: str, due: tuple[int, str | None] | None,
 ) -> dict[str, Any] | None:
     """Admit a committed request or retry outstanding work after a knowledge write."""
+    if scheduler is None:
+        return None
     try:
         if due is None:
             scheduler.retry_pending()
@@ -2139,8 +2146,7 @@ def _build_auto_consolidation(
 
     The pass takes the lock one short step at a time (see ``guard`` on
     ``memory_consolidate``), so recall, lookup and other clients' writes are
-    served between its steps instead of after it. A scope a previous process
-    left pending is resumed here.
+    served between its steps instead of after it.
     """
 
     def run_pass(scope: str) -> dict[str, Any]:
@@ -2159,15 +2165,13 @@ def _build_auto_consolidation(
     def save_pending(raw: str) -> None:
         store.set_kv(AUTO_CONSOLIDATION_PENDING_KV_KEY, raw)
 
-    scheduler = AutoConsolidationScheduler(
+    return AutoConsolidationScheduler(
         run_pass,
         load_pending=load_pending,
         save_pending=save_pending,
         persist_guard=runtime_lock,
         pending_transaction=lambda: store.transaction(immediate=True),
     )
-    scheduler.resume()
-    return scheduler
 
 
 def _resolve_config(
