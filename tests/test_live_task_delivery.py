@@ -267,14 +267,15 @@ def test_native_projection_rejects_foreign_loaded_code(
     assert "CANNOT CHECK" in result.stderr
 
 
-def _compare(reader, installed_root, *, port=None):
-    revision = subprocess.check_output(
-        ["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True,
+def _compare(reader, installed_root, *, port=None, repository=ROOT, revision=None, contribution=None):
+    revision = revision or subprocess.check_output(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"], text=True,
     ).strip()
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "compare", "--port", str(port or reader["port"]),
-         "--candidate-root", str(ROOT), "--published-commit", revision,
-         "--installed-root", str(installed_root)],
+         "--candidate-root", str(repository), "--published-commit", revision,
+         "--installed-root", str(installed_root),
+         *(["--contribution", contribution] if contribution is not None else [])],
         env=reader["env"], text=True, capture_output=True, timeout=90,
     )
     report = json.loads(result.stdout)
@@ -312,3 +313,62 @@ def test_compare_candidate_detects_different_serving_functions(isolated_reader):
     assert report["disk"]["status"] == "match"
     assert report["process"]["status"] == "mismatch"
     assert report["process"]["service_digest"] == isolated_reader["health"]["code_identity"]["digest"]
+
+
+def test_compare_contribution_in_successor(isolated_reader, tmp_path):
+    def git(*args):
+        return subprocess.check_output(
+            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.org", *args],
+            cwd=tmp_path, text=True,
+        ).strip()
+
+    def commit(message):
+        git("add", "-A")
+        git("commit", "-qm", message)
+        return git("rev-parse", "HEAD")
+
+    # Keep the reader's database and logs outside the example repository.
+    tmp_path = tmp_path / "repo"
+    tmp_path.mkdir()
+    git("init", "-q")
+    shutil.copytree(ROOT / "src/living_memory", tmp_path / "src/living_memory",
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copyfile(ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
+    models = "src/living_memory/models.py"
+    current = (tmp_path / models).read_bytes()
+    (tmp_path / models).write_bytes(b"# before delivery\n" + current)
+    server = tmp_path / "src/living_memory/server.py"
+    serving = server.read_text()
+    other = serving.replace("return bool(expected) and secrets.compare_digest(",
+                            "return (bool(expected) is True) and secrets.compare_digest(")
+    assert other != serving
+    server.write_text(other)
+    base = commit("base")
+    (tmp_path / models).write_bytes(current)
+    tip = commit("own delivery")
+    server.write_text(serving)
+    published = commit("independent change to covered functions")
+
+    def compare(revision, span=f"{base}..{tip}"):
+        return _compare(isolated_reader, tmp_path, repository=tmp_path, revision=revision,
+                        contribution=span)
+
+    code, report = compare(published)
+    assert code == 0, report
+    assert report["disk"]["status"] == report["process"]["status"] == "match"
+    assert report["contribution"]["paths"] == [models]
+    assert report["contribution"]["status"] == "match"
+
+    git("revert", "--no-edit", tip)
+    code, report = compare(git("rev-parse", "HEAD"))
+    assert code == 1, report
+    assert report["contribution"]["different_paths"] == [models]
+    assert report["disk"]["status"] == report["process"]["status"] == "match"
+
+    git("checkout", "-q", "-b", "next", published)
+    server.write_text(other)
+    successor = commit("next release while the reader still serves the previous one")
+    code, report = compare(successor)
+    assert code == 1, report
+    assert report["contribution"]["status"] == report["disk"]["status"] == "match"
+    assert report["process"]["status"] == "mismatch"

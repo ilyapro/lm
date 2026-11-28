@@ -706,7 +706,28 @@ Pass `--candidate-root /path/to/repository` if another local repository holds
 the trusted candidate. The installed checkout may be on a different revision.
 Use `compare --help` for the service host, port and TLS options.
 
-The JSON report has three independent fields:
+To check your delivery after another change has shipped, keep the host-local
+commit IDs for the base immediately before your delivery and its published tip.
+Compare their net delta with the trusted release now published for that host:
+
+```sh
+python3 scripts/observe_live_task_recall.py compare --installed-root "$PWD" \
+  --published-commit "$published_successor" --contribution "$delivery_base..$delivery_tip"
+```
+
+Supply full commit IDs from the same repository history. Take the successor
+ID from the host's publication receipt or resolve its trusted publication ref
+with `git rev-parse` once. Only that pinned candidate is imported. Running the
+first command with the original candidate still checks that exact release.
+
+The optional `contribution` field checks base → tip → candidate ancestry and
+lists every path in the net base-to-tip change, including paths outside the
+installed package. A match means each path has the same Git entry (type, mode
+and object ID, or absence) in the candidate as at the tip. A later edit to the
+same file requires review even if it kept the intended behavior. An empty or
+unavailable range supplies insufficient evidence.
+
+The runtime comparisons retain their own coverage:
 
 - `disk` compares the names and bytes of every Python source under
   `src/living_memory/` and of `pyproject.toml` in the specified installation
@@ -718,7 +739,11 @@ The JSON report has three independent fields:
   revision are outside its coverage.
 - `recall` is `not_run`. The only request to the service is `GET /health`.
 
-Exit 0 means both comparisons matched. Exit 1 means at least one comparison
+Exit 0 means all requested comparisons matched. Together they establish
+preservation of the specified delta in the published source, the installed
+source inventory described above and equivalence of the covered functions.
+Other files' installation, execution of a particular path and the contribution's
+behavior require separate evidence. Exit 1 means at least one comparison
 found a mismatch. Exit 2 means the available evidence was insufficient to
 decide. Each comparison reports its own status even if the other is unknown.
 
