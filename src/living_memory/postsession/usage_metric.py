@@ -409,12 +409,14 @@ class ConsumptionIndex:
     by_node: dict[str, list[tuple[str, int]]]
     stats: dict[str, int]
 
-    def later_deliveries(self, node: CohortNode) -> list[tuple[str, int]]:
+    def later_deliveries(
+        self, node: CohortNode, *, first_only: bool = False
+    ) -> list[tuple[str, int]]:
         entries = self.by_node.get(node.id)
         if not entries:
             return []
         start = bisect_right(entries, (node.created_at, _AFTER_ANY_EVENT))
-        return entries[start:]
+        return entries[start : start + 1] if first_only else entries[start:]
 
 
 def _replay_results(raw_results: Any) -> list[ReplayResult]:
@@ -566,12 +568,13 @@ def measure_cohort(
     selector: CohortSelector,
     *,
     within_days: int = DEFAULT_WITHIN_DAYS,
+    grounded: bool = True,
 ) -> CohortMeasurement:
-    """Raw consumption: was each node delivered by a strictly later event?"""
+    """Count later use, retaining all consuming events when grounding is requested."""
 
     measurement = CohortMeasurement(selector=selector, nodes=len(nodes))
     for node in nodes:
-        later = index.later_deliveries(node)
+        later = index.later_deliveries(node, first_only=not grounded)
         if not later:
             continue
         measurement.consumed_later += 1
@@ -580,10 +583,12 @@ def measure_cohort(
             if node.created_dt is not None
             else None
         )
-        measurement.horizons[node.id] = horizon
         first_dt = index.event_times[later[0][1]]
         if horizon is not None and first_dt is not None and first_dt <= horizon:
             measurement.consumed_within_7d += 1
+        if not grounded:
+            continue
+        measurement.horizons[node.id] = horizon
         closed: list[tuple[str, int]] = []
         for created_at, ordinal in later:
             measurement.consuming_events.add(ordinal)
@@ -876,15 +881,15 @@ def run_metric(
                 load_cohort_nodes(connection, selector, as_of=cutoff),
                 selector,
                 within_days=within_days,
+                grounded=grounded,
             )
             for selector in selectors
         ]
 
         grounding_diagnostics: dict[str, Any] | None = None
         crosscheck: dict[str, Any] | None = None
-        relevant: set[int] = set()
-        for measurement in measurements:
-            relevant |= measurement.closed_consuming_events
+        if grounded:
+            relevant = set().union(*(m.closed_consuming_events for m in measurements))
         if grounded and relevant:
             # Grounding is decided per event from that event's own trace and
             # results, so restricting the pass to the events that can affect a

@@ -1107,7 +1107,7 @@ def consumption_block(
         "within_days": within_days,
         "grounded": grounded,
         "grounding_diagnostics": grounding,
-        "_consumed": {node.id for node in nodes if index.later_deliveries(node)},
+        "_consumed": set(measurement.horizons),
     }
 
 
