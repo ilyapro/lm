@@ -91,12 +91,15 @@ def test_selection_keeps_available_replacements_and_ranked_fillers(
 @pytest.mark.parametrize("distinction", [
     "context", "provenance", "sources", "corrections", "unknown_derivation",
     "derivation_sources", "derivation_group", "bookkeeping", "level", "known_derivation",
-    "scope", "meaning", "restriction",
+    "scope", "meaning", "restriction", "reconnect",
 ])
 def test_collisions_keep_complete_source_equality(view, gate, distinction):
     first, second, later = row("first"), row("second"), row("later", "Later fact.")
     first, second, later = [replace(result, lexical_score=1.0) for result in (first, second, later)]
-    if distinction == "context":
+    if distinction == "reconnect":
+        first.node.context = {"session_id": "caller", "transport_session_id": "one"}
+        second.node.context = {"session_id": "caller", "transport_session_id": "two"}
+    elif distinction == "context":
         second.node.context = {"procedure": "independent"}
     elif distinction == "scope":
         second.node.scope = "project:other"
@@ -125,7 +128,7 @@ def test_collisions_keep_complete_source_equality(view, gate, distinction):
                                   "corrections": ["ignored"]}
     else:
         second.node.level = "concept"
-    twins = distinction in ("bookkeeping", "level", "known_derivation")
+    twins = distinction in ("bookkeeping", "level", "known_derivation", "reconnect")
     with identity_work() as selection_work:
         selected, residual = _select_distinct_results(
             [first, second], [later], 2, DeliveryHistory(),

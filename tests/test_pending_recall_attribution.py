@@ -158,3 +158,46 @@ def test_explicit_irrelevance_survives_without_implicit_work_match(mcp, tool):
     assert rejection["last_event_id"] == event.id
     assert rejection["node_id"] == original.id
     assert rejection["weight"] > 0
+
+
+@pytest.mark.parametrize(("identity", "change", "same_source"), [
+    ({"session_id": "caller-a"}, {}, True),
+    ({}, {}, False),
+    ({"session_id": " "}, {}, False),
+    ({"session_id": 42}, {}, False),
+    ({"session_id": "caller-a"}, {"session_id": "caller-b"}, False),
+    ({"session_id": "caller-a"}, {"agent": "another-agent"}, False),
+    ({"session_id": "caller-a"}, {"task": "another-task"}, False),
+    ({"session_id": "caller-a"}, {"condition": "after approval"}, False),
+])
+def test_exact_copy_history_after_reconnect(mcp, identity, change, same_source):
+    context = {"scope": SCOPE, "agent": "agent", "task": "task", **identity}
+
+    async def write(client, fields):
+        result = await call(client, "memory_remember", content=TEXT, context=fields)
+        return result["node"]["id"]
+
+    async def scenario():
+        async with Client(mcp) as first:
+            a = await write(first, context)
+            b = await write(first, context)
+        async with Client(mcp) as second:
+            c = await write(second, {**context, **change})
+            recalled = await call(second, "memory_recall", query=TEXT, scope=SCOPE)
+            expected = {c} if same_source else {b, c}
+            assert {entry["id"] for entry in recalled["results"]} == expected
+            assert all(entry["delivery"] == "full" for entry in recalled["results"])
+            lookup = await call(second, "memory_lookup", node_ids=[a, b, c])
+            assert {entry["id"]: entry["content"] for entry in lookup["results"]} == {
+                a: TEXT, b: TEXT, c: TEXT,
+            }
+        nodes = [mcp.memory_store.get_node(i) for i in (a, b, c)]
+        assert [n.decayed for n in nodes] == [True, same_source, False]
+        t1, t2, t3 = [n.context["transport_session_id"] for n in nodes]
+        assert t1 == t2 and t2 != t3
+        edges = mcp.memory_store.list_connections(relation_type="related")
+        copies = {(e.source_id, e.target_id) for e in edges
+                  if e.metadata.get("kind") == "duplicate_content"}
+        assert copies == ({(b, a), (c, b)} if same_source else {(b, a)})
+
+    asyncio.run(scenario())
