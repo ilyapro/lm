@@ -720,6 +720,8 @@ class MemoryRecallService:
         this context; failure rolls back access and event/history together.
         Optional work and transport belong after it. A repeatable read-only
         selector observes one snapshot through passage and validity reads.
+        A passage consumer can resolve just the scored rows needed for its
+        response in that snapshot. Direct retrieval resolves every scored row.
         Logging flags independently control the consumption transaction. An
         optional caller-owned list retains this event's selection for its receipt.
         """
@@ -936,8 +938,9 @@ class MemoryRecallService:
             return plan, limited
 
         limited = [
-            replace(result, scored_chunk_id=candidates[result.node_id].chunk_id)
-            if not result.withheld and result.node.level != "schema" else result
+            replace(result, semantic_passage=None, scored_chunk_id=(
+                candidates[result.node_id].chunk_id if not result.withheld and result.node.level != "schema" else None
+            ))
             for result in limited
         ]
         return plan, limited

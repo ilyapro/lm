@@ -60,7 +60,7 @@ from living_memory.delivery import (
     stats_compaction_enabled_from_env,
 )
 from living_memory.edge_derivation import derive_edges_for_new_trace
-from living_memory.models import Node, duplicate_bearers
+from living_memory.models import Node, SourcePassage, duplicate_bearers
 from living_memory.prompts import (
     DEFAULT_CONTEXT_CONCEPTS, DEFAULT_CONTEXT_SCHEMAS, MEMORY_GUIDANCE, retrieval_context_prompt,
 )
@@ -1371,19 +1371,12 @@ def _register_tools(
             snippet_ladder = snippet_ladder_from_env()
             bodies = None
 
-            def resolve_passages(selected):
+            def resolve_passages(selected: list[RecallResult]) -> dict[str, SourcePassage]:
                 nonlocal bodies
-                passages = {}
-
-                def read_passages(ids):
-                    found = store.get_chunk_passages(ids)
-                    passages.update(found)
-                    return found
-
-                bodies = select_recall_bodies(
+                bodies, passages = select_recall_bodies(
                     selected, query=query, delivery_history=delivery_history, session_dedup=session_dedup,
                     snippet_ladder=snippet_ladder, snippet_max_chars=snippet_max_chars,
-                    read_passages=read_passages,
+                    read_passages=store.get_chunk_passages,
                 )
                 return passages
 

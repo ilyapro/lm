@@ -356,8 +356,8 @@ def select_recall_bodies(
     results: Sequence[RecallResult], *, delivery_history: DeliveryHistory, session_dedup: bool,
     snippet_ladder: Sequence[int] | None, snippet_max_chars: int, query: str | None,
     read_passages: Callable[[Sequence[str]], Mapping[str, SourcePassage]] | None = None,
-) -> list[RecallBody]:
-    """Choose bodies in rank order. Only an excerpt proof can make its ladder slot uncertain."""
+) -> tuple[list[RecallBody], dict[str, SourcePassage]]:
+    """Choose ordered bodies and retain the resolved passages for legacy maintenance."""
     eligible = [result for result in results if not result.withheld]
     twins: dict[str, str] = {}
     recipe_bearers = set()
@@ -371,10 +371,13 @@ def select_recall_bodies(
             recipe_bearers.add(node.id)
     bodies: list[RecallBody] = []
     pending: list[tuple[int, int]] = []
+    passages: dict[str, SourcePassage] = {}
 
     def excerpts(requests: Sequence[tuple[int, int]]) -> None:
-        ids = [results[i].scored_chunk_id for i, _ in requests if results[i].scored_chunk_id]
-        passages = read_passages(ids) if ids and read_passages else {}
+        if read_passages is not None:
+            ids = [chunk_id for i, _ in requests if (chunk_id := results[i].scored_chunk_id)]
+            if ids:
+                passages.update(read_passages(ids))
         for i, budget in requests:
             result = results[i]
             passage = passages.get(result.scored_chunk_id, result.semantic_passage)
@@ -424,7 +427,7 @@ def select_recall_bodies(
             bodies.append(RecallBody(DELIVERY_FULL, node.content))
             bearer_position += 1
     excerpts(pending)
-    return bodies
+    return bodies, passages
 
 
 def shape_recall_results(
@@ -464,7 +467,7 @@ def shape_recall_results(
         raise ValueError("view must be 'knowledge' or 'full'")
 
     if bodies is None:
-        bodies = select_recall_bodies(
+        bodies, _ = select_recall_bodies(
             results, delivery_history=delivery_history, session_dedup=session_dedup,
             snippet_ladder=snippet_ladder, snippet_max_chars=snippet_max_chars, query=query,
         )
