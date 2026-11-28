@@ -4944,16 +4944,8 @@ class MemoryStore:
                 f"{CHUNK_EMBEDDING_TABLE} is missing; open the database through "
                 "MemoryStore so migrations run before writing chunks"
             )
-        row = self._conn.execute(
-            "SELECT content_fingerprint FROM nodes WHERE id = ?",
-            (node_id,),
-        ).fetchone()
-        if row is None:
-            raise KeyError(node_id)
-        fingerprint = str(content_fingerprint or row["content_fingerprint"] or "")
         with self.transaction():
-            written = self._replace_node_chunks(node_id, chunks, fingerprint)
-        return written
+            return self._replace_node_chunks(node_id, chunks, content_fingerprint)
 
     def refresh_pending_chunks(
         self, selected: Node, embed: Callable[[str], Sequence[float]], *,
@@ -5073,7 +5065,7 @@ class MemoryStore:
         self,
         node_id: str,
         chunks: Sequence[tuple[TextChunk, Sequence[float]]],
-        fingerprint: str,
+        fingerprint: str | None,
     ) -> int:
         """Transaction body of :meth:`replace_node_chunks` (caller holds the txn)."""
 
@@ -5081,11 +5073,17 @@ class MemoryStore:
             f"DELETE FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ?",
             (node_id,),
         )
+        # The delete holds the writer lock while we resolve the fingerprint
+        # and validate character spans against the same source row.
+        columns = "content, content_fingerprint" if chunks else "1"
+        source = self._conn.execute(
+            f"SELECT {columns} FROM nodes WHERE id = ?", (node_id,),
+        ).fetchone()
+        if source is None:
+            raise KeyError(node_id)
         if not chunks:
             return 0
-        source = self._conn.execute(
-            "SELECT content, content_fingerprint FROM nodes WHERE id = ?", (node_id,),
-        ).fetchone()
+        fingerprint = str(fingerprint or source["content_fingerprint"] or "")
         now = _utc_now()
         payload = []
         for expected_index, (chunk, vector) in enumerate(chunks):
@@ -5098,7 +5096,7 @@ class MemoryStore:
                     f"{chunk.chunk_index} at position {expected_index} of {node_id}"
                 )
             addressed = (
-                source is not None and source["content_fingerprint"] == fingerprint
+                source["content_fingerprint"] == fingerprint
                 and 0 <= chunk.char_start < chunk.char_end <= len(source["content"])
                 and source["content"][chunk.char_start:chunk.char_end] == chunk.text
             )
