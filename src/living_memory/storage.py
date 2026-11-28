@@ -598,20 +598,6 @@ _RECALL_DELIVERY_HISTORY_SCHEMA_SQL = f"""
         )
     );
 
-    -- Selection performs one bounded range scan per candidate.  The resolved
-    -- consumed expression is part of the order because the frozen evaluator
-    -- sorts equal delivery instants by the boolean outcome before walking the
-    -- tail streak in reverse.
-    CREATE INDEX IF NOT EXISTS idx_recall_delivery_history_node_matured
-        ON {RECALL_DELIVERY_HISTORY_TABLE}(
-            node_id,
-            outcome_end DESC,
-            delivered_at DESC,
-            (CASE WHEN transport_matched = 1
-                THEN transport_consumed ELSE fallback_consumed END) DESC,
-            delivery_event_id DESC
-        );
-
     -- Online outcome maintenance touches only the preceding 24-hour ranges
     -- compatible with the new event.
     CREATE INDEX IF NOT EXISTS idx_recall_delivery_history_transport_time
@@ -6508,6 +6494,7 @@ class MemoryStore:
             # idempotent reconstruction below is what populates it for a live
             # database whose recall_events predate this release.
             self._conn.executescript(_RECALL_DELIVERY_HISTORY_SCHEMA_SQL)
+            self._ensure_recall_delivery_window_index()
             # Must precede the reconstruction: the script above only creates
             # tables that are absent, so a database that already carries the
             # ledger reaches the rebuild without the tri-state column the
@@ -6833,6 +6820,22 @@ class MemoryStore:
             WHERE {_TASK_PATTERN_BACKFILL_PREDICATE}
             """
         )
+
+    def _ensure_recall_delivery_window_index(self) -> None:
+        """Index open outcome windows for the node named by a lookup."""
+        current = "idx_recall_delivery_history_node_window"
+        obsolete = "idx_recall_delivery_history_node_matured"
+        indexes = {row["name"] for row in self._conn.execute(
+            f"PRAGMA index_list({RECALL_DELIVERY_HISTORY_TABLE})"
+        )}
+        if current in indexes and obsolete not in indexes:
+            return
+        with self.transaction(immediate=True):
+            self._conn.execute(f"DROP INDEX IF EXISTS {obsolete}")
+            self._conn.execute(
+                f"CREATE INDEX IF NOT EXISTS {current} "
+                f"ON {RECALL_DELIVERY_HISTORY_TABLE}(node_id, outcome_end)"
+            )
 
     def _migrate_recall_delivery_history_lookup_column(self) -> None:
         """Add ``lookup_consumed`` to a ledger table that predates it.

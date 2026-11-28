@@ -979,7 +979,7 @@ def test_lookup_consumption_is_global_and_bounded_by_the_open_window(
         assert "idx_recall_lookup_events_time" in plan(
             f"SELECT MIN(occurred_at) FROM {RECALL_LOOKUP_EVENT_TABLE}"
         )
-        assert "idx_recall_delivery_history_node_matured" in plan(
+        assert "idx_recall_delivery_history_node_window (node_id=? AND outcome_end>?)" in plan(
             f"""
             UPDATE {RECALL_DELIVERY_HISTORY_TABLE} SET lookup_consumed = 1
             WHERE node_id = 'BOUND-MID'
@@ -1052,6 +1052,30 @@ def test_rebuilt_windows_predating_the_first_lookup_are_unknown_not_absent(
         assert store.connection.execute(
             f"SELECT COUNT(*) FROM {RECALL_LOOKUP_EVENT_TABLE}"
         ).fetchone()[0] == 2
+
+
+def test_delivery_window_index_replaces_matured_order_once(tmp_path: Path) -> None:
+    db = tmp_path / "history.sqlite3"
+    with MemoryStore(db) as store:
+        store.connection.executescript("""
+            DROP INDEX idx_recall_delivery_history_node_window;
+            CREATE INDEX idx_recall_delivery_history_node_matured
+                ON recall_delivery_history(node_id, outcome_end DESC, delivered_at DESC,
+                    (CASE WHEN transport_matched = 1
+                     THEN transport_consumed ELSE fallback_consumed END) DESC,
+                    delivery_event_id DESC);
+        """)
+
+    with MemoryStore(db) as store:
+        conn = store.connection
+        indexes = {row["name"] for row in conn.execute("PRAGMA index_list(recall_delivery_history)")}
+        assert "idx_recall_delivery_history_node_matured" not in indexes
+        assert [row["name"] for row in conn.execute(
+            "PRAGMA index_info(idx_recall_delivery_history_node_window)"
+        )] == ["node_id", "outcome_end"]
+        version = conn.execute("PRAGMA schema_version").fetchone()[0]
+        store._ensure_recall_delivery_window_index()
+        assert conn.execute("PRAGMA schema_version").fetchone()[0] == version
 
 
 def test_lookup_column_is_added_to_a_ledger_that_predates_it(
