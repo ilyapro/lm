@@ -83,7 +83,7 @@ def test_mixed_consumers_and_concurrent_generation(app, monkeypatch, view):
             monkeypatch.setenv("LM_DELIVERY_SNIPPET_LADDER", "300")
             twins = [add(long_body) for _ in range(2)]
             short = add("Brief note.")
-            other = add("Independent source. " + long_body)
+            other = add("Independent source. " + long_body, "concept")
             recipe = add("Recipe. " + long_body, "schema")
             weak = add("Unrelated archived note.")
             store.replace_node_chunks(weak.id, [(
