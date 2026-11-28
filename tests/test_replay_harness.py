@@ -604,3 +604,76 @@ def test_committed_baseline_satisfies_contract() -> None:
     markdown = BASELINE_PATH.with_suffix(".md").read_text()
     assert "## Labeling protocol" in markdown
     assert "Candidate selection bias" in markdown
+
+
+@pytest.mark.parametrize(
+    "new_delivery,lookup_at,expected_owner,window_matches",
+    [
+        ("closed", CUTOFF, "new", 2),
+        ("other_transport", CUTOFF, "old", 1),
+        ("same_second", CUTOFF, "new", 1),
+        ("open", CUTOFF, "new", 2),
+        ("incomplete", CUTOFF, "new", 1),
+        ("closed", "2026-01-15T00:00:00.000001Z", "new", 0),
+    ],
+)
+def test_lookup_ab_matches_live_owner(
+    tmp_path, monkeypatch, new_delivery, lookup_at, expected_owner, window_matches
+):
+    from living_memory.feedback import apply_lookup_credit
+
+    monkeypatch.setenv("LM_LOOKUP_CREDIT_POLICY", "delivered")
+    monkeypatch.setenv("LM_LOOKUP_CREDIT_WINDOW_SECONDS", "86400")
+    path = tmp_path / "history.sqlite3"
+    store = MemoryStore(MemoryConfig(db_path=path))
+    target = store.create_node(level="trace", content="cobalt indigo", context={})
+    closure = store.create_node(level="trace", content="walnut orchard", context={})
+
+    def delivery(name, at, transport="reader", closed=True, complete=True):
+        scope = f"project:{name}"
+        result = result_dict(target.id, 1, vector=1.0, scope=scope)
+        if not complete:
+            del result["methods"]
+        event = store.record_recall_event(
+            query=name, scope=scope, results=[result],
+            ambient_context={"transport_session_id": transport},
+        )
+        if closed:
+            store.mark_recall_event_feedback(event.id, closure.id)
+        _set_times(store, event.id, at, at if closed else None)
+        return event.id
+
+    old = delivery("old", "2026-01-14T23:58:00Z")
+    new = delivery(
+        "new", CUTOFF if new_delivery == "same_second" else "2026-01-14T23:59:00Z",
+        transport="other" if new_delivery == "other_transport" else "reader",
+        closed=new_delivery != "open", complete=new_delivery != "incomplete",
+    )
+    lookup = store.record_lookup_event(
+        [target.id], transport_session_id="reader", occurred_at=lookup_at
+    )
+    delivery("holdout", "2026-01-15T01:00:00Z")
+
+    # Run the ordinary comparison before the live oracle writes any credit.
+    report_path = tmp_path / "ab.json"
+    subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts/credit_rule_ab.py"),
+         "--db", str(path), "--report", str(report_path), "--cutoff", CUTOFF,
+         "--incumbent", "grounded", "--arms", "grounded,grounded_or_lookup"],
+        check=True,
+    )
+    report = json.loads(report_path.read_text())
+    live = apply_lookup_credit(store, lookup, [target.id], "reader", lookup_at)
+    assert live.credited == [({"old": old, "new": new}[expected_owner], target.id)]
+    scope = store.get_recall_event_header(live.credited[0][0]).scope
+    store.close()
+
+    admitted = lookup_at == CUTOFF
+    replayable = new_delivery not in ("open", "incomplete") and admitted
+    assert report["lookups"]["followed_only"] == window_matches
+    assert report["lookups"]["owned_results"] == int(admitted and new_delivery != "incomplete")
+    assert report["lookups"]["owner_outside_replay_rows"] == int(new_delivery == "incomplete")
+    assert set(report["final_weights"]["grounded_or_lookup"]) == ({scope} if replayable else set())
+    for label in report["results"].values():
+        assert label["arms"]["grounded_or_lookup"]["weight_updates"] == int(replayable)
+        assert label["arms"]["grounded"]["weight_updates"] == 0
