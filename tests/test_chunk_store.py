@@ -481,6 +481,36 @@ def test_replace_node_chunks_is_the_offline_backfill_entry_point(store: MemorySt
         store.replace_node_chunks("NO-SUCH-NODE", list(zip(windows, vectors)))
 
 
+def test_replacement_uses_one_current_source_for_fingerprint_and_spans(store):
+    content = "Inspect the seal."
+    node = store.append_trace(content, {})
+    pairs = [(chunk_text(content)[0], [1.0])]
+    statements = []
+    store.connection.set_trace_callback(statements.append)
+    try:
+        assert store.replace_node_chunks(node.id, pairs) == 1
+    finally:
+        store.connection.set_trace_callback(None)
+    reads = [sql for sql in statements if " from nodes " in " ".join(sql.lower().split())]
+    assert len(reads) == 1
+    current, = store.list_node_chunks(node.id)
+    assert (current.char_start, current.char_end) == (0, len(content))
+
+    assert store.replace_node_chunks(node.id, pairs, content_fingerprint="older") == 1
+    stale, = store.list_node_chunks(node.id)
+    assert stale.content_fingerprint == "older"
+    assert (stale.char_start, stale.char_end) == (None, None)
+    assert store.replace_node_chunks(node.id, pairs, content_fingerprint="") == 1
+    restored, = store.list_node_chunks(node.id)
+    assert restored.content_fingerprint == current.content_fingerprint
+    assert (restored.char_start, restored.char_end) == (0, len(content))
+
+    assert store.replace_node_chunks(node.id, []) == 0
+    assert store.list_node_chunks(node.id) == []
+    with pytest.raises(KeyError, match="NO-SUCH-NODE"):
+        store.replace_node_chunks("NO-SUCH-NODE", [], content_fingerprint="explicit")
+
+
 def test_unchunkable_content_is_not_reported_as_pending_forever(store: MemoryStore) -> None:
     """A node the chunker can never window must not livelock a backfill loop."""
 
