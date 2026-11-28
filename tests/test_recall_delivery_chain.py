@@ -19,6 +19,7 @@ from fastmcp import Client
 
 from living_memory.consolidation import DIGEST_MAX_CHARS
 from living_memory.delivery import DEFAULT_SNIPPET_LADDER
+from living_memory.embeddings import EncodedVector
 from living_memory.retrieval import MemoryRecallService
 from living_memory.server import create_mcp_server
 from test_semantic_passage_delivery import QUERY as SEMANTIC_QUERY
@@ -43,10 +44,14 @@ def test_consolidated_qualifications_survive_persistence_and_mcp_recall(tmp_path
     db = tmp_path / "memory.sqlite3"
     mcp = create_mcp_server(db)
     store = mcp.memory_store
+    # A shared representative keeps the three sources in one consolidation
+    # cluster. Search chunks are still encoded from each source's own text.
+    representative = EncodedVector([1.0, 0.0], "fixture:2")
     sources = [
-        store.append_trace(
-            text, {"scope": scope, "agent": f"source-{index}"},
-            feedback={"usefulness_score": 0.5 if index == 0 else 0.0},
+        store.create_node(
+            level="trace", content=text, context={"scope": scope, "agent": f"source-{index}"},
+            representative_embedding=representative,
+            stats={"usefulness_score": 0.5 if index == 0 else 0.0},
         )
         for index, text in enumerate((topic, topic + " " + statement, topic + " " + complement))
     ]
