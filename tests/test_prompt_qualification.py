@@ -92,6 +92,44 @@ def test_native_withheld_reference_is_refetchable_without_becoming_knowledge(run
     asyncio.run(scenario())
 
 
+def test_repeated_withheld_recall_preserves_scoped_browse_order(runtime):
+    store = runtime.memory_store
+    stats = {"access_count": 2, "last_accessed": "2026-01-01T00:00:00Z"}
+    weak = concept(store, timestamp="2026-01-01", stats=stats)
+    peer = concept(store, UNRELATED, timestamp="2026-01-02", stats=stats)
+    strong = store.append_trace(TASK, {"scope": SCOPE})
+
+    async def scenario():
+        async with Client(runtime) as client:
+            async def browse():
+                response = await client.get_prompt(PROMPT, {"scope": SCOPE, "task": ""})
+                return response.messages[0].content.text
+
+            before = await browse()
+            assert before.index(peer.id) < before.index(weak.id)
+            events = []
+            for _ in range(3):
+                recall = (await client.call_tool("memory_recall", {
+                    "query": TASK, "scope": SCOPE, "view": "knowledge", "max_results": 2,
+                })).data
+                first, second = recall["results"]
+                assert first["id"] == strong.id and first["content"] == strong.content
+                assert second["content_ref"]["node_id"] == second["id"] == weak.id
+                assert second["delivery"] == "below_threshold" and second["content"] == ""
+                event = store.get_recall_event(recall["recall_event_id"])
+                assert event.result_ids == [strong.id, weak.id]
+                assert event.results[1]["withheld"] == second["delivery"]
+                events.append(event.id)
+            assert len(set(events)) == 3
+            assert await browse() == before
+            assert store.get_node(weak.id) == weak
+            assert store.get_node(peer.id) == peer
+            accessed = store.get_node(strong.id)
+            assert accessed.access_count == strong.access_count + 3 and accessed.last_accessed
+
+    asyncio.run(scenario())
+
+
 def test_native_task_concepts_keep_recall_correction_order(runtime, monkeypatch):
     monkeypatch.setenv("LM_RECALL_MIN_SCORE", "off")
     store = runtime.memory_store
