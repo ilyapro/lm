@@ -35,8 +35,8 @@ Key design decisions (documented in the generated markdown report as well):
   applied at the *event's* scope through a pluggable credit rule — the
   ``proportional`` rule delegates to the live ``feedback._method_signals``,
   while ``winner_take_all`` keeps the pre-fix rule frozen for A/B replays,
-  and ``grounded_or_lookup`` additionally credits the newest eligible delivery
-  per same-transport id-fetch (``load_lookup_follows``) —
+  and ``grounded_or_lookup`` additionally credits the recorded lookup recipient
+  or estimates one from retained deliveries when the request has no receipt (``load_lookup_follows``) —
   and the exact ``update_retrieval_weights`` arithmetic including
   ``apply_retrieval_weight_floors``. Updates are ordered
   by ``feedback_applied_at`` (batch-internal order: newest event first, like
@@ -73,6 +73,7 @@ from living_memory.retrieval import MemoryRecallService, _Candidate, _is_decisio
 from living_memory.scope import ScopePlan
 from living_memory.storage import (
     CHUNK_EMBEDDING_TABLE,
+    RECALL_CREDIT_LEDGER_TABLE,
     RECALL_LOOKUP_EVENT_TABLE,
     MemoryStore,
     _scope_family,
@@ -299,33 +300,24 @@ def _delivery_node_ids(raw_results: str) -> set[str] | None:
     }
 
 
-def _assign_lookup_owners(
+def _estimate_lookup_owners(
     connection: sqlite3.Connection,
-    events: Sequence[ReplayEvent],
-    follows: Mapping[tuple[str, str], list[datetime]],
+    replay_events: Mapping[str, ReplayEvent],
+    requests: Mapping[str, list[tuple[datetime, str]]],
     window: timedelta,
-    limit: datetime | None,
     stats: dict[str, Any],
 ) -> None:
-    """Resolve each request against the transport history available at its time.
+    """Estimate recipients of requests without receipts from raw transport history.
 
-    Read raw recalls because open, empty and unusable events all occupy slots
-    in the live candidate cap. An owner missing from replay cannot pass its
-    lookup to an older replayable event.
+    Open, empty and unusable events all occupy slots in the live candidate cap.
+    An owner missing from replay cannot pass its lookup to an older event.
     """
-    requests: dict[str, list[tuple[datetime, str]]] = defaultdict(list)
-    for (transport, node_id), instants in follows.items():
-        for instant in instants:
-            if limit is None or instant <= limit:
-                requests[transport].append((instant.replace(microsecond=0), node_id))
-
     if not requests:
         return
     if not any(row["name"] == "transport_session_id"
                for row in connection.execute("PRAGMA table_info(recall_events)")):
         stats["unknown_owner_rows"] = sum(map(len, requests.values()))
         return
-    replay_events = {event.id: event for event in events}
     for transport, fetches in requests.items():
         rows = connection.execute(
             """SELECT id, created_at, results FROM recall_events
@@ -355,15 +347,18 @@ def _assign_lookup_owners(
                     stats["unknown_owner_rows"] += 1
                     break
                 if node_id in ids:
-                    event = replay_events.get(event_id)
-                    owner = next((r for r in event.results if r.node_id == node_id), None) if event else None
-                    if owner is None:
-                        stats["owner_outside_replay_rows"] += 1
-                    elif not owner.owns_lookup:
-                        owner.owns_lookup = True
-                        stats["owned_results"] += 1
+                    _mark_lookup_owner(replay_events.get(event_id), node_id, stats)
                     break
         rows.close()
+
+
+def _mark_lookup_owner(event: ReplayEvent | None, node_id: str, stats: dict[str, Any]) -> None:
+    owner = next((r for r in event.results if r.node_id == node_id), None) if event else None
+    if owner is None:
+        stats["owner_outside_replay_rows"] += 1
+    elif not owner.owns_lookup:
+        owner.owns_lookup = True
+        stats["owned_results"] += 1
 
 
 def load_lookup_follows(
@@ -401,10 +396,13 @@ def load_lookup_follows(
             result.owns_lookup = False
     stats: dict[str, Any] = {
         "ownership_basis": (
-            "Newest eligible delivery in retained transport history, assuming the requested "
-            "id was returned and same-second recalls existed at lookup time. Missing recalls "
-            "or lookup rows limit reconstruction. Replay reinforces only closed events."
+            "Use the lookup credit receipt for this request and node. For requests without "
+            "a receipt, model the newest eligible retained delivery assuming the requested "
+            "id was returned and same-second recalls existed at lookup time. These estimates "
+            "do not establish live credit. Replay reinforces only closed events."
         ),
+        "admitted_rows_with_receipt": 0,
+        "admitted_rows_without_receipt": 0,
         "owned_results": 0,
         "owner_outside_replay_rows": 0,
         "unknown_owner_rows": 0,
@@ -442,6 +440,22 @@ def load_lookup_follows(
     lookup_ids: set[str] = set()
     earliest: datetime | None = None
     latest: datetime | None = None
+    window = timedelta(seconds=float(window_seconds))
+    limit = _parse_instant(not_after) if not_after else None
+    replay_events = {event.id: event for event in events}
+    requests: dict[str, list[tuple[datetime, str]]] = defaultdict(list)
+    receipts = {}
+    if connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (RECALL_CREDIT_LEDGER_TABLE,),
+    ).fetchone():
+        receipts = {
+            (row["source_id"], row["node_id"]): row["recall_event_id"]
+            for row in connection.execute(
+                f"SELECT source_id, node_id, recall_event_id FROM {RECALL_CREDIT_LEDGER_TABLE} "
+                "WHERE basis = 'lookup'"
+            )
+        }
     rows = connection.execute(
         f"SELECT lookup_event_id, node_id, occurred_at, transport_session_id "
         f"FROM {RECALL_LOOKUP_EVENT_TABLE}"
@@ -460,14 +474,33 @@ def load_lookup_follows(
         if transport is None or not str(transport):
             continue
         stats["rows_with_transport"] += 1
-        follows[(str(transport), str(row["node_id"]))].append(instant)
+        node_id = str(row["node_id"])
+        follows[(str(transport), node_id)].append(instant)
+        if limit is not None and instant > limit:
+            continue
+        lookup_second = instant.replace(microsecond=0)
+        event_id = receipts.get((row["lookup_event_id"], node_id))
+        if event_id is None:
+            stats["admitted_rows_without_receipt"] += 1
+            requests[str(transport)].append((lookup_second, node_id))
+            continue
+
+        stats["admitted_rows_with_receipt"] += 1
+        event = replay_events.get(event_id)
+        if event is not None:
+            try:
+                created = _parse_instant(event.created_at).replace(microsecond=0)
+            except ValueError:
+                stats["unknown_owner_rows"] += 1
+                continue
+            if not lookup_second - window <= created <= lookup_second:
+                continue
+        _mark_lookup_owner(event, node_id, stats)
     stats["lookup_events"] = len(lookup_ids)
     stats["first_lookup_at"] = _format_instant(earliest)
     stats["last_lookup_at"] = _format_instant(latest)
 
-    window = timedelta(seconds=float(window_seconds))
-    limit = _parse_instant(not_after) if not_after else None
-    _assign_lookup_owners(connection, events, follows, window, limit, stats)
+    _estimate_lookup_owners(connection, replay_events, requests, window, stats)
     for event in events:
         if not event.transport_session_id:
             continue
@@ -1095,7 +1128,7 @@ def grounded_or_lookup_credit(result: ReplayResult, signal: float) -> dict[str, 
     Mirrors the live policy pair ``LM_RECALL_CREDIT_POLICY=grounded`` plus
     ``LM_LOOKUP_CREDIT_POLICY=delivered``: a delivered result earns credit
     when the closing trace grounds it (``result.grounded``) or when a
-    same-transport lookup selected it as the newest eligible delivery
+    it is the recorded or estimated recipient of a same-transport lookup
     (``result.owns_lookup``, set by ``load_lookup_follows``); everything else
     stays neutral. One proportional credit per result whichever signal fired,
     which is the live ledger's at-most-once-per-(event, node) rule, so the
