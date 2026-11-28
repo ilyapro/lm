@@ -21,6 +21,7 @@ from living_memory.consolidation import DIGEST_MAX_CHARS
 from living_memory.delivery import DEFAULT_SNIPPET_LADDER
 from living_memory.retrieval import MemoryRecallService
 from living_memory.server import create_mcp_server
+from test_semantic_passage_delivery import QUERY as SEMANTIC_QUERY
 from test_semantic_passage_delivery import QueryEmbedder, put_match
 from test_transport_identity import _structured
 
@@ -137,7 +138,7 @@ def test_mcp_excerpt_keeps_qualifier_and_lookup_restores_original(
     async def scenario():
         async with Client(mcp) as client:
             answer = _structured(await client.call_tool("memory_recall", {
-                "query": "open amber hatch", "scope": scope, "max_results": 1,
+                "query": SEMANTIC_QUERY, "scope": scope, "max_results": 1,
                 "depth": 0, "view": view,
             }))
             entry = answer["results"][0]
