@@ -19,7 +19,9 @@ from fastmcp import Client
 
 from living_memory.consolidation import DIGEST_MAX_CHARS
 from living_memory.delivery import DEFAULT_SNIPPET_LADDER
+from living_memory.retrieval import MemoryRecallService
 from living_memory.server import create_mcp_server
+from test_semantic_passage_delivery import QueryEmbedder, put_match
 from test_transport_identity import _structured
 
 
@@ -118,14 +120,19 @@ def test_mcp_excerpt_keeps_qualifier_and_lookup_restores_original(
     tmp_path, monkeypatch, view, evidence, qualifier,
 ):
     monkeypatch.setenv("LM_DELIVERY_SNIPPET_LADDER", "200")
+    monkeypatch.setattr("living_memory.server.MemoryRecallService", lambda store: MemoryRecallService(
+        store, embedder=QueryEmbedder(),
+    ))
     mcp = create_mcp_server(tmp_path / "memory.sqlite3")
-    statement = qualifier + " open the amber hatch."
-    lead = "Archive " + "x" * (700 - len(qualifier) - len("Archive . ")) + ". "
+    action = "open the amber hatch"
+    statement = f"{qualifier} {action}."
+    lead = "Archive " + "x" * 700 + ". "
     heading = "Evidence: hatch cases (case records, not steps)\n" if evidence else ""
     prefix = "- 01SYNTHETICSOURCE0000000001: " if evidence else ""
     content = heading + prefix + lead + statement + " Routine background." * 100
     scope = "project:synthetic-excerpt"
-    node = mcp.memory_store.append_trace(content, {"scope": scope})
+    start = content.index(action)
+    node = put_match(mcp.memory_store, content, start, start + len(action), scope=scope)
 
     async def scenario():
         async with Client(mcp) as client:
@@ -137,6 +144,7 @@ def test_mcp_excerpt_keeps_qualifier_and_lookup_restores_original(
             body = entry.get("node", entry)
             assert body["id"] == node.id
             assert heading + prefix + statement in body["content"]
+            assert "[Incomplete passage]" not in body["content"]
             assert len(body["content"]) <= 200
             assert entry["delivery"] == "snippet"
             assert entry["content_ref"] == {"node_id": node.id, "full_content_chars": len(content)}
@@ -455,8 +463,6 @@ def test_same_session_delivers_current_content_and_preserves_feedback(tmp_path, 
 
 
 def test_new_query_can_deliver_a_previously_unseen_excerpt(tmp_path, monkeypatch):
-    from living_memory.retrieval import MemoryRecallService
-
     class LexicalEmbedder:
         def embed(self, text):
             return [0.0, 0.0, 0.0]
