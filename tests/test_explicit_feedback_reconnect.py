@@ -304,6 +304,26 @@ def delivery(r, transport, ids, *, context=CONTEXT, at=NOW, scope=SCOPE, broad=F
     return event.id
 
 
+def test_transport_feedback_reads_newest_tie_directly_from_index(runtime):
+    r = runtime
+    with r.guard:
+        delivery(r, "current", [r.node.id])
+        newest = delivery(r, "current", [r.node.id])
+        statements = []
+        r.store.connection.set_trace_callback(statements.append)
+        try:
+            marks = resolve_explicit_marks(r.store, [r.node.id], None, "current", NOW)
+        finally:
+            r.store.connection.set_trace_callback(
+                lambda sql: r.unlocked_sql.append(sql) if not r.guard._is_owned() else None,
+            )
+        assert marks[0].accepted and marks[0].event.id == newest
+        query, = (sql for sql in statements if "rowid AS event_rowid" in sql)
+        plan = [row[3] for row in r.store.connection.execute("EXPLAIN QUERY PLAN " + query)]
+        assert any("idx_recall_events_transport_created" in step for step in plan)
+        assert not any("TEMP B-TREE" in step for step in plan)
+
+
 @pytest.mark.parametrize("filler_time", [NOW, "invalid", "9999-01-01"])
 @pytest.mark.parametrize("broad", [False, True])
 def test_reconnect_uses_one_combined_cap_before_id_and_time_filters(runtime, monkeypatch, filler_time, broad):
@@ -340,7 +360,7 @@ def test_reconnect_uses_one_combined_cap_before_id_and_time_filters(runtime, mon
             assert marks[1].event.id == last_eligible
             assert materialized == []
             assert projected == [boundary]
-            query = next(sql for sql in statements if "WITH recent AS MATERIALIZED" in sql)
+            query = next(sql for sql in statements if "rowid AS event_rowid" in sql)
             plans = [row[3] for row in r.store.connection.execute("EXPLAIN QUERY PLAN " + query)]
             assert any("idx_recall_events_session_created" in plan for plan in plans)
             assert any("idx_recall_events_transport_created" in plan for plan in plans)

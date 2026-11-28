@@ -3058,26 +3058,18 @@ class MemoryStore:
                 *(_compatible_recall_identity_sql(field) for field in ("task", "agent")
                   if params[field]),
             ]))
-        # Separate indexed probes avoid an OR scan. They are disjoint, capped
-        # independently, then share one newest-event cap before result/time tests.
-        probes = " UNION ALL ".join(
-            f"""SELECT * FROM (
-                SELECT rowid AS event_rowid, id, created_at FROM recall_events
-                WHERE {predicate}
-                ORDER BY created_at DESC, rowid DESC LIMIT :limit
-            )"""
+        order = "ORDER BY created_at DESC, event_rowid DESC LIMIT :limit"
+        probes = [
+            f"""SELECT rowid AS event_rowid, id, created_at FROM recall_events
+                WHERE {predicate} {order}"""
             for predicate in predicates
-        )
-        return self._conn.execute(
-            f"""
-            WITH recent AS MATERIALIZED (
-                SELECT * FROM ({probes})
-                ORDER BY created_at DESC, event_rowid DESC LIMIT :limit
-            )
-            SELECT * FROM recent ORDER BY created_at DESC, event_rowid DESC
-            """,
-            params,
-        ).fetchall()
+        ]
+        query = probes[0]
+        if len(probes) > 1:
+            # Each disjoint source contributes at most its newest N candidates.
+            sources = " UNION ALL ".join(f"SELECT * FROM ({probe})" for probe in probes)
+            query = f"{sources} {order}"
+        return self._conn.execute(query, params).fetchall()
 
     def record_map_reads(
         self, event_id: str, lookup_id: str, entries: Sequence[Mapping[str, Any]],
