@@ -3,11 +3,12 @@
 from dataclasses import replace
 import hashlib
 import sqlite3
+from unittest.mock import Mock
 
 import pytest
 
 from fixture_vectors import fixture_vector
-from living_memory import retrieval
+from living_memory import delivery, retrieval
 from living_memory.chunking import TextChunk, chunk_text
 from living_memory.delivery import DeliveryHistory, recall_delivery_records, shape_recall_results
 from living_memory.health_audit import ReadOnlyAuditStore
@@ -116,6 +117,22 @@ def test_semantic_source_record_and_adjacent_condition(tmp_path, view):
         assert prefix + FACT in body
         assert len(body) <= 350
         assert entry["content_ref"]["node_id"] == node.id
+
+
+def test_oversized_semantic_anchor_skips_lexical_scoring(monkeypatch):
+    heading = "Evidence: hatch cases (case records, not steps)\n"
+    prefix = "- 01SEMANTICSOURCE0000000001: "
+    content = heading + prefix + "Keep the amber hatch closed " * 20 + "\n\nArchive notes."
+    start = content.index("amber")
+    passage = SourcePassage(hashlib.sha256(content.encode()).hexdigest(), start, start + 5)
+    words = Mock(wraps=delivery._WORD)
+    monkeypatch.setattr(delivery, "_WORD", words)
+
+    excerpt = delivery._relevant_excerpt(content, 200, "archive notes", passage)
+
+    assert excerpt.startswith(heading + prefix + "Keep the amber hatch closed")
+    assert excerpt.endswith("[Incomplete passage]")
+    words.findall.assert_not_called()
 
 
 @pytest.mark.parametrize("condition_before", [False, True])

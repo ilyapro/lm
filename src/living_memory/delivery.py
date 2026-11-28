@@ -557,7 +557,6 @@ def _relevant_excerpt(
         semantic_passage = None
     if not query and semantic_passage is None:
         return _truncate_at_boundary(content, budget)
-    record_scores: list[tuple[int, int]] = []
     units = []
     spans = []
     paragraphs = []
@@ -580,45 +579,46 @@ def _relevant_excerpt(
     if not units:
         return _truncate_at_boundary(content, budget)
 
-    query_words = [word.casefold() for word in _WORD.findall(query or "") if len(word) >= 3]
-    words = set(query_words)
-    query_pairs = set(zip(query_words, query_words[1:]))
+    def ranked_indices() -> list[int]:
+        query_words = [word.casefold() for word in _WORD.findall(query or "") if len(word) >= 3]
+        words = set(query_words)
+        query_pairs = set(zip(query_words, query_words[1:]))
 
-    if heading:
-        for index, match in enumerate(matches):
-            end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
-            record_words = [word.casefold() for word in _WORD.findall(content[match.end() : end])]
-            record_scores.append((
-                len(words.intersection(record_words)),
-                len(query_pairs.intersection(zip(record_words, record_words[1:]))),
-            ))
+        record_scores: list[tuple[int, int]] = []
+        if heading:
+            for index, match in enumerate(matches):
+                end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
+                record_words = [word.casefold() for word in _WORD.findall(content[match.end() : end])]
+                record_scores.append((
+                    len(words.intersection(record_words)),
+                    len(query_pairs.intersection(zip(record_words, record_words[1:]))),
+                ))
 
-    def relevance(index: int) -> tuple[int, int, int, int, int]:
-        passage_words = [word.casefold() for word in _WORD.findall(units[index][1])]
-        matched = words.intersection(passage_words)
-        pairs = set(zip(passage_words, passage_words[1:]))
-        # A source record may establish the topic in one passage and state its
-        # applicable constraint in the next. Rank by the record's relationship
-        # to the task before ranking fragments of that same record.
-        record_score = record_scores[units[index][2]] if record_scores else (0, 0)
-        return (
-            *record_score,
-            len(matched),
-            len(query_pairs & pairs),
-            -index,
-        )
+        def relevance(index: int) -> tuple[int, int, int, int, int]:
+            passage_words = [word.casefold() for word in _WORD.findall(units[index][1])]
+            matched = words.intersection(passage_words)
+            pairs = set(zip(passage_words, passage_words[1:]))
+            # A source record may establish the topic in one passage and state its
+            # applicable constraint in the next. Rank by the record's relationship
+            # to the task before ranking fragments of that same record.
+            record_score = record_scores[units[index][2]] if record_scores else (0, 0)
+            return (
+                *record_score,
+                len(matched),
+                len(query_pairs & pairs),
+                -index,
+            )
 
-    scored = sorted(
-        range(len(units)),
-        key=relevance,
-        reverse=True,
-    )
+        return sorted(range(len(units)), key=relevance, reverse=True)
+
     required = {
         index for index, (start, end) in enumerate(spans)
         if semantic_passage is not None
         and start < semantic_passage.char_end and semantic_passage.char_start < end
     }
+    scored = None
     if not required:
+        scored = ranked_indices()
         required = {scored[0]}
 
     groups = {paragraphs[index] for index in required}
@@ -714,11 +714,13 @@ def _relevant_excerpt(
                 spans[max(indices)][1] - spans[min(indices)][0], min(indices),
             )):
                 include(indices)
+    if len(picked) == len(units):
+        return "".join(parts)
     paragraph_members: dict[tuple[int, int], set[int]] = {}
     for index, paragraph in enumerate(paragraphs):
         paragraph_members.setdefault(paragraph, set()).add(index)
     rejected: set[tuple[int, int]] = set()
-    for index in scored:
+    for index in scored if scored is not None else ranked_indices():
         paragraph = paragraphs[index]
         if index in picked or paragraph in rejected:
             continue
