@@ -709,6 +709,7 @@ class MemoryRecallService:
         repair_pending: bool = True,
         include_passages: bool = True,
         repeatable_selection: bool = False,
+        resolve_passages: Callable[[list[RecallResult]], Mapping[str, SourcePassage]] | None = None,
         select_results: _ResultSelector | None = None,
         event_results: list[dict[str, Any]] | None = None,
     ) -> Iterator[list[RecallResult]]:
@@ -719,6 +720,8 @@ class MemoryRecallService:
         this context; failure rolls back access and event/history together.
         Optional work and transport belong after it. A repeatable read-only
         selector observes one snapshot through passage and validity reads.
+        A passage consumer can resolve just the scored rows needed for its
+        response in that snapshot. Direct retrieval resolves every scored row.
         Logging flags independently control the consumption transaction. An
         optional caller-owned list retains this event's selection for its receipt.
         """
@@ -747,6 +750,16 @@ class MemoryRecallService:
                 max_results=max_results, select_results=select_results,
                 repeatable_selection=repeatable_selection, include_passages=include_passages,
             )
+            if include_passages:
+                if resolve_passages is None:
+                    ids = [result.scored_chunk_id for result in limited if result.scored_chunk_id]
+                    passages = self.store.get_chunk_passages(ids) if ids else {}
+                else:
+                    passages = resolve_passages(limited)
+                limited = [
+                    replace(result, semantic_passage=passages[result.scored_chunk_id])
+                    if result.scored_chunk_id in passages else result for result in limited
+                ]
 
         if log_event is None:
             log_event = log_access
@@ -924,16 +937,10 @@ class MemoryRecallService:
         if not include_passages:
             return plan, limited
 
-        chunk_ids = {
-            result.node_id: candidates[result.node_id].chunk_id
-            for result in limited
-            if not result.withheld and result.node.level != "schema"
-            and candidates[result.node_id].chunk_id is not None
-        }
-        passages = self.store.get_chunk_passages(list(chunk_ids.values()))
         limited = [
-            replace(result, semantic_passage=passages.get(chunk_ids.get(result.node_id)),
-                    scored_chunk_id=chunk_ids.get(result.node_id))
+            replace(result, semantic_passage=None, scored_chunk_id=(
+                candidates[result.node_id].chunk_id if not result.withheld and result.node.level != "schema" else None
+            ))
             for result in limited
         ]
         return plan, limited

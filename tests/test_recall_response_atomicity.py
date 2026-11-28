@@ -93,6 +93,9 @@ def fault(store, monkeypatch, stage):
         if stage == "source":
             store.connection.set_authorizer(deny("nodes", "content"))
         elif stage == "passage":
+            # This read is required only when the response needs an excerpt.
+            patch.setenv("LM_DELIVERY_SNIPPET_LADDER", "30")
+            patch.setenv("LM_DELIVERY_SESSION_DEDUP", "0")
             store.connection.set_authorizer(deny("node_chunk_embeddings", "char_start"))
         elif stage == "correction":
             original = server.correction_references

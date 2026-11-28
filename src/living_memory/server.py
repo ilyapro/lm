@@ -51,6 +51,7 @@ from living_memory.delivery import (
     knowledge_node,
     provenance_value_max_chars_from_env,
     recall_delivery_records,
+    select_recall_bodies,
     session_dedup_enabled_from_env,
     shape_recall_results,
     snippet_ladder_from_env,
@@ -59,7 +60,7 @@ from living_memory.delivery import (
     stats_compaction_enabled_from_env,
 )
 from living_memory.edge_derivation import derive_edges_for_new_trace
-from living_memory.models import Node, duplicate_bearers
+from living_memory.models import Node, SourcePassage, duplicate_bearers
 from living_memory.prompts import (
     DEFAULT_CONTEXT_CONCEPTS, DEFAULT_CONTEXT_SCHEMAS, MEMORY_GUIDANCE, retrieval_context_prompt,
 )
@@ -1366,6 +1367,19 @@ def _register_tools(
                 )
                 return selected, residual
 
+            snippet_max_chars = snippet_max_chars_from_env()
+            snippet_ladder = snippet_ladder_from_env()
+            bodies = None
+
+            def resolve_passages(selected: list[RecallResult]) -> dict[str, SourcePassage]:
+                nonlocal bodies
+                bodies, passages = select_recall_bodies(
+                    selected, query=query, delivery_history=delivery_history, session_dedup=session_dedup,
+                    snippet_ladder=snippet_ladder, snippet_max_chars=snippet_max_chars,
+                    read_passages=store.get_chunk_passages,
+                )
+                return passages
+
             event_results: list[dict[str, Any]] = []
             with recall_service.recall_response(
                 prepared_query,
@@ -1376,6 +1390,7 @@ def _register_tools(
                 max_results=max_results,
                 repeatable_selection=True,
                 select_results=select_delivery,
+                resolve_passages=resolve_passages,
                 event_results=event_results,
             ) as results:
                 shaped = shape_recall_results(
@@ -1384,10 +1399,11 @@ def _register_tools(
                     view=view,
                     query=query,
                     delivery_history=delivery_history,
-                    snippet_max_chars=snippet_max_chars_from_env(),
+                    bodies=bodies,
+                    snippet_max_chars=snippet_max_chars,
                     context_value_max_chars=context_value_max_chars_from_env(),
                     session_dedup=session_dedup,
-                    snippet_ladder=snippet_ladder_from_env(),
+                    snippet_ladder=snippet_ladder,
                     full_node_diet=full_node_diet_enabled_from_env(),
                     provenance_value_max_chars=provenance_value_max_chars_from_env(),
                     stats_compaction=stats_compaction_enabled_from_env(),

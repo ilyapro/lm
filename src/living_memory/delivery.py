@@ -102,6 +102,7 @@ import json
 import os
 import re
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from functools import cache
 from typing import TYPE_CHECKING, Any
 
@@ -344,6 +345,91 @@ def recall_delivery_records(
     return records
 
 
+@dataclass(frozen=True, slots=True)
+class RecallBody:
+    delivery: str
+    content: str
+    duplicate_of: str | None = None
+
+
+def select_recall_bodies(
+    results: Sequence[RecallResult], *, delivery_history: DeliveryHistory, session_dedup: bool,
+    snippet_ladder: Sequence[int] | None, snippet_max_chars: int, query: str | None,
+    read_passages: Callable[[Sequence[str]], Mapping[str, SourcePassage]] | None = None,
+) -> tuple[list[RecallBody], dict[str, SourcePassage]]:
+    """Choose ordered bodies and retain the resolved passages for legacy maintenance."""
+    eligible = [result for result in results if not result.withheld]
+    twins: dict[str, str] = {}
+    recipe_bearers = set()
+    for result, bearer in zip(eligible, duplicate_bearers([r.node for r in eligible]), strict=True):
+        node = result.node
+        if bearer is not None:
+            twins[node.id] = bearer
+        if result.current_schema or result.has_recipe_twin:
+            recipe_bearers.add(bearer or node.id)
+        elif node.level == "schema" and bearer is None:
+            recipe_bearers.add(node.id)
+    bodies: list[RecallBody] = []
+    pending: list[tuple[int, int]] = []
+    passages: dict[str, SourcePassage] = {}
+
+    def excerpts(requests: Sequence[tuple[int, int]]) -> None:
+        if read_passages is not None:
+            ids = [chunk_id for i, _ in requests if (chunk_id := results[i].scored_chunk_id)]
+            if ids:
+                passages.update(read_passages(ids))
+        for i, budget in requests:
+            result = results[i]
+            passage = passages.get(result.scored_chunk_id, result.semantic_passage)
+            if session_dedup:
+                offered = delivery_history.uncovered_excerpt(result.node, budget, query, passage)
+            else:
+                offered = _relevant_excerpt(
+                    result.node.content, budget, query, passage, digest=delivery_history.digest,
+                )
+            if offered is None:
+                bodies[i] = duplicate(result.node.content)
+            else:
+                bodies[i] = RecallBody(DELIVERY_SNIPPET, offered)
+
+    def duplicate(content: str, twin: str | None = None) -> RecallBody:
+        return RecallBody(
+            DELIVERY_TWIN_DUPLICATE if twin is not None else DELIVERY_SESSION_DUPLICATE,
+            content if len(content) <= DUPLICATE_MAX_CHARS else "", twin,
+        )
+
+    bearer_position = 0
+    for i, result in enumerate(results):
+        node = result.node
+        budget = _bearer_budget(bearer_position, snippet_ladder, snippet_max_chars)
+        if result.withheld:
+            bodies.append(RecallBody(DELIVERY_BELOW_THRESHOLD, ""))
+        elif node.id in twins:
+            bodies.append(duplicate(node.content, twins[node.id]))
+        elif node.id not in recipe_bearers and LADDER_COMPLETE < budget < len(node.content):
+            proofs = delivery_history._excerpt_digests(node) if session_dedup else ()
+            if proofs is None:
+                bodies.append(duplicate(node.content))
+                continue
+            bodies.append(RecallBody(DELIVERY_SNIPPET, ""))
+            # Once the remaining budget is constant, even an excerpt duplicate
+            # cannot change a later decision. Resolve those windows together.
+            if proofs and snippet_ladder and bearer_position < len(snippet_ladder) - 1:
+                excerpts([(i, budget)])
+                if bodies[i].delivery == DELIVERY_SESSION_DUPLICATE:
+                    continue
+            else:
+                pending.append((i, budget))
+            bearer_position += 1
+        elif session_dedup and delivery_history.covers(node, node.content):
+            bodies.append(duplicate(node.content))
+        else:
+            bodies.append(RecallBody(DELIVERY_FULL, node.content))
+            bearer_position += 1
+    excerpts(pending)
+    return bodies, passages
+
+
 def shape_recall_results(
     results: Sequence[RecallResult],
     *,
@@ -359,6 +445,7 @@ def shape_recall_results(
     correction_refs: Mapping[str, Sequence[str]] | None = None,
     query: str | None = None,
     view: str = "full",
+    bodies: Sequence[RecallBody] | None = None,
 ) -> list[dict[str, Any]]:
     """Render ranked recall results, deduplicating, snippeting, and dieting.
 
@@ -379,64 +466,19 @@ def shape_recall_results(
     if view not in ("knowledge", "full"):
         raise ValueError("view must be 'knowledge' or 'full'")
 
-    eligible = [result for result in results if not result.withheld]
-    twins: dict[str, str] = {}
-    recipe_bearers = set()
-    for result, bearer in zip(eligible, duplicate_bearers([r.node for r in eligible]), strict=True):
-        node = result.node
-        if bearer is not None:
-            twins[node.id] = bearer
-        if result.current_schema or result.has_recipe_twin:
-            recipe_bearers.add(bearer or node.id)
-        elif node.level == "schema" and bearer is None:
-            recipe_bearers.add(node.id)
-    shaped: list[dict[str, Any]] = []
-    bearer_position = 0
-    for result in results:
-        node_dict = (
-            knowledge_node(result.node) if view == "knowledge" else node_to_dict(result.node)
+    if bodies is None:
+        bodies, _ = select_recall_bodies(
+            results, delivery_history=delivery_history, session_dedup=session_dedup,
+            snippet_ladder=snippet_ladder, snippet_max_chars=snippet_max_chars, query=query,
         )
-        node_id = node_dict["id"]
-        content = node_dict["content"]
-        full_chars = len(content)
+    shaped = []
+    for result, body in zip(results, bodies, strict=True):
+        node_dict = knowledge_node(result.node) if view == "knowledge" else node_to_dict(result.node)
+        node_id = result.node_id
+        full_chars = len(result.node.content)
         validity = validity_fields(result.superseded, (correction_refs or {}).get(node_id, ()))
-
-        withheld = getattr(result, "withheld", None)
-        twin_of = twins.get(node_id)
-
-        # The bearer named on a stub's content_ref, if this result is one.
-        stub_bearer: str | None = None
-        if withheld:
-            delivery = DELIVERY_BELOW_THRESHOLD
-            node_dict["content"] = ""
-        elif twin_of is not None:
-            delivery = DELIVERY_TWIN_DUPLICATE
-            stub_bearer = twin_of
-        else:
-            budget = _bearer_budget(bearer_position, snippet_ladder, snippet_max_chars)
-            if node_id not in recipe_bearers and LADDER_COMPLETE < budget < full_chars:
-                if session_dedup:
-                    offered = delivery_history.uncovered_excerpt(
-                        result.node, budget, query, result.semantic_passage,
-                    )
-                else:
-                    offered = _relevant_excerpt(
-                        content, budget, query, result.semantic_passage, digest=delivery_history.digest,
-                    )
-                delivery = DELIVERY_SNIPPET
-            else:
-                offered = None if session_dedup and delivery_history.covers(result.node, content) else content
-                delivery = DELIVERY_FULL
-            if offered is None:
-                delivery = DELIVERY_SESSION_DUPLICATE
-            else:
-                node_dict["content"] = offered
-                bearer_position += 1
-
-        if full_chars > DUPLICATE_MAX_CHARS and delivery in (
-            DELIVERY_TWIN_DUPLICATE, DELIVERY_SESSION_DUPLICATE,
-        ):
-            node_dict["content"] = ""
+        delivery, stub_bearer = body.delivery, body.duplicate_of
+        node_dict["content"] = body.content
 
         if view == "knowledge":
             entry = node_dict
