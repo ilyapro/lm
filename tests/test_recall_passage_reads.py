@@ -81,7 +81,7 @@ def test_mixed_consumers_and_concurrent_generation(app, monkeypatch, view):
         async with Client(app) as client:
             assert (await recall(client))["results"][0]["delivery"] == "full"
             monkeypatch.setenv("LM_DELIVERY_SNIPPET_LADDER", "300")
-            twins = [add(long_body) for _ in range(2)]
+            twins = [add(long_body, level) for level in ("trace", "concept")]
             short = add("Brief note.")
             other = add("Independent source. " + long_body, "concept")
             recipe = add("Recipe. " + long_body, "schema")
