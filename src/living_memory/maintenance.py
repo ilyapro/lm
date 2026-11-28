@@ -13,7 +13,8 @@ import sys
 from living_memory.config import MemoryConfig, load_config
 from living_memory.health_audit import open_read_only_store
 from living_memory.models import RetrievalPolicyFloors, RetrievalWeights
-from living_memory.storage import MemoryStore
+from living_memory.scope import scope_family
+from living_memory.storage import MemoryStore, _weights_from_row
 
 _WEIGHT_EPSILON = 1e-12
 
@@ -49,59 +50,58 @@ def reseat_retrieval_floors(
     written. Apply mode writes only rows whose before/after weights differ.
     """
 
-    changes = retrieval_floor_changes(store)
-    if apply:
-        for change in changes:
-            store.set_retrieval_weights(
-                change.scope,
-                bm25=change.after.bm25,
-                vector=change.after.vector,
-                graph=change.after.graph,
-                learning_rate=change.after.learning_rate,
-            )
+    if not apply:
+        return retrieval_floor_changes(store)
+
+    scopes = store.connection.execute("SELECT scope FROM retrieval_weights ORDER BY scope").fetchall()
+    changes: list[RetrievalFloorChange] = []
+    for (scope,) in scopes:
+        with store.transaction(immediate=True):
+            row = store.connection.execute(
+                "SELECT * FROM retrieval_weights WHERE scope = ?", (scope,),
+            ).fetchone()
+            if row is None:
+                continue
+            change = _floor_change(store, _weights_from_row(row))
+            if change is None:
+                continue
+            saved = store.set_retrieval_weights(scope, **_weights_to_dict(change.after))
+        changes.append(replace(change, after=saved))
     return changes
 
 
 def retrieval_floor_changes(store: MemoryStore) -> list[RetrievalFloorChange]:
-    """Return the audited floor reseats needed for persisted retrieval weights."""
+    """Preview persisted weight rows and their evidence in one read snapshot."""
+    with store.read_snapshot():
+        # Validate the evidence schema even when there are no weight rows.
+        store.connection.execute("SELECT id, scope, decayed FROM nodes LIMIT 0")
+        store.connection.execute(
+            "SELECT source_id, target_id, type, metadata FROM connections LIMIT 0"
+        )
+        rows = store.connection.execute(
+            """
+            SELECT scope, bm25, vector, graph, learning_rate, updated_at
+            FROM retrieval_weights ORDER BY scope
+            """
+        )
+        return [
+            change for row in rows
+            if (change := _floor_change(store, _weights_from_row(row))) is not None
+        ]
 
-    # Evidence tables must be readable even when there are no weight rows.
-    # Optional embedding storage shapes remain the storage policy's concern.
-    store.connection.execute("SELECT id, scope, decayed FROM nodes LIMIT 0")
-    store.connection.execute(
-        "SELECT source_id, target_id, type, metadata FROM connections LIMIT 0"
+
+def _floor_change(store: MemoryStore, before: RetrievalWeights) -> RetrievalFloorChange | None:
+    after = store.apply_retrieval_weight_floors(before.scope, before)
+    if not _weights_differ(before, after):
+        return None
+    family = scope_family(before.scope)
+    return RetrievalFloorChange(
+        scope=before.scope,
+        family=family,
+        floor=store.config.retrieval_policy_floors.get(family),
+        before=before,
+        after=after,
     )
-    rows = store.connection.execute(
-        """
-        SELECT scope, bm25, vector, graph, learning_rate, updated_at
-        FROM retrieval_weights
-        ORDER BY scope
-        """
-    ).fetchall()
-    changes: list[RetrievalFloorChange] = []
-    for row in rows:
-        before = RetrievalWeights(
-            scope=str(row["scope"]),
-            bm25=float(row["bm25"]),
-            vector=float(row["vector"]),
-            graph=float(row["graph"]),
-            learning_rate=float(row["learning_rate"]),
-            updated_at=str(row["updated_at"]),
-        )
-        after = store.apply_retrieval_weight_floors(before.scope, before)
-        if not _weights_differ(before, after):
-            continue
-        family = _scope_family(before.scope)
-        changes.append(
-            RetrievalFloorChange(
-                scope=before.scope,
-                family=family,
-                floor=store.config.retrieval_policy_floors.get(family),
-                before=before,
-                after=after,
-            )
-        )
-    return changes
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -196,12 +196,6 @@ def _weights_to_dict(weights: RetrievalWeights) -> dict[str, float]:
         "graph": weights.graph,
         "learning_rate": weights.learning_rate,
     }
-
-
-def _scope_family(scope: str) -> str:
-    if ":" in scope:
-        return scope.split(":", 1)[0]
-    return scope
 
 
 if __name__ == "__main__":

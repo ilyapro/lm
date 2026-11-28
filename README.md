@@ -135,7 +135,10 @@ and database path; `--db` overrides that path. Successful JSON output includes
 `mode`, `applied`, `affected_count`, and changed scopes with configured `floor`
 and `before`/`after` weights. `--apply` opens the ordinary writable store,
 including its initialization, migrations and backfills, and persists the
-audited weight changes. It recalculates from the data available at execution.
+audited weight changes. Apply lists the persisted scopes, then takes a SQLite
+writer lock for one scope at a time. It reads that row and its evidence under
+the lock and reports a change only if it commits a correction. Deleted scopes
+are skipped. Scopes inserted after enumeration are left for the next run.
 
 Preview uses ordinary SQLite reads, including committed WAL data. SQLite may
 create or use `-wal`/`-shm` sidecars for an existing WAL database, so this is a
