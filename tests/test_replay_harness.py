@@ -692,3 +692,73 @@ def test_lookup_ab_matches_live_owner(
     for label in report["results"].values():
         assert label["arms"]["grounded_or_lookup"]["weight_updates"] == int(replayable)
         assert label["arms"]["grounded"]["weight_updates"] == 0
+
+
+@pytest.mark.parametrize(
+    "actions,owners,receipts,estimates,outside",
+    [
+        ("A read B", {"A"}, 1, 0, 0),
+        ("A B read", {"B"}, 1, 0, 0),
+        ("A read B read read", {"A", "B"}, 2, 1, 0),
+        ("A B late", set(), 0, 0, 0),
+        ("A read B prune-A", set(), 1, 0, 1),
+        ("A read B legacy", {"B"}, 0, 1, 0),
+    ],
+)
+def test_lookup_receipts_in_credit_ab(tmp_path, monkeypatch, actions, owners, receipts, estimates, outside):
+    from living_memory.feedback import apply_lookup_credit
+
+    monkeypatch.setenv("LM_LOOKUP_CREDIT_POLICY", "delivered")
+    path = tmp_path / "receipts.sqlite3"
+    store = MemoryStore(MemoryConfig(db_path=path))
+    node = store.create_node(level="trace", content="cobalt indigo", context={})
+    closure = store.create_node(level="trace", content="walnut orchard", context={})
+    deliveries = {}
+    for action in actions.split():
+        if action in ("A", "B"):
+            event = store.record_recall_event(
+                query=action, scope=f"project:{action}",
+                results=[result_dict(node.id, 1, vector=1.0)],
+                ambient_context={"transport_session_id": "reader"},
+            )
+            deliveries[action] = event.id
+            store.mark_recall_event_feedback(event.id, closure.id)
+            _set_times(store, event.id, CUTOFF, CUTOFF)
+        elif action in ("read", "late"):
+            at = CUTOFF if action == "read" else "2026-01-15T00:00:00.000001Z"
+            lookup = store.record_lookup_event([node.id], transport_session_id="reader", occurred_at=at)
+            apply_lookup_credit(store, lookup, [node.id], "reader", at)
+        elif action == "prune-A":
+            with store.connection as conn:
+                conn.execute("DELETE FROM recall_events WHERE id = ?", (deliveries["A"],))
+        elif action == "legacy":
+            with store.connection as conn:
+                conn.execute("DROP TABLE recall_credit_ledger")
+
+    if actions == "A B read":
+        cohort, _ = replay.load_replay_events(store.connection, max_events=1)
+        assert cohort[0].id == deliveries["A"]
+        stats = replay.load_lookup_follows(store.connection, cohort, not_after=CUTOFF)
+        assert stats["owner_outside_replay_rows"] == 1
+        assert not cohort[0].results[0].owns_lookup
+    store.close()
+
+    report_path = tmp_path / "ab.json"
+    subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts/credit_rule_ab.py"),
+         "--db", str(path), "--report", str(report_path), "--cutoff", CUTOFF,
+         "--incumbent", "grounded", "--arms", "grounded,grounded_or_lookup"],
+        check=True,
+    )
+    report = json.loads(report_path.read_text())
+    lookups = report["lookups"]
+    assert lookups["admitted_rows_with_receipt"] == receipts
+    assert lookups["admitted_rows_without_receipt"] == estimates
+    assert lookups["owner_outside_replay_rows"] == outside
+    assert lookups["owned_results"] == len(owners)
+    assert lookups["followed_only"] == 0
+    weights = report["final_weights"]["grounded_or_lookup"]
+    assert set(weights) == {f"project:{name}" for name in owners}
+    for label in report["results"].values():
+        assert label["arms"]["grounded_or_lookup"]["weight_updates"] == len(owners)
+        assert label["arms"]["grounded"]["weight_updates"] == 0
