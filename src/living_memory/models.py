@@ -36,6 +36,9 @@ def content_identity(node: Node) -> tuple[Any, ...] | None:
     context = {key: value for key, value in node.context.items() if key != "timestamp"}
     # Scope is represented by node.scope, including on in-memory callers.
     context.pop("scope", None)
+    session_id = context.get("session_id")
+    if isinstance(session_id, str) and session_id.strip():
+        context.pop("transport_session_id", None)
     provenance = {key: value for key, value in node.provenance.items()
                   if key not in ("prior_recalls", "source_traces", "corrections")}
     source = json.dumps(

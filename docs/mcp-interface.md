@@ -109,6 +109,13 @@ stdio, SSE, and in-memory transports).
   `memory_teach` uses only the current call's identity; it preserves the
   source's subject context, but does not inherit its author/session/task.
 
+For exact copies of ordinary knowledge, a nonblank caller-unique string
+`session_id` identifies the same session across transports. Both write-time
+copy retirement and recall compare the remaining source context and provenance
+as before. Each write retains its own ID and original transport stamp. Without
+an explicit nonblank string `session_id`, the transport stays part of the
+source comparison.
+
 Explicit `used`/`irrelevant` marks have a stricter reconnect contract: retain a
 caller-unique `session_id` in recall's `ambient_context` and writes' `context`,
 with compatible task and agent. A saved broad read permits a different write
