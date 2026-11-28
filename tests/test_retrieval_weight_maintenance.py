@@ -10,6 +10,7 @@ import sys
 
 import pytest
 
+from living_memory import maintenance
 from living_memory.maintenance import reseat_retrieval_floors
 from living_memory.storage import MemoryStore
 
@@ -216,6 +217,67 @@ def test_reseat_floors_apply_reports_and_persists_audited_change(tmp_path: Path)
         assert persisted.bm25 == pytest.approx(0.85)
         assert persisted.vector == pytest.approx(0.15)
         assert persisted.graph == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize("peer_action", ["learn", "below_floor", "remove_evidence", "delete"])
+def test_apply_uses_row_and_evidence_at_writer_admission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    peer_action: str,
+) -> None:
+    db_path = tmp_path / "concurrent.sqlite3"
+    scope = "project:concurrent"
+    _seed_collapsed_project(db_path, scope)
+    with MemoryStore(db_path) as peer:
+        peer.set_retrieval_weights(scope, bm25=1, vector=0, graph=0, learning_rate=0.2)
+        open_store = MemoryStore
+
+        def open_command_store(config):
+            store = open_store(config)
+            transaction = store.transaction
+
+            # Schedule the other connection immediately before A's first transaction.
+            def admit_writer(*args, **kwargs):
+                store.transaction = transaction
+                if peer_action == "learn":
+                    peer.update_retrieval_weights(scope, vector_signal=4)
+                elif peer_action == "below_floor":
+                    peer.set_retrieval_weights(scope, bm25=0.96, vector=0.04, graph=0,
+                                               learning_rate=0.3)
+                elif peer_action == "remove_evidence":
+                    with peer.connection:
+                        peer.connection.execute("UPDATE nodes SET decayed = 1 WHERE scope = ?", (scope,))
+                else:
+                    with peer.connection:
+                        peer.connection.execute("DELETE FROM retrieval_weights WHERE scope = ?", (scope,))
+                return transaction(*args, **kwargs)
+
+            store.transaction = admit_writer
+            return store
+
+        monkeypatch.setattr(maintenance, "MemoryStore", open_command_store)
+        assert maintenance.main(["reseat-floors", "--db", str(db_path), "--apply"]) == 0
+        audit = json.loads(capsys.readouterr().out)
+        row = peer.connection.execute(
+            "SELECT bm25, vector, graph, learning_rate FROM retrieval_weights WHERE scope = ?",
+            (scope,),
+        ).fetchone()
+
+    if peer_action == "below_floor":
+        assert audit["affected_count"] == 1
+        change, = audit["changes"]
+        assert change["scope"] == scope
+        assert change["before"] == pytest.approx(dict(bm25=0.96, vector=0.04, graph=0, learning_rate=0.3))
+        assert change["after"] == pytest.approx(dict(bm25=0.85, vector=0.15, graph=0, learning_rate=0.3))
+        assert tuple(row) == pytest.approx((0.85, 0.15, 0, 0.3))
+    else:
+        assert audit["affected_count"] == 0
+        assert audit["changes"] == []
+        if peer_action == "delete":
+            assert row is None
+        elif peer_action == "learn":
+            assert tuple(row) == pytest.approx((5 / 9, 4 / 9, 0, 0.2))
+        else:
+            assert tuple(row) == pytest.approx((1, 0, 0, 0.2))
 
 
 def test_reseat_floors_uses_storage_evidence_gating_not_separate_clamp(
