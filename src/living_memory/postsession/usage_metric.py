@@ -554,7 +554,7 @@ class CohortMeasurement:
     closed_consuming_events: set[int] = field(default_factory=set)
     #: node id -> its later deliveries that were closed by a remember trace
     closed_consumers: dict[str, list[tuple[str, int]]] = field(default_factory=dict)
-    #: node id -> deadline for the "recalled again soon" horizon
+    #: Every consumed node in a full measurement, including those with no usable deadline.
     horizons: dict[str, datetime | None] = field(default_factory=dict)
 
     @property
@@ -889,30 +889,30 @@ def run_metric(
         grounding_diagnostics: dict[str, Any] | None = None
         crosscheck: dict[str, Any] | None = None
         if grounded:
-            relevant = set().union(*(m.closed_consuming_events for m in measurements))
-        if grounded and relevant:
-            # Grounding is decided per event from that event's own trace and
-            # results, so restricting the pass to the events that can affect a
-            # cohort changes no verdict — only the cost.
-            subset = [index.events[ordinal] for ordinal in sorted(relevant)]
-            label_data = build_label_data(connection, subset)
-            grounding_diagnostics = apply_grounding(
-                subset, label_data, min_containment
-            )
-            grounding_diagnostics["corpus"] = "cohort_relevant_events"
-            grounding_diagnostics["corpus_events"] = len(subset)
-            crosscheck = _live_path_crosscheck(
-                connection,
-                index,
-                sorted(relevant),
-                min_containment=min_containment,
-                sample_events=sample_events,
-            )
-        elif grounded:
-            notes.append(
-                "no consuming event in any cohort was closed by a remember trace: "
-                "the grounded variant has an empty denominator, not a zero rate"
-            )
+            relevant = sorted({i for m in measurements for i in m.closed_consuming_events})
+            if relevant:
+                # Grounding is decided per event from that event's own trace and
+                # results, so restricting the pass to the events that can affect a
+                # cohort changes no verdict — only the cost.
+                subset = [index.events[ordinal] for ordinal in relevant]
+                label_data = build_label_data(connection, subset)
+                grounding_diagnostics = apply_grounding(
+                    subset, label_data, min_containment
+                )
+                grounding_diagnostics["corpus"] = "cohort_relevant_events"
+                grounding_diagnostics["corpus_events"] = len(subset)
+                crosscheck = _live_path_crosscheck(
+                    connection,
+                    index,
+                    relevant,
+                    min_containment=min_containment,
+                    sample_events=sample_events,
+                )
+            else:
+                notes.append(
+                    "no consuming event in any cohort was closed by a remember trace: "
+                    "the grounded variant has an empty denominator, not a zero rate"
+                )
 
         cohorts = [
             _measurement_to_dict(

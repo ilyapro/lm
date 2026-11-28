@@ -475,6 +475,38 @@ def test_grounded_variant_can_be_skipped(fixture_db: Path) -> None:
     assert grounded["rate"] is None
 
 
+def test_raw_cohorts_use_only_first_later_delivery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    written = "2026-07-02T00:00:00Z"
+    times = [written, "2026-07-03-invalid", *(["2026-07-04T00:00:00Z"] * 32)]
+    db = _make_db(
+        tmp_path / "later.sqlite3",
+        [{"id": "n", "agent": "a", "created_at": written}],
+        [
+            {"id": str(i), "results": ["n"], "feedback_trace_id": "t", "created_at": t}
+            for i, t in enumerate(times)
+        ],
+    )
+    deliveries = usage_metric.ConsumptionIndex.later_deliveries
+    lengths = []
+
+    def observe(*args, **kwargs):
+        later = deliveries(*args, **kwargs)
+        lengths.append(len(later))
+        return later
+
+    monkeypatch.setattr(usage_metric.ConsumptionIndex, "later_deliveries", observe)
+    report = _run(db, agents=["a"], grounded=False)
+    assert lengths == [1, 1]
+    for cohort in report["cohorts"]:
+        assert cohort["consumed_later"] == 1
+        assert cohort["consumed_within_7d"] == 0
+    stats = report["meta"]["index_stats"]
+    assert stats["events_closed_by_trace"] == len(times)
+    assert stats["events_unparsable_created_at"] == 1
+
+
 def test_empty_grounded_denominator_is_disclosed(tmp_path: Path) -> None:
     db = _make_db(
         tmp_path / "unclosed.sqlite3",
