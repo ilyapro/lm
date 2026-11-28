@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from living_memory.auto_consolidation import PENDING_KV_KEY
 from living_memory.decay import apply_decay
 from living_memory.server import _auto_consolidation_due, create_mcp_server
 from living_memory.storage import MemoryStore
@@ -232,6 +233,58 @@ def test_teach_replacements_share_the_remember_interval(mcp, monkeypatch, policy
     assert not set(corrections[:-1]) & set(concept.source_traces)
     assert original.id not in concept.source_traces
     assert store.get_node(original.id).corrections[-1]["new"] == seeded[0].content
+
+
+@pytest.mark.parametrize("tool", ["memory_remember", "memory_teach"])
+def test_off_preserves_pending_until_enabled_restart(tmp_path, monkeypatch, tool):
+    from fastmcp import Client
+
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
+    monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "0")
+    path = tmp_path / "isolated.sqlite3"
+    pending = '{ "project:cadence": "previous-request" }'
+    with MemoryStore(path) as store:
+        original = seed(store, 99)[0]
+        store.set_kv(PENDING_KV_KEY, pending)
+
+    mcp = create_mcp_server(path)
+    store = mcp.memory_store
+
+    async def scenario():
+        async with Client(mcp) as client:
+            args = {"context": CONTEXT}
+            if tool == "memory_remember":
+                args["content"] = f"{TOPIC} boundary"
+            else:
+                args.update(trace_id=original.id, correction=f"{TOPIC} corrected")
+            result = await client.call_tool(tool, args)
+            assert result.data["auto_consolidation"] is None
+            assert store.trace_count() == 100
+            assert mcp.auto_consolidation.wait_idle(timeout=30)
+            assert mcp.auto_consolidation.status()["passes_completed"] == 0
+            assert store.get_kv(PENDING_KV_KEY) == pending
+            assert not store.list_nodes(scope=SCOPE, level="concept")
+            manual = await client.call_tool("memory_consolidate", {"scope": SCOPE})
+            assert manual.data["concepts_created"]
+            assert store.get_kv(PENDING_KV_KEY) == pending
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        mcp.auto_consolidation.close()
+        store.close()
+
+    monkeypatch.delenv("LM_AUTO_CONSOLIDATE_POLICY")
+    resumed = create_mcp_server(path)
+    try:
+        assert resumed.auto_consolidation.wait_idle(timeout=30)
+        assert resumed.auto_consolidation.last_result(SCOPE)["status"] == "completed"
+        assert resumed.auto_consolidation.status()["passes_completed"] == 1
+        assert resumed.memory_store.get_kv(PENDING_KV_KEY) == "{}"
+    finally:
+        resumed.auto_consolidation.close()
+        resumed.memory_store.close()
 
 
 def test_fastmcp_write_tools_keep_cadence_and_correction_links(tmp_path, monkeypatch):
