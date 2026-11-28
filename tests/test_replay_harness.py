@@ -673,7 +673,10 @@ def test_lookup_ab_matches_live_owner(
     assert report["lookups"]["followed_only"] == window_matches
     assert report["lookups"]["owned_results"] == int(admitted and new_delivery != "incomplete")
     assert report["lookups"]["owner_outside_replay_rows"] == int(new_delivery == "incomplete")
-    assert set(report["final_weights"]["grounded_or_lookup"]) == ({scope} if replayable else set())
+    weights = report["final_weights"]["grounded_or_lookup"]
+    control = report["final_weights"]["grounded"]
+    changed = {key for key, value in weights.items() if control.get(key) != value}
+    assert changed == ({scope} if replayable else set())
     for label in report["results"].values():
         assert label["arms"]["grounded_or_lookup"]["weight_updates"] == int(replayable)
         assert label["arms"]["grounded"]["weight_updates"] == 0
