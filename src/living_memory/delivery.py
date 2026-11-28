@@ -369,8 +369,8 @@ def select_recall_bodies(
             recipe_bearers.add(bearer or node.id)
         elif node.level == "schema" and bearer is None:
             recipe_bearers.add(node.id)
-    bodies = []
-    pending = []
+    bodies: list[RecallBody] = []
+    pending: list[tuple[int, int]] = []
 
     def excerpts(requests: Sequence[tuple[int, int]]) -> None:
         ids = [results[i].scored_chunk_id for i, _ in requests if results[i].scored_chunk_id]
@@ -409,7 +409,9 @@ def select_recall_bodies(
                 bodies.append(duplicate(node.content))
                 continue
             bodies.append(RecallBody(DELIVERY_SNIPPET, ""))
-            if proofs:
+            # Once the remaining budget is constant, even an excerpt duplicate
+            # cannot change a later decision. Resolve those windows together.
+            if proofs and snippet_ladder and bearer_position < len(snippet_ladder) - 1:
                 excerpts([(i, budget)])
                 if bodies[i].delivery == DELIVERY_SESSION_DUPLICATE:
                     continue
