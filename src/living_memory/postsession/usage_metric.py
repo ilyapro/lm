@@ -865,6 +865,8 @@ def run_metric(
 
     connection = open_readonly(db_path)
     try:
+        # Keep the index, cohorts, grounding and totals on one read snapshot.
+        connection.execute("BEGIN")
         index = load_consumption_index(connection, as_of=cutoff)
         measurements = [
             measure_cohort(

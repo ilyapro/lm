@@ -32,6 +32,7 @@ from typing import Any, Sequence
 import pytest
 
 from living_memory.grounding import DEFAULT_MIN_CONTAINMENT
+from living_memory.postsession import usage_metric
 from living_memory.postsession.usage_metric import (
     PrivacyGuardError,
     check_privacy,
@@ -465,6 +466,39 @@ def test_empty_grounded_denominator_is_disclosed(tmp_path: Path) -> None:
 
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_wal_commit_after_event_scan_is_visible_only_to_next_report(
+    fixture_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    writer = sqlite3.connect(fixture_db, timeout=0)
+    try:
+        assert writer.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
+        before = _run(fixture_db, generated_at=AS_OF)
+        load_index = usage_metric.load_consumption_index
+
+        def load_then_write(
+            connection: sqlite3.Connection, *, as_of: str | None
+        ) -> usage_metric.ConsumptionIndex:
+            index = load_index(connection, as_of=as_of)
+            with writer:
+                writer.execute(
+                    "INSERT INTO recall_events (id, created_at, results) VALUES (?, ?, ?)",
+                    ("new-event", AS_OF, json.dumps([{"node_id": "n_same_ts"}])),
+                )
+            return index
+
+        with monkeypatch.context() as patch:
+            patch.setattr(usage_metric, "load_consumption_index", load_then_write)
+            assert _run(fixture_db, generated_at=AS_OF) == before
+    finally:
+        writer.close()
+
+    after = _run(fixture_db, generated_at=AS_OF)
+    old_meta, new_meta = before["meta"], after["meta"]
+    assert new_meta["recall_events_total"] == old_meta["recall_events_total"] + 1
+    assert new_meta["index_stats"]["events_scanned"] == old_meta["index_stats"]["events_scanned"] + 1
+    assert _cohorts(after)["all"]["consumed_later"] == _cohorts(before)["all"]["consumed_later"] + 1
 
 
 def test_run_never_writes_to_the_database(fixture_db: Path) -> None:
