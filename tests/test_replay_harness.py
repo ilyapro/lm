@@ -705,7 +705,7 @@ def test_lookup_ab_matches_live_owner(
         ("A B read", {"B"}, 1, 0, 0),
         ("A read B read read", {"A", "B"}, 2, 1, 0),
         ("A B late", set(), 0, 0, 0),
-        ("A read B prune-A", set(), 1, 0, 1),
+        ("A read B incomplete-A", set(), 1, 0, 1),
         ("A read B legacy", {"B"}, 0, 1, 0),
     ],
 )
@@ -733,9 +733,9 @@ def test_lookup_receipts_in_credit_ab(tmp_path, monkeypatch, actions, owners, re
             at = CUTOFF if action == "read" else "2026-01-15T00:00:00.000001Z"
             lookup = store.record_lookup_event([node.id], transport_session_id="reader", occurred_at=at)
             apply_lookup_credit(store, lookup, [node.id], "reader", at)
-        elif action == "prune-A":
+        elif action == "incomplete-A":
             with store.connection as conn:
-                conn.execute("DELETE FROM recall_events WHERE id = ?", (deliveries["A"],))
+                conn.execute("UPDATE recall_events SET results = ? WHERE id = ?", ("[]", deliveries["A"]))
         elif action == "legacy":
             with store.connection as conn:
                 conn.execute("DROP TABLE recall_credit_ledger")
@@ -762,3 +762,27 @@ def test_lookup_receipts_in_credit_ab(tmp_path, monkeypatch, actions, owners, re
     for label in report["results"].values():
         assert label["arms"]["grounded_or_lookup"]["weight_updates"] == len(owners)
         assert label["arms"]["grounded"]["weight_updates"] == 0
+
+
+def test_receipt_matches_request_and_node_while_window_follows_both_deliveries(tmp_path):
+    store = MemoryStore(MemoryConfig(db_path=tmp_path / "history.sqlite3"))
+    ids = ["one", "two"]
+    for name in ("first", "second"):
+        event = store.record_recall_event(
+            query=name, scope=SCOPE,
+            results=[result_dict(node, rank, vector=1.0) for rank, node in enumerate(ids, 1)],
+            ambient_context={"transport_session_id": "reader"},
+        )
+        _set_times(store, event.id, "2026-01-14T23:59:59Z", None)
+        if name == "first":
+            lookup = store.record_lookup_event(
+                ids, transport_session_id="reader", occurred_at="2026-01-14T23:59:59.100000Z",
+            )
+            store.claim_recall_credit(event.id, "one", basis="lookup", source_id=lookup)
+            store.claim_recall_credit(event.id, "two", basis="grounded", source_id=lookup)
+    events, _ = replay.load_replay_events(store.connection)
+    stats = replay.load_lookup_follows(store.connection, events, not_after=CUTOFF)
+    assert stats["results_followed"] == 4
+    assert stats["admitted_rows_with_receipt"] == stats["admitted_rows_without_receipt"] == 1
+    assert [[r.owns_lookup for r in e.results] for e in events] == [[True, False], [False, True]]
+    store.close()
