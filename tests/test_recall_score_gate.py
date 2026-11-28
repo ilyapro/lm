@@ -583,6 +583,13 @@ def test_mcp_withheld_lookup_is_bounded_and_keeps_session_feedback(tmp_path, mon
             assert all(entry["withheld"] == "below_threshold" for entry in event.results)
             assert all(entry["delivery"] == {"kind": "below_threshold"} for entry in event.results)
 
+            closing = (await client.call_tool("memory_remember", {
+                "content": sources[refs[0]], "context": {"scope": SCOPE},
+            })).data
+            assert first["recall_event_id"] in closing["implicit_feedback"]["recall_event_ids"]
+            assert closing["implicit_feedback"]["grounded_node_ids"] == []
+            assert mcp.memory_store.credited_node_ids(event.id) == set()
+
             looked = (await client.call_tool("memory_lookup", {"node_ids": refs})).data
             assert looked["count"] == 2 and looked["missing"] == []
             assert {entry["id"]: entry["content"] for entry in looked["results"]} == {

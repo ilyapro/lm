@@ -127,8 +127,10 @@ def _make_db(path: Path, nodes: Sequence[dict[str, Any]], events: Sequence[dict[
                 event.get("query", "q"),
                 json.dumps(
                     [
-                        {"node_id": node_id, "rank": index + 1, "level": "trace", "scope": "global"}
-                        for index, node_id in enumerate(event["results"])
+                        item if isinstance(item, dict) else {
+                            "node_id": item, "rank": index + 1, "level": "trace", "scope": "global",
+                        }
+                        for index, item in enumerate(event["results"])
                     ]
                 ),
                 event.get("feedback_trace_id"),
@@ -393,6 +395,35 @@ def test_late_closure_preserves_delivery(tmp_path: Path, cutoff: str | None, clo
         assert report["grounding"]["live_path_crosscheck"]["sampled_pairs"] == 1
     else:
         assert report["grounding"] == {"diagnostics": None, "live_path_crosscheck": None}
+
+
+@pytest.mark.parametrize(("visible", "hidden"), [(1, 0), (0, 1), (1, 1)])
+def test_qualification_in_closed_deliveries(tmp_path: Path, visible: int, hidden: int) -> None:
+    results = ([{"node_id": "visible"}] if visible else []) + (
+        [{"node_id": "hidden", "withheld": "below_threshold"}] if hidden else []
+    )
+    nodes = [
+        {"id": item["node_id"], "content": SCHEMA_CONTENT, "created_at": "2026-07-01T00:00:00Z"}
+        for item in results
+    ]
+    nodes.append({"id": "trace", "content": GROUNDING_TRACE, "created_at": AS_OF})
+    db = _make_db(tmp_path / "results.sqlite3", nodes, [
+        {"id": "e", "results": results, "feedback_trace_id": "trace",
+         "created_at": "2026-07-02T00:00:00Z"}
+    ])
+    report = _run(db)
+    cohort = _cohorts(report)["all"]
+    grounded = cohort["grounded"]
+    assert cohort["consumed_within_7d"] == cohort["consumed_later"] == visible + hidden
+    assert grounded["nodes_with_closed_consumer"] == visible + hidden
+    assert grounded["consumed_within_7d"] == grounded["consumed_later"] == visible
+    assert grounded["rate"] == visible / (visible + hidden)
+    assert report["grounding"]["diagnostics"]["graded_results"] == visible
+    crosscheck = report["grounding"]["live_path_crosscheck"]
+    assert crosscheck["agreements"] == crosscheck["sampled_pairs"] == visible
+    earlier = _cohorts(_run(db, as_of="2026-08-18"))["all"]
+    assert earlier["consumed_later"] == visible + hidden
+    assert earlier["grounded"]["rate"] is None
 
 
 def test_missing_closing_trace_keeps_closed_consumer(tmp_path: Path) -> None:

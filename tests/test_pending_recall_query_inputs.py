@@ -56,6 +56,17 @@ def test_result_ids_match_full_reader_including_legacy_shapes(raw):
         )
 
 
+def test_pending_grounding_qualifies_each_result_before_preparation():
+    with MemoryStore(":memory:") as store:
+        store.record_recall_event(query="query", scope=SCOPE, ambient_context=CONTEXT, results=[
+            {"node_id": "hidden", "withheld": "below_threshold"}, {"node_id": "visible"},
+        ])
+        pending, = store.pending_recall_query_inputs(scope=SCOPE, context=CONTEXT)
+        full, = store.pending_recall_events(scope=SCOPE, context=CONTEXT)
+        assert pending.result_ids == ["visible"]
+        assert full.result_ids == ["hidden", "visible"]
+
+
 @pytest.mark.parametrize("raw,error", [
     ('{', json.JSONDecodeError), ('null', TypeError), ('42', TypeError),
     ('[null]', TypeError), ('[3]', TypeError), ('["abc"]', ValueError),

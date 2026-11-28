@@ -649,6 +649,18 @@ def test_a_partial_replay_is_refused_unless_asked_for_and_then_disclosed(
     assert report["selfcheck"]["gap"] == 0.0
 
 
+def test_grounding_uses_each_arms_own_qualification(fixture_db: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LM_RECALL_MIN_SCORE", "5")
+    arms = _run(fixture_db)["arms"]
+    recorded = arms["retrospective"]
+    modeled = arms["counterfactual_faithful"]
+    assert recorded["consumed_later"] == modeled["consumed_later"] == 4
+    assert recorded["grounded"]["consumed_later"] == 1
+    assert modeled["grounded"]["consumed_later"] == 0
+    assert modeled["grounded"]["rate"] == 0
+    assert modeled["grounded"]["nodes_with_closed_consumer"] == recorded["grounded"]["nodes_with_closed_consumer"]
+
+
 def test_grounded_variant_reports_its_own_denominator(fixture_db: Path) -> None:
     check = _run(fixture_db)["selfcheck"]
     grounded = check["grounded"]
