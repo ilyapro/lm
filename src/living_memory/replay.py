@@ -231,6 +231,9 @@ def load_replay_events(
         if not raw_results:
             stats["empty_results"] += 1
             continue
+        if not isinstance(raw_results, list) or not all(isinstance(raw, dict) for raw in raw_results):
+            stats["incomplete_results"] += 1
+            continue
         parsed = [_parse_result(raw, index + 1) for index, raw in enumerate(raw_results)]
         if any(result is None for result in parsed):
             stats["incomplete_results"] += 1
@@ -282,13 +285,28 @@ def _parse_instant(raw: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
+def _delivery_node_ids(raw_results: str) -> set[str] | None:
+    """Return stored delivery membership, or None if the body is unreadable."""
+    try:
+        body = json.loads(raw_results)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(body, list):
+        return set()
+    return {
+        result["node_id"] for result in body
+        if isinstance(result, dict) and isinstance(result.get("node_id"), str)
+    }
+
+
 def _assign_lookup_owners(
     connection: sqlite3.Connection,
     events: Sequence[ReplayEvent],
     follows: Mapping[tuple[str, str], list[datetime]],
     window: timedelta,
     limit: datetime | None,
-) -> dict[str, int]:
+    stats: dict[str, Any],
+) -> None:
     """Resolve each request against the transport history available at its time.
 
     Read raw recalls because open, empty and unusable events all occupy slots
@@ -296,19 +314,18 @@ def _assign_lookup_owners(
     lookup to an older replayable event.
     """
     requests: dict[str, list[tuple[datetime, str]]] = defaultdict(list)
-    replay_results: dict[tuple[str, str], ReplayResult] = {}
-    for event in events:
-        for result in event.results:
-            replay_results.setdefault((event.id, result.node_id), result)
     for (transport, node_id), instants in follows.items():
-        requests[transport].extend(
-            (instant.replace(microsecond=0), node_id) for instant in instants
-            if limit is None or instant <= limit
-        )
+        for instant in instants:
+            if limit is None or instant <= limit:
+                requests[transport].append((instant.replace(microsecond=0), node_id))
 
-    counts = {"owned_results": 0, "owner_outside_replay_rows": 0, "unknown_owner_rows": 0}
-    if not any(event.transport_session_id for event in events):
-        return counts
+    if not requests:
+        return
+    if not any(row["name"] == "transport_session_id"
+               for row in connection.execute("PRAGMA table_info(recall_events)")):
+        stats["unknown_owner_rows"] = sum(map(len, requests.values()))
+        return
+    replay_events = {event.id: event for event in events}
     for transport, fetches in requests.items():
         rows = connection.execute(
             """SELECT id, created_at, results FROM recall_events
@@ -328,31 +345,26 @@ def _assign_lookup_owners(
                     continue
                 if created > instant:
                     break
-                try:
-                    body = json.loads(row["results"])
-                    ids = {r["node_id"] for r in body if isinstance(r, dict)
-                           and isinstance(r.get("node_id"), str)} if isinstance(body, list) else set()
-                except (ValueError, TypeError):
-                    ids = None
-                recent.append((created, row["id"], ids))
+                recent.append((created, row["id"], _delivery_node_ids(row["results"])))
                 row = next(rows, None)
             earliest = instant - window
             for created, event_id, ids in reversed(recent):
                 if created < earliest:
                     break
                 if ids is None:
-                    counts["unknown_owner_rows"] += 1
+                    stats["unknown_owner_rows"] += 1
                     break
                 if node_id in ids:
-                    owner = replay_results.get((event_id, node_id))
-                    if owner is None:
-                        counts["owner_outside_replay_rows"] += 1
-                    elif not owner.owns_lookup:
-                        owner.owns_lookup = True
-                        counts["owned_results"] += 1
+                    event = replay_events.get(event_id)
+                    if event is None:
+                        stats["owner_outside_replay_rows"] += 1
+                    else:
+                        owner = next(r for r in event.results if r.node_id == node_id)
+                        if not owner.owns_lookup:
+                            owner.owns_lookup = True
+                            stats["owned_results"] += 1
                     break
         rows.close()
-    return counts
 
 
 def load_lookup_follows(
@@ -362,7 +374,7 @@ def load_lookup_follows(
     window_seconds: float = DEFAULT_LOOKUP_WINDOW_SECONDS,
     not_after: str | None = None,
 ) -> dict[str, Any]:
-    """Set ``result.looked_up`` in place from the ``recall_lookup_events`` ledger.
+    """Annotate window follows and policy ownership from the lookup request ledger.
 
     A result is *followed* when a later ``memory_lookup`` id-fetch named its
     node from the same transport session as the event, strictly after the
@@ -456,7 +468,7 @@ def load_lookup_follows(
 
     window = timedelta(seconds=float(window_seconds))
     limit = _parse_instant(not_after) if not_after else None
-    stats.update(_assign_lookup_owners(connection, events, follows, window, limit))
+    _assign_lookup_owners(connection, events, follows, window, limit, stats)
     for event in events:
         if not event.transport_session_id:
             continue
