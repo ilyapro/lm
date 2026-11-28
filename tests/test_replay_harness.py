@@ -614,6 +614,7 @@ def test_committed_baseline_satisfies_contract() -> None:
         ("same_second", CUTOFF, "new", 1),
         ("open", CUTOFF, "new", 2),
         ("incomplete", CUTOFF, "new", 1),
+        ("cap", CUTOFF, None, 2),
         ("closed", "2026-01-15T00:00:00.000001Z", "new", 0),
     ],
 )
@@ -649,10 +650,17 @@ def test_lookup_ab_matches_live_owner(
         transport="other" if new_delivery == "other_transport" else "reader",
         closed=new_delivery != "open", complete=new_delivery != "incomplete",
     )
+    if new_delivery == "cap":
+        for _ in range(200):
+            empty = store.record_recall_event(
+                scope=SCOPE, query="empty", results=[],
+                ambient_context={"transport_session_id": "reader"},
+            )
+            _set_times(store, empty.id, "2026-01-14T23:59:59Z", None)
     lookup = store.record_lookup_event(
         [target.id], transport_session_id="reader", occurred_at=lookup_at
     )
-    delivery("holdout", "2026-01-15T01:00:00Z")
+    delivery("holdout", "2026-01-15T01:00:00Z", transport="holdout")
 
     # Run the ordinary comparison before the live oracle writes any credit.
     report_path = tmp_path / "ab.json"
@@ -664,11 +672,15 @@ def test_lookup_ab_matches_live_owner(
     )
     report = json.loads(report_path.read_text())
     live = apply_lookup_credit(store, lookup, [target.id], "reader", lookup_at)
-    assert live.credited == [({"old": old, "new": new}[expected_owner], target.id)]
-    scope = store.get_recall_event_header(live.credited[0][0]).scope
+    if expected_owner:
+        assert live.credited == [({"old": old, "new": new}[expected_owner], target.id)]
+        scope = store.get_recall_event_header(live.credited[0][0]).scope
+    else:
+        assert live.credited == []
+        scope = None
     store.close()
 
-    admitted = lookup_at == CUTOFF
+    admitted = lookup_at == CUTOFF and scope is not None
     replayable = new_delivery not in ("open", "incomplete") and admitted
     assert report["lookups"]["followed_only"] == window_matches
     assert report["lookups"]["owned_results"] == int(admitted and new_delivery != "incomplete")

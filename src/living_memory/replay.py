@@ -356,13 +356,12 @@ def _assign_lookup_owners(
                     break
                 if node_id in ids:
                     event = replay_events.get(event_id)
-                    if event is None:
+                    owner = next((r for r in event.results if r.node_id == node_id), None) if event else None
+                    if owner is None:
                         stats["owner_outside_replay_rows"] += 1
-                    else:
-                        owner = next(r for r in event.results if r.node_id == node_id)
-                        if not owner.owns_lookup:
-                            owner.owns_lookup = True
-                            stats["owned_results"] += 1
+                    elif not owner.owns_lookup:
+                        owner.owns_lookup = True
+                        stats["owned_results"] += 1
                     break
         rows.close()
 
