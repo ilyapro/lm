@@ -1302,6 +1302,31 @@ def test_recall_events_transport_index_exists_and_serves_the_probe(tmp_path: Pat
             ).fetchall()
         )
         assert "idx_recall_events_transport_created" in plan
+        assert "TEMP B-TREE" not in plan
+
+
+def test_transport_window_index_migrates_once(tmp_path: Path) -> None:
+    db = tmp_path / "memory.sqlite3"
+    index = "idx_recall_events_transport_created"
+    with MemoryStore(db) as store:
+        store.record_recall_event(query="alpha", scope="project:alpha")
+        rows = store.connection.execute("SELECT rowid, * FROM recall_events").fetchall()
+        store.connection.execute(f"DROP INDEX {index}")
+        store.connection.execute(f"CREATE INDEX {index} ON recall_events(transport_session_id, created_at DESC)")
+
+    with MemoryStore(db) as store:
+        assert store.connection.execute("SELECT rowid, * FROM recall_events").fetchall() == rows
+        assert [(r["name"], r["desc"]) for r in store.connection.execute(f"PRAGMA index_xinfo({index})")] == [
+            ("transport_session_id", 0), ("created_at", 0), (None, 0),
+        ]
+        # A rebuild discards the index statistics, even if it reuses its root page.
+        store.connection.execute(f"ANALYZE {index}")
+        stats = store.connection.execute("SELECT stat FROM sqlite_stat1 WHERE idx = ?", (index,)).fetchone()
+        assert stats is not None
+
+    with MemoryStore(db) as store:
+        assert store.connection.execute("SELECT stat FROM sqlite_stat1 WHERE idx = ?", (index,)).fetchone() == stats
+
 
 
 def test_recall_fingerprint_collapses_whitespace_and_binds_scope() -> None:

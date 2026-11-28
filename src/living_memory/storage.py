@@ -6421,13 +6421,6 @@ class MemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_recall_events_requested_scope_pending_created
                     ON recall_events(requested_scope, feedback_applied, created_at DESC);
 
-                -- Session content delivery history: equality probe
-                -- on transport_session_id plus the most-recent-events window,
-                -- instead of scanning every session's events. Runs after
-                -- _migrate_pre_v4_schema, so the column exists on legacy DBs.
-                CREATE INDEX IF NOT EXISTS idx_recall_events_transport_created
-                    ON recall_events(transport_session_id, created_at DESC);
-
                 CREATE INDEX IF NOT EXISTS idx_recall_events_session_created
                     ON recall_events(session_id, created_at DESC);
 
@@ -6454,6 +6447,16 @@ class MemoryStore:
                     ON connections(target_id, type)
                     WHERE type IN ('related', 'supersedes') AND {_DUPLICATE_CANDIDATE_SQL}"""
             )
+            # A reverse scan returns both created_at and the implicit rowid
+            # newest first. Replace the descending timestamp key atomically.
+            with self.transaction(immediate=True):
+                keys = self._conn.execute("PRAGMA index_xinfo(idx_recall_events_transport_created)")
+                if any(row["name"] == "created_at" and row["desc"] for row in keys.fetchall()):
+                    self._conn.execute("DROP INDEX idx_recall_events_transport_created")
+                self._conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_recall_events_transport_created "
+                    "ON recall_events(transport_session_id, created_at)"
+                )
             self._initialize_chunk_revisions()
             # Query anchors (v7). Same script the pre-v7 migration runs, so a
             # fresh database and a migrated one end up with identical objects.

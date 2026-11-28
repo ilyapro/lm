@@ -83,7 +83,7 @@ def event_store():
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
     connection.execute("CREATE TABLE recall_events (results TEXT, transport_session_id TEXT, created_at TEXT)")
-    connection.execute("CREATE INDEX transport_events ON recall_events (transport_session_id, created_at DESC)")
+    connection.execute("CREATE INDEX transport_events ON recall_events (transport_session_id, created_at)")
     store = MemoryStore.__new__(MemoryStore)
     store._conn = HistoryConnection(connection)
     try:
