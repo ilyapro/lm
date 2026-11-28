@@ -151,11 +151,8 @@ def test_session_dedup_full_then_stub_then_fresh_session_full_again(
 
     for node_id, entry in _by_id(second).items():
         assert entry["delivery"] == "session_duplicate"
-        stub = entry
-        assert stub["content"] != contents[node_id]
-        assert len(stub["content"]) <= 200  # a one-line preview, not the body
-        assert contents[node_id].startswith(stub["content"])
-        assert set(stub) >= CORE_NODE_KEYS  # stubs keep the core node shape
+        assert entry["content"] == ""
+        assert set(entry) >= CORE_NODE_KEYS
         ref = entry["content_ref"]
         assert ref["node_id"] == node_id
         assert ref["full_content_chars"] == len(contents[node_id])
@@ -198,6 +195,40 @@ def test_direct_calls_without_transport_identity_never_stub(tmp_path: Path) -> N
     events = store.list_recall_events()
     assert len(events) == 2
     assert all(event.transport_session_id is None for event in events)
+
+
+@pytest.mark.parametrize("view", ["knowledge", "full"])
+@pytest.mark.parametrize("body, duplicate_text", [
+    ("Release the amber report", "Release the amber report"),
+    ("Release the amber report\nonly after the final corrections are approved.",
+     "Release the amber report\nonly after the final corrections are approved."),
+    ("Release the amber report\n" + "pending review " * 20 + "only after approval.", ""),
+], ids=["one-line", "wrapped-condition", "over-budget"])
+def test_duplicate_content_and_exact_lookup(
+    tmp_path: Path, view: str, body: str, duplicate_text: str,
+) -> None:
+    async def scenario() -> None:
+        mcp, store = _server(tmp_path)
+        ids = {store.append_trace(body, {"scope": RECALL_SCOPE}).id for _ in range(2)}
+        async with Client(mcp) as client:
+            for bearer_class in ("full", "session_duplicate"):
+                response = await _recall(client, "amber report", scope=RECALL_SCOPE, view=view)
+                bearer, twin = response["results"]
+                assert [bearer["delivery"], twin["delivery"]] == [bearer_class, "twin_duplicate"]
+                nodes = [entry.get("node", entry) for entry in (bearer, twin)]
+                assert {node["id"] for node in nodes} == ids
+                assert nodes[0]["content"] == (body if bearer_class == "full" else duplicate_text)
+                assert nodes[1]["content"] == duplicate_text
+                assert twin["content_ref"]["duplicate_of"] == nodes[0]["id"]
+            for entry, node in zip((bearer, twin), nodes, strict=True):
+                ref = entry["content_ref"]
+                assert ref["node_id"] == node["id"]
+                assert ref["full_content_chars"] == len(body)
+                looked_up = _structured(await client.call_tool("memory_lookup", {"node_id": ref["node_id"]}))
+                assert looked_up["results"][0]["id"] == node["id"]
+                assert looked_up["results"][0]["content"] == body
+
+    asyncio.run(scenario())
 
 
 # --- Source identity: identical content with different provenance ----------
