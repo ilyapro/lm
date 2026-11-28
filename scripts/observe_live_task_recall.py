@@ -222,7 +222,7 @@ def _verify_commit(root: Path, commit: str) -> None:
 
 def _published_sources(root: Path, commit: str) -> dict[str, bytes]:
     _verify_commit(root, commit)
-    paths = _git(root, "ls-tree", "-rz", "--name-only", commit, "src/living_memory")
+    paths = _git(root, "ls-tree", "--full-tree", "-rz", "--name-only", commit, "src/living_memory")
     files = [os.fsdecode(path) for path in paths.split(b"\0") if path.endswith(b".py")]
     if "src/living_memory/server.py" not in files or "src/living_memory/__init__.py" not in files:
         raise ObservationError("candidate package unavailable")
@@ -493,7 +493,7 @@ def _contribution_comparison(root: Path, span: str, published: str) -> dict[str,
     def entries(commit: str) -> dict[bytes, bytes]:
         # Include trees: a deleted file replaced by a directory is no longer absent.
         result = {}
-        for record in _git(root, "ls-tree", "-rtz", commit).split(b"\0"):
+        for record in _git(root, "ls-tree", "--full-tree", "-rtz", commit).split(b"\0"):
             entry, _, path = record.partition(b"\t")
             if path in paths:
                 result[path] = entry

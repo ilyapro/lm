@@ -316,10 +316,12 @@ def test_compare_candidate_detects_different_serving_functions(isolated_reader):
 
 
 def test_compare_contribution_in_successor(isolated_reader, tmp_path):
+    repo = tmp_path / "repo"
+
     def git(*args):
         return subprocess.check_output(
             ["git", "-c", "user.name=Test", "-c", "user.email=test@example.org", *args],
-            cwd=tmp_path, text=True,
+            cwd=repo, text=True,
         ).strip()
 
     def commit(message):
@@ -328,29 +330,28 @@ def test_compare_contribution_in_successor(isolated_reader, tmp_path):
         return git("rev-parse", "HEAD")
 
     # Keep the reader's database and logs outside the example repository.
-    tmp_path = tmp_path / "repo"
-    tmp_path.mkdir()
+    repo.mkdir()
     git("init", "-q")
-    shutil.copytree(ROOT / "src/living_memory", tmp_path / "src/living_memory",
+    shutil.copytree(ROOT / "src/living_memory", repo / "src/living_memory",
                     ignore=shutil.ignore_patterns("__pycache__"))
-    shutil.copyfile(ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
+    shutil.copyfile(ROOT / "pyproject.toml", repo / "pyproject.toml")
     models = "src/living_memory/models.py"
-    current = (tmp_path / models).read_bytes()
-    (tmp_path / models).write_bytes(b"# before delivery\n" + current)
-    server = tmp_path / "src/living_memory/server.py"
+    current = (repo / models).read_bytes()
+    (repo / models).write_bytes(current + b"\n# before delivery\n")
+    server = repo / "src/living_memory/server.py"
     serving = server.read_text()
     other = serving.replace("return bool(expected) and secrets.compare_digest(",
                             "return (bool(expected) is True) and secrets.compare_digest(")
     assert other != serving
     server.write_text(other)
     base = commit("base")
-    (tmp_path / models).write_bytes(current)
+    (repo / models).write_bytes(current)
     tip = commit("own delivery")
     server.write_text(serving)
     published = commit("independent change to covered functions")
 
     def compare(revision, span=f"{base}..{tip}"):
-        return _compare(isolated_reader, tmp_path, repository=tmp_path, revision=revision,
+        return _compare(isolated_reader, repo, repository=repo, revision=revision,
                         contribution=span)
 
     code, report = compare(published)
