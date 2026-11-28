@@ -316,7 +316,7 @@ def _estimate_lookup_owners(
         return
     if not any(row["name"] == "transport_session_id"
                for row in connection.execute("PRAGMA table_info(recall_events)")):
-        stats["unknown_owner_rows"] = sum(map(len, requests.values()))
+        stats["unknown_owner_rows"] += sum(map(len, requests.values()))
         return
     for transport, fetches in requests.items():
         rows = connection.execute(
@@ -1127,7 +1127,7 @@ def grounded_or_lookup_credit(result: ReplayResult, signal: float) -> dict[str, 
 
     Mirrors the live policy pair ``LM_RECALL_CREDIT_POLICY=grounded`` plus
     ``LM_LOOKUP_CREDIT_POLICY=delivered``: a delivered result earns credit
-    when the closing trace grounds it (``result.grounded``) or when a
+    when the closing trace grounds it (``result.grounded``) or when
     it is the recorded or estimated recipient of a same-transport lookup
     (``result.owns_lookup``, set by ``load_lookup_follows``); everything else
     stays neutral. One proportional credit per result whichever signal fired,

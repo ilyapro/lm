@@ -606,6 +606,17 @@ def test_committed_baseline_satisfies_contract() -> None:
     assert "Candidate selection bias" in markdown
 
 
+def _lookup_ab_report(path: Path) -> dict:
+    report_path = path.with_suffix(".json")
+    subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts/credit_rule_ab.py"),
+         "--db", str(path), "--report", str(report_path), "--cutoff", CUTOFF,
+         "--incumbent", "grounded", "--arms", "grounded,grounded_or_lookup"],
+        check=True,
+    )
+    return json.loads(report_path.read_text())
+
+
 @pytest.mark.parametrize(
     "new_delivery,lookup_at,expected_owner,window_matches",
     [
@@ -663,14 +674,7 @@ def test_lookup_ab_matches_live_owner(
     delivery("holdout", "2026-01-15T01:00:00Z", transport="holdout")
 
     # Run the ordinary comparison before the live oracle writes any credit.
-    report_path = tmp_path / "ab.json"
-    subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts/credit_rule_ab.py"),
-         "--db", str(path), "--report", str(report_path), "--cutoff", CUTOFF,
-         "--incumbent", "grounded", "--arms", "grounded,grounded_or_lookup"],
-        check=True,
-    )
-    report = json.loads(report_path.read_text())
+    report = _lookup_ab_report(path)
     live = apply_lookup_credit(store, lookup, [target.id], "reader", lookup_at)
     if expected_owner:
         assert live.credited == [({"old": old, "new": new}[expected_owner], target.id)]
@@ -714,8 +718,8 @@ def test_lookup_receipts_in_credit_ab(tmp_path, monkeypatch, actions, owners, re
     node = store.create_node(level="trace", content="cobalt indigo", context={})
     closure = store.create_node(level="trace", content="walnut orchard", context={})
     deliveries = {}
-    for action in actions.split():
-        if action in ("A", "B"):
+    for action in (*actions.split(), "holdout"):
+        if action in ("A", "B", "holdout"):
             event = store.record_recall_event(
                 query=action, scope=f"project:{action}",
                 results=[result_dict(node.id, 1, vector=1.0)],
@@ -723,7 +727,8 @@ def test_lookup_receipts_in_credit_ab(tmp_path, monkeypatch, actions, owners, re
             )
             deliveries[action] = event.id
             store.mark_recall_event_feedback(event.id, closure.id)
-            _set_times(store, event.id, CUTOFF, CUTOFF)
+            at = "2026-01-15T01:00:00Z" if action == "holdout" else CUTOFF
+            _set_times(store, event.id, at, at)
         elif action in ("read", "late"):
             at = CUTOFF if action == "read" else "2026-01-15T00:00:00.000001Z"
             lookup = store.record_lookup_event([node.id], transport_session_id="reader", occurred_at=at)
@@ -743,14 +748,7 @@ def test_lookup_receipts_in_credit_ab(tmp_path, monkeypatch, actions, owners, re
         assert not cohort[0].results[0].owns_lookup
     store.close()
 
-    report_path = tmp_path / "ab.json"
-    subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts/credit_rule_ab.py"),
-         "--db", str(path), "--report", str(report_path), "--cutoff", CUTOFF,
-         "--incumbent", "grounded", "--arms", "grounded,grounded_or_lookup"],
-        check=True,
-    )
-    report = json.loads(report_path.read_text())
+    report = _lookup_ab_report(path)
     lookups = report["lookups"]
     assert lookups["admitted_rows_with_receipt"] == receipts
     assert lookups["admitted_rows_without_receipt"] == estimates
@@ -758,7 +756,9 @@ def test_lookup_receipts_in_credit_ab(tmp_path, monkeypatch, actions, owners, re
     assert lookups["owned_results"] == len(owners)
     assert lookups["followed_only"] == 0
     weights = report["final_weights"]["grounded_or_lookup"]
-    assert set(weights) == {f"project:{name}" for name in owners}
+    control = report["final_weights"]["grounded"]
+    changed = {scope for scope, value in weights.items() if control.get(scope) != value}
+    assert changed == {f"project:{name}" for name in owners}
     for label in report["results"].values():
         assert label["arms"]["grounded_or_lookup"]["weight_updates"] == len(owners)
         assert label["arms"]["grounded"]["weight_updates"] == 0
