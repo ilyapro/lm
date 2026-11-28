@@ -83,7 +83,7 @@ def relatedness(cosine: float, *, related: float, unrelated: float) -> str:
 def grade_record(record: dict[str, Any]) -> dict[str, float]:
     """Containment of every result of one closure under the current tokenizer."""
 
-    results = record["results"]
+    results = [item for item in record["results"] if not item.get("withheld")]
     if not results:
         return {}
     graded = ground_token_sets(
@@ -156,7 +156,7 @@ def measure(
         any_lookup = False
         for item in record["results"]:
             value = graded.get(item["node_id"], 0.0)
-            grounded = value >= threshold
+            grounded = not item.get("withheld") and value >= threshold
             fetched = looked_up(item, window=lookup_window, same_transport=same_transport)
             pair_rel = relatedness(
                 float(item["node_trace_cosine"]), related=related, unrelated=unrelated

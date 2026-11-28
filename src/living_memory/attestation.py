@@ -411,7 +411,7 @@ def _resolve_attestation(
     resolved: list[tuple[int, dict[str, Any], Any]] = []
     for rank, result in enumerate(event.results):
         node_id = str(result.get("node_id") or "")
-        if not node_id:
+        if not node_id or result.get("withheld"):
             continue
         node = store.get_node(node_id)
         if node is None or node.decayed:

@@ -233,7 +233,7 @@ class RecallEventHeader:
 
 @dataclass(slots=True)
 class RecallQueryInputs(RecallEventHeader):
-    """Current pending query and ordered result identities for preparation."""
+    """Current pending query and ordered qualified result identities for preparation."""
 
     result_ids: list[str] = field(default_factory=list)
 

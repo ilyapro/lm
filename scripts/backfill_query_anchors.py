@@ -327,7 +327,7 @@ def _parse_result_ids(raw: Any, trace_id: str) -> tuple[str, ...]:
     ids: list[str] = []
     seen: set[str] = set()
     for item in items:
-        if not isinstance(item, Mapping):
+        if not isinstance(item, Mapping) or item.get("withheld"):
             continue
         node_id = str(item.get("node_id") or "")
         if not node_id or node_id == trace_id or node_id in seen:

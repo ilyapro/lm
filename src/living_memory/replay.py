@@ -560,14 +560,14 @@ def apply_grounding(
         result_tokens = {
             result.node_id: tokens
             for result in event.results
-            if (tokens := data.token_sets.get(result.node_id)) is not None
+            if not result.withheld and (tokens := data.token_sets.get(result.node_id)) is not None
         }
         verdicts = ground_token_sets(
             trace_tokens, result_tokens, min_containment=min_containment
         )
         for result in event.results:
             verdict = verdicts.get(result.node_id)
-            if verdict is None:
+            if result.withheld or verdict is None:
                 continue
             result.containment = verdict.containment
             result.grounded = verdict.grounded
@@ -982,6 +982,8 @@ def grounded_negative_credit(result: ReplayResult, signal: float) -> dict[str, f
     ``feedback.UNGROUNDED_NEGATIVE_FACTOR``.
     """
 
+    if result.withheld:
+        return None
     if result.grounded:
         return proportional_credit(result, signal)
     synthetic = SimpleNamespace(

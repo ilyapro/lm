@@ -235,8 +235,14 @@ def load_consumed(
             resolvable = False
         else:
             resolvable = True
+            qualified_contents = {
+                str(item["node_id"]): contents[str(item["node_id"])]
+                for item in raw_results
+                if isinstance(item, dict) and not item.get("withheld")
+                and str(item.get("node_id") or "") in contents
+            }
             verdicts = ground_results(
-                trace.content, contents, min_containment=min_containment
+                trace.content, qualified_contents, min_containment=min_containment
             )
             grounded_ids = tuple(
                 sorted(node_id for node_id, verdict in verdicts.items() if verdict.grounded)

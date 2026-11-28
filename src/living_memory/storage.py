@@ -3843,7 +3843,7 @@ class MemoryStore:
     ) -> list[RecallQueryInputs]:
         """Project preparation inputs from the same current pending selection.
 
-        Ordinary results send only node_id JSON to Python. Keep raw JSON types
+        Ordinary results send only node_id and withheld JSON to Python. Keep raw JSON types
         until Python applies RecallEvent.result_ids truthiness and str(), so
         booleans, large integers and composite IDs retain their meaning.
         Noncanonical results use the existing dict(item) decoding contract:
@@ -3863,8 +3863,12 @@ class MemoryStore:
                         SELECT json_group_array(json(CASE
                             WHEN result.type = 'object' AND (
                                 SELECT count(*) FROM json_each(result.value)
-                                WHERE key = 'node_id'
-                            ) <= 1 THEN json_object('node_id', result.value -> '$.node_id')
+                                WHERE key IN ('node_id', 'withheld')
+                                GROUP BY key HAVING count(*) > 1 LIMIT 1
+                            ) IS NULL THEN json_object(
+                                'node_id', result.value -> '$.node_id',
+                                'withheld', result.value -> '$.withheld'
+                            )
                             ELSE event.results -> ('$[' || result.key || ']')
                         END)) FROM json_each(event.results) AS result
                     ) ELSE event.results END
@@ -3873,7 +3877,8 @@ class MemoryStore:
         return [RecallQueryInputs(
             id=str(row["id"]), query=str(row["query"]), scope=str(row["scope"]),
             result_ids=_recall_result_node_ids([
-                dict(item) for item in _json_loads(row["results"], [])
+                item for raw in _json_loads(row["results"], [])
+                if not (item := dict(raw)).get("withheld")
             ]),
         ) for row in rows]
 

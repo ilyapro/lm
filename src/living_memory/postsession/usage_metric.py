@@ -25,8 +25,9 @@ not. :func:`load_cohort_nodes` therefore filters by window, ``agent`` and a
 what makes a run reproducible: the live database keeps growing, and a recall
 event recorded after a window closed can only ever *add* consumption to it.
 
-GROUNDED variant. Raw consumption says a node was delivered again; it does not
-say the reading agent used it. The grounded variant additionally requires that
+GROUNDED variant. Raw consumption counts every later appearance of the ID,
+including a withheld reference. Grounding additionally requires that the
+result was qualified (no withheld reason) and that
 the consuming event was closed by the cutoff by a ``memory_remember`` trace (a non-null
 ``feedback_trace_id``) whose content *grounds* the node, under the shared
 IDF-containment rule at :data:`DEFAULT_MIN_CONTAINMENT`. The containment
@@ -681,7 +682,7 @@ def _live_path_crosscheck(
         result_contents = {
             result.node_id: contents[result.node_id]
             for result in event.results
-            if result.node_id in contents
+            if not result.withheld and result.node_id in contents
         }
         if not result_contents:
             continue
@@ -690,7 +691,7 @@ def _live_path_crosscheck(
             trace_content, result_contents, min_containment=min_containment
         )
         for result in event.results:
-            if result.node_id not in result_contents:
+            if result.withheld or result.node_id not in result_contents:
                 continue
             pairs += 1
             agreements += int(result.grounded == (result.node_id in grounded_ids))
@@ -834,7 +835,8 @@ CONSUMED_RULE = (
 )
 
 GROUNDED_RULE = (
-    "the consuming event has a memory_remember trace whose known creation and feedback "
+    "the result has no withheld reason and the consuming event has a memory_remember "
+    "trace whose known creation and feedback "
     "times are at or before as_of and whose content grounds the node at "
     "IDF containment >= min_containment"
 )
@@ -958,8 +960,9 @@ def run_metric(
         "level='trace' only does not reproduce the published baseline"
     )
     notes.append(
-        "grounded.rate divides by nodes_with_closed_consumer, not by the cohort: "
-        "most recall events carry no feedback_trace_id"
+        "grounded.rate divides by distinct nodes appearing in later closed events, "
+        "including withheld references: it measures qualified grounded delivery "
+        "among those closed appearances"
     )
     notes.append(
         "dividing grounded consumption by the whole cohort understates it "

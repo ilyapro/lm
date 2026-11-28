@@ -258,6 +258,7 @@ def build_corpus(
                     "trigger_score": float(item.get("trigger_score", 0.0) or 0.0),
                     "score": float(item.get("score", 0.0) or 0.0),
                     "delivery": item.get("delivery"),
+                    "withheld": item.get("withheld"),
                     "content": content,
                     "script": node_class,
                     "pair_script": pair_class(node_class, trace_class),

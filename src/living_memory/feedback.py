@@ -559,7 +559,7 @@ def apply_pending_recall_feedback(
         if observed_grounding is not None and resolved:
             verdicts = observed_grounding.ground(
                 event_index,
-                {node.id: node.content for _rank, _result, node in resolved},
+                {node.id: node.content for _rank, result, node in resolved if not result.get("withheld")},
             )
 
         for rank, result, node in resolved:
@@ -570,6 +570,8 @@ def apply_pending_recall_feedback(
             if node.level == "trace" and node_id not in source_traces:
                 source_traces.append(node_id)
 
+            if result.get("withheld") and policy != "all":
+                continue
             if reinforce_results and node_id not in irrelevant:
                 verdict = verdicts.get(node_id)
                 content_grounded = verdict is not None and verdict.grounded
