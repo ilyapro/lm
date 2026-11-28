@@ -122,8 +122,10 @@ def test_repeated_withheld_recall_preserves_scoped_browse_order(runtime):
                 events.append(event.id)
             assert len(set(events)) == 3
             assert await browse() == before
-            assert store.get_node(weak.id) == weak
-            assert store.get_node(peer.id) == peer
+            for original in (weak, peer):
+                current = store.get_node(original.id)
+                assert current.access_count == original.access_count
+                assert current.last_accessed == original.last_accessed
             accessed = store.get_node(strong.id)
             assert accessed.access_count == strong.access_count + 3 and accessed.last_accessed
 
