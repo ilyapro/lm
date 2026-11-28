@@ -1281,26 +1281,12 @@ def test_recall_delivery_history_is_bounded_and_isolated(tmp_path: Path) -> None
 
 def test_recall_events_transport_index_exists_and_serves_the_probe(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
-        index_names = {
-            row["name"]
-            for row in store.connection.execute(
-                "PRAGMA index_list('recall_events')"
-            ).fetchall()
-        }
-        assert "idx_recall_events_transport_created" in index_names
-
-        plan = " ".join(
-            row["detail"]
-            for row in store.connection.execute(
-                """
-                EXPLAIN QUERY PLAN
-                SELECT results FROM recall_events
-                WHERE transport_session_id = 'transport-1'
-                ORDER BY created_at DESC, rowid DESC
-                LIMIT 200
-                """
-            ).fetchall()
-        )
+        statements = []
+        store.connection.set_trace_callback(statements.append)
+        store.recall_delivery_history("transport-1")
+        store.connection.set_trace_callback(None)
+        query, = statements
+        plan = " ".join(row["detail"] for row in store.connection.execute("EXPLAIN QUERY PLAN " + query))
         assert "idx_recall_events_transport_created" in plan
         assert "TEMP B-TREE" not in plan
 
@@ -1326,7 +1312,6 @@ def test_transport_window_index_migrates_once(tmp_path: Path) -> None:
 
     with MemoryStore(db) as store:
         assert store.connection.execute("SELECT stat FROM sqlite_stat1 WHERE idx = ?", (index,)).fetchone() == stats
-
 
 
 def test_recall_fingerprint_collapses_whitespace_and_binds_scope() -> None:
