@@ -708,17 +708,19 @@ Use `compare --help` for the service host, port and TLS options.
 
 To check your delivery after another change has shipped, keep the host-local
 commit IDs for the base immediately before your delivery and its published tip.
-Compare their net delta with the trusted release now published for that host:
+Use the full successor ID from the host's publication receipt, or pin the
+host's trusted publication ref in the same invocation. For example, on a host
+that publishes into `refs/heads/main`:
 
 ```sh
 python3 scripts/observe_live_task_recall.py compare --installed-root "$PWD" \
-  --published-commit "$published_successor" --contribution "$delivery_base..$delivery_tip"
+  --published-commit "$(git rev-parse --verify refs/heads/main^{commit})" \
+  --contribution "$delivery_base..$delivery_tip"
 ```
 
-Supply full commit IDs from the same repository history. Take the successor
-ID from the host's publication receipt or resolve its trusted publication ref
-with `git rev-parse` once. Only that pinned candidate is imported. Running the
-first command with the original candidate still checks that exact release.
+Use full base and tip IDs from that host's history. Only the pinned published
+candidate is imported. Running the first command with the original candidate
+still checks that exact release.
 
 The optional `contribution` field checks base → tip → candidate ancestry and
 lists every path in the net base-to-tip change, including paths outside the
@@ -739,13 +741,13 @@ The runtime comparisons retain their own coverage:
   revision are outside its coverage.
 - `recall` is `not_run`. The only request to the service is `GET /health`.
 
-Exit 0 means all requested comparisons matched. Together they establish
+Exit 0 means all requested comparisons matched. In contribution mode this establishes
 preservation of the specified delta in the published source, the installed
 source inventory described above and equivalence of the covered functions.
 Other files' installation, execution of a particular path and the contribution's
 behavior require separate evidence. Exit 1 means at least one comparison
 found a mismatch. Exit 2 means the available evidence was insufficient to
-decide. Each comparison reports its own status even if the other is unknown.
+decide. Each comparison reports its own status.
 
 To verify changed code after a restart and the result of fresh recall cases,
 use the same script without the `compare` subcommand. Its `--help` lists the
