@@ -176,7 +176,7 @@ def _process_identity(pid: int) -> dict[str, Any]:
 
 def _git(root: Path, *args: str) -> bytes:
     return subprocess.run(
-        ["git", "-C", str(root), *args], capture_output=True, check=True, timeout=20,
+        ["git", "--no-replace-objects", "-C", str(root), *args], capture_output=True, check=True, timeout=20,
     ).stdout
 
 
@@ -212,17 +212,21 @@ def _product_sources(source: dict[str, bytes], anchors: list[str]) -> list[str]:
     return sorted(selected)
 
 
-def _published_sources(root: Path, commit: str) -> dict[str, bytes]:
+def _verify_commit(root: Path, commit: str) -> None:
     if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit):
         raise ObservationError("expected a full published commit ID")
     revision = _git(root, "rev-parse", "--verify", commit + "^{commit}").decode().strip()
     if revision != commit:
         raise ObservationError("candidate is not a commit")
-    paths = _git(root, "ls-tree", "-rz", "--name-only", revision, "src/living_memory")
+
+
+def _published_sources(root: Path, commit: str) -> dict[str, bytes]:
+    _verify_commit(root, commit)
+    paths = _git(root, "ls-tree", "-rz", "--name-only", commit, "src/living_memory")
     files = [os.fsdecode(path) for path in paths.split(b"\0") if path.endswith(b".py")]
     if "src/living_memory/server.py" not in files or "src/living_memory/__init__.py" not in files:
         raise ObservationError("candidate package unavailable")
-    return {path: _git(root, "show", f"{revision}:{path}") for path in [*files, "pyproject.toml"]}
+    return {path: _git(root, "show", f"{commit}:{path}") for path in [*files, "pyproject.toml"]}
 
 
 def _candidate_identity(source: dict[str, bytes], installed_root: Path) -> dict[str, Any]:
@@ -468,15 +472,51 @@ def _process_comparison(args: argparse.Namespace, source: dict[str, bytes]) -> d
             "service_digest": digest, "boot_id": boot_id}
 
 
+def _contribution_comparison(root: Path, span: str, published: str) -> dict[str, Any]:
+    base, _, tip = span.partition("..")
+    for commit in (base, tip, published):
+        _verify_commit(root, commit)
+    for older, newer in ((base, tip), (tip, published)):
+        try:
+            _git(root, "merge-base", "--is-ancestor", older, newer)
+        except subprocess.CalledProcessError as exc:
+            if exc.returncode != 1:
+                raise
+            return {"status": "mismatch", "reason": f"{older} is not an ancestor of {newer}"}
+
+    changes = _git(root, "diff-tree", "-r", "-z", "--name-only", "--no-renames",
+                   "--ignore-submodules=none", base, tip)
+    paths = set(changes.split(b"\0")) - {b""}
+    if not paths:
+        return {"status": "unknown", "reason": "empty contribution"}
+
+    def entries(commit: str) -> dict[bytes, bytes]:
+        # Include trees: a deleted file replaced by a directory is no longer absent.
+        result = {}
+        for record in _git(root, "ls-tree", "-rtz", commit).split(b"\0"):
+            entry, _, path = record.partition(b"\t")
+            if path in paths:
+                result[path] = entry
+        return result
+
+    before, after = entries(tip), entries(published)
+    different = sorted(os.fsdecode(p) for p in paths if before.get(p) != after.get(p))
+    return {"status": "mismatch" if different else "match",
+            "paths": sorted(map(os.fsdecode, paths)), "different_paths": different}
+
+
 def _compare(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Compare candidate sources and covered functions.")
     parser.add_argument("--installed-root", required=True, type=Path)
     parser.add_argument("--candidate-root", type=Path, help="Git repository (default: installed root)")
     parser.add_argument("--published-commit", required=True, help="Full ID of a trusted candidate commit")
+    parser.add_argument("--contribution", metavar="BASE..TIP",
+                        help="Also verify the net changes between two full commit IDs in this candidate")
     _connection_options(parser)
     args = parser.parse_args(argv)
+    root = args.candidate_root or args.installed_root
     try:
-        source = _published_sources(args.candidate_root or args.installed_root, args.published_commit)
+        source = _published_sources(root, args.published_commit)
     except (OSError, subprocess.SubprocessError, ObservationError):
         disk = process = {"status": "unknown", "reason": "candidate sources unavailable"}
     else:
@@ -485,9 +525,17 @@ def _compare(argv: list[str]) -> int:
             disk = _disk_comparison(args.installed_root, source)
         except (OSError, ObservationError):
             disk = {"status": "unknown", "reason": "installed sources unavailable"}
-    print(json.dumps({"published_commit": args.published_commit, "disk": disk,
-                      "process": process, "recall": "not_run"}, sort_keys=True))
+    report = {"published_commit": args.published_commit, "disk": disk,
+              "process": process, "recall": "not_run"}
     statuses = {disk["status"], process["status"]}
+    if args.contribution is not None:
+        try:
+            comparison = _contribution_comparison(root, args.contribution, args.published_commit)
+        except (OSError, subprocess.SubprocessError, ObservationError):
+            comparison = {"status": "unknown", "reason": "contribution history unavailable or invalid"}
+        report["contribution"] = {"range": args.contribution, **comparison}
+        statuses.add(comparison["status"])
+    print(json.dumps(report, sort_keys=True))
     if "mismatch" in statuses:
         return 1
     return 2 if "unknown" in statuses else 0
