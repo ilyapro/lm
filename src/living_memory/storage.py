@@ -3041,7 +3041,9 @@ class MemoryStore:
             "transport_session_id": str(transport_session_id),
             "limit": int(limit),
         }
-        predicates = ["transport_session_id = :transport_session_id"]
+        select = "SELECT rowid AS event_rowid, id, created_at FROM recall_events"
+        order = "ORDER BY created_at DESC, event_rowid DESC LIMIT :limit"
+        query = f"{select} WHERE transport_session_id = :transport_session_id"
         if params["session_id"] and params["session_id"].strip():
             params["scope"] = resolve_scope(ambient_context=context, store=self).requested_scope
             params["all_scopes"] = ALL_SCOPES
@@ -3051,25 +3053,16 @@ class MemoryStore:
             scope_match = f"""({_recall_scope_match_sql(params, allow_transport=False)}
                 OR EXISTS (SELECT 1 FROM json_each(resolved_scopes)
                            WHERE value = :all_scopes))"""
-            predicates.append(" AND ".join([
+            caller_match = " AND ".join([
                 "session_id = :session_id",
                 "COALESCE(transport_session_id, '') != :transport_session_id",
                 scope_match,
                 *(_compatible_recall_identity_sql(field) for field in ("task", "agent")
                   if params[field]),
-            ]))
-        order = "ORDER BY created_at DESC, event_rowid DESC LIMIT :limit"
-        probes = [
-            f"""SELECT rowid AS event_rowid, id, created_at FROM recall_events
-                WHERE {predicate} {order}"""
-            for predicate in predicates
-        ]
-        query = probes[0]
-        if len(probes) > 1:
-            # Each disjoint source contributes at most its newest N candidates.
-            sources = " UNION ALL ".join(f"SELECT * FROM ({probe})" for probe in probes)
-            query = f"{sources} {order}"
-        return self._conn.execute(query, params).fetchall()
+            ])
+            # Bound the caller probe before merging it with the ordered transport scan.
+            query += f" UNION ALL SELECT * FROM ({select} WHERE {caller_match} {order})"
+        return self._conn.execute(f"{query} {order}", params).fetchall()
 
     def record_map_reads(
         self, event_id: str, lookup_id: str, entries: Sequence[Mapping[str, Any]],
