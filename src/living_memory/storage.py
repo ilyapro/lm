@@ -3862,10 +3862,9 @@ class MemoryStore:
                     CASE WHEN json_type(event.results) = 'array' THEN (
                         SELECT json_group_array(json(CASE
                             WHEN result.type = 'object' AND (
-                                SELECT count(*) FROM json_each(result.value)
+                                SELECT count(*) = count(DISTINCT key) FROM json_each(result.value)
                                 WHERE key IN ('node_id', 'withheld')
-                                GROUP BY key HAVING count(*) > 1 LIMIT 1
-                            ) IS NULL THEN json_object(
+                            ) THEN json_object(
                                 'node_id', result.value -> '$.node_id',
                                 'withheld', result.value -> '$.withheld'
                             )

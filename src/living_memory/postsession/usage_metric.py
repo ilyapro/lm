@@ -835,10 +835,8 @@ CONSUMED_RULE = (
 )
 
 GROUNDED_RULE = (
-    "the result has no withheld reason and the consuming event has a memory_remember "
-    "trace whose known creation and feedback "
-    "times are at or before as_of and whose content grounds the node at "
-    "IDF containment >= min_containment"
+    "a result without a withheld reason is grounded by the event's closing trace at "
+    "IDF containment >= min_containment; known trace creation and feedback times must be at or before as_of"
 )
 
 
