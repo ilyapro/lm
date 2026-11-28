@@ -255,7 +255,7 @@ class DeliveryHistory:
 
     Selection can recognize a previously offered version; compaction additionally
     requires the complete content or the exact excerpt it would offer now.
-    Metadata timestamps, legacy selections and duplicate previews prove neither.
+    Metadata timestamps, legacy selections and duplicate stubs prove neither.
     """
 
     def __init__(
@@ -433,7 +433,9 @@ def shape_recall_results(
                 node_dict["content"] = offered
                 bearer_position += 1
 
-        if delivery in (DELIVERY_TWIN_DUPLICATE, DELIVERY_SESSION_DUPLICATE) and full_chars > DUPLICATE_MAX_CHARS:
+        if full_chars > DUPLICATE_MAX_CHARS and delivery in (
+            DELIVERY_TWIN_DUPLICATE, DELIVERY_SESSION_DUPLICATE,
+        ):
             node_dict["content"] = ""
 
         if view == "knowledge":
@@ -879,4 +881,6 @@ def _truncate_at_boundary(text: str, max_chars: int) -> str:
         if cut >= floor:
             end = cut
             break
-    return text[:end].rstrip() + ELLIPSIS
+    while end > 0 and text[end - 1].isspace():
+        end -= 1
+    return text[:end] + ELLIPSIS

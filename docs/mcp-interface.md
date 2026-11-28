@@ -452,7 +452,7 @@ content, so metadata remains addressable. Send feedback ids on the next natural
 recall or a fabricated write solely for feedback. Mark actual use as `used`
 and query-relative off-topic results as `irrelevant`; relevant unused results
 need neither mark. The optional arm requests these marks; the mandatory arm
-requires them. Content excerpts and duplicate previews retain
+requires them. Content excerpts and duplicate stubs retain
 `delivery`, `full_content_chars`, and any `duplicate_of` reference.
 
 `view="full"` returns diagnostic ranked entries: `node`, `score`,
@@ -568,7 +568,7 @@ after constructing the final response, the handler adds a `delivery` record
 with `kind` and, for full/snippet bodies, `content_sha256` (source text) and
 `delivered_sha256` (response text). Stubs need only their kind; a dropped result
 records `kind: "omitted"`. Both response views use the same evidence. Only `full` and `snippet` records prove content delivery:
-withheld text, duplicate previews, and legacy events without these records
+withheld text, duplicate stubs, and legacy events without these records
 cannot suppress a later full result. Selection recognizes previously offered
 versions from these same records; shaping also checks the offered excerpt.
 

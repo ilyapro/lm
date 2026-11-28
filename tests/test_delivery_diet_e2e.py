@@ -198,15 +198,16 @@ def test_direct_calls_without_transport_identity_never_stub(tmp_path: Path) -> N
 
 
 @pytest.mark.parametrize("view", ["knowledge", "full"])
-@pytest.mark.parametrize("body, duplicate_text", [
-    ("Release the amber report", "Release the amber report"),
-    ("Release the amber report\nonly after the final corrections are approved.",
-     "Release the amber report\nonly after the final corrections are approved."),
-    ("Release the amber report\n" + "pending review " * 20 + "only after approval.", ""),
+@pytest.mark.parametrize("body, inline", [
+    ("Release the amber report", True),
+    ("Release the amber report\nonly after the final corrections are approved.", True),
+    ("Release the amber report\n" + "pending review " * 20 + "only after approval.", False),
 ], ids=["one-line", "wrapped-condition", "over-budget"])
 def test_duplicate_content_and_exact_lookup(
-    tmp_path: Path, view: str, body: str, duplicate_text: str,
+    tmp_path: Path, view: str, body: str, inline: bool,
 ) -> None:
+    duplicate_text = body if inline else ""
+
     async def scenario() -> None:
         mcp, store = _server(tmp_path)
         ids = {

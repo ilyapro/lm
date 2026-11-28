@@ -269,7 +269,7 @@ def test_native_full_source_digests_across_replacement(tmp_path, monkeypatch, vi
         entry, = response["results"]
         body = entry.get("node", entry)
         assert (body["id"], entry["delivery"]) == (node.id, kind)
-        assert body["content"] == (source if kind == "full" else "Quick recap")
+        assert body["content"] == (source if kind == "full" else "")
         receipt, = store.get_recall_event(response["recall_event_id"]).results
         assert receipt["node_id"] == node.id
         expected = {"kind": kind}
