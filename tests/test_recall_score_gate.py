@@ -587,7 +587,7 @@ def test_mcp_withheld_lookup_is_bounded_and_keeps_session_feedback(tmp_path, mon
                 "content": sources[refs[0]], "context": {"scope": SCOPE},
             })).data
             assert first["recall_event_id"] in closing["implicit_feedback"]["recall_event_ids"]
-            assert closing["implicit_feedback"]["grounded_node_ids"] == []
+            assert closing["implicit_feedback"]["feedback_applied"] is False
             assert mcp.memory_store.credited_node_ids(event.id) == set()
 
             looked = (await client.call_tool("memory_lookup", {"node_ids": refs})).data

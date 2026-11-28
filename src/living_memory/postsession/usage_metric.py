@@ -668,6 +668,7 @@ def _live_path_crosscheck(
     ]
     node_ids = [
         result.node_id for ordinal in sampled for result in index.events[ordinal].results
+        if not result.withheld
     ]
     contents = _fetch_contents(connection, [*trace_ids, *node_ids])
 

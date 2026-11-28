@@ -163,6 +163,7 @@ class Event:
     agent_raw: str | None
     trace_id: str | None
     results: list[str]  # node ids in rank order (index = 0-based rank)
+    withheld_ranks: set[int] = field(default_factory=set)
 
 
 @dataclass
@@ -286,6 +287,7 @@ def load_store(connection: sqlite3.Connection, since: str | None) -> Store:
             agent_raw=agent_raw,
             trace_id=trace_id,
             results=[str(item["node_id"]) for item in ranked],
+            withheld_ranks={i for i, item in enumerate(ranked) if item.get("withheld")},
         )
         events[event_id] = event
         if transport:
@@ -537,10 +539,15 @@ def observe(
             position = index.position.get(node_id)
             if position is not None:
                 eligible[position] = False
-        docs = {node_id: contents.tokens(node_id) for node_id in event.results}
+        docs = {
+            row.node_id: contents.tokens(row.node_id)
+            for row in rows if row.rank not in event.withheld_ranks
+        }
         docs = {node_id: tokens for node_id, tokens in docs.items() if tokens is not None}
         for row in rows:
             row.closed = True
+            if row.rank in event.withheld_ranks:
+                continue
             vector = index.vector(row.node_id)
             if vector is None or row.node_id not in docs:
                 stats["delivered_without_vector"] += 1

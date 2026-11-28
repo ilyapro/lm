@@ -218,17 +218,15 @@ def load_consumed(
     )
     for row in rows:
         raw_results = json.loads(row["results"] or "[]")
-        result_ids = tuple(
-            str(item["node_id"]) for item in raw_results if isinstance(item, dict) and item.get("node_id")
-        )
+        results = [item for item in raw_results if isinstance(item, dict) and item.get("node_id")]
+        result_ids = tuple(str(item["node_id"]) for item in results)
         trace_id = str(row["feedback_trace_id"] or "")
         stored_fingerprint = row["fingerprint"]
         computed = recall_fingerprint(str(row["query"]), str(row["requested_scope"]))
         if stored_fingerprint and str(stored_fingerprint) != computed:
             fingerprint_mismatch += 1
         trace = nodes.get(trace_id)
-        contents = {node_id: nodes[node_id].content for node_id in result_ids if node_id in nodes}
-        missing_result_nodes += len(set(result_ids)) - len(contents)
+        missing_result_nodes += len(set(result_ids).difference(nodes))
         if trace is None:
             missing_trace += 1
             grounded_ids: tuple[str, ...] = ()
@@ -236,10 +234,9 @@ def load_consumed(
         else:
             resolvable = True
             qualified_contents = {
-                str(item["node_id"]): contents[str(item["node_id"])]
-                for item in raw_results
-                if isinstance(item, dict) and not item.get("withheld")
-                and str(item.get("node_id") or "") in contents
+                node_id: nodes[node_id].content
+                for item, node_id in zip(results, result_ids, strict=True)
+                if not item.get("withheld") and node_id in nodes
             }
             verdicts = ground_results(
                 trace.content, qualified_contents, min_containment=min_containment

@@ -80,10 +80,18 @@ def relatedness(cosine: float, *, related: float, unrelated: float) -> str:
     return "middle"
 
 
+def _qualified(item: dict[str, Any]) -> bool:
+    # Older corpus exports kept the shaped delivery receipt.
+    receipt = item.get("delivery")
+    return not item.get("withheld") and not (
+        isinstance(receipt, dict) and receipt.get("kind") == "below_threshold"
+    )
+
+
 def grade_record(record: dict[str, Any]) -> dict[str, float]:
     """Containment of every result of one closure under the current tokenizer."""
 
-    results = [item for item in record["results"] if not item.get("withheld")]
+    results = [item for item in record["results"] if _qualified(item)]
     if not results:
         return {}
     graded = ground_token_sets(
@@ -156,7 +164,7 @@ def measure(
         any_lookup = False
         for item in record["results"]:
             value = graded.get(item["node_id"], 0.0)
-            grounded = not item.get("withheld") and value >= threshold
+            grounded = _qualified(item) and value >= threshold
             fetched = looked_up(item, window=lookup_window, same_transport=same_transport)
             pair_rel = relatedness(
                 float(item["node_trace_cosine"]), related=related, unrelated=unrelated
