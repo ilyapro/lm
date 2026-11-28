@@ -35,8 +35,8 @@ Key design decisions (documented in the generated markdown report as well):
   applied at the *event's* scope through a pluggable credit rule — the
   ``proportional`` rule delegates to the live ``feedback._method_signals``,
   while ``winner_take_all`` keeps the pre-fix rule frozen for A/B replays,
-  and ``grounded_or_lookup`` additionally credits results a same-transport
-  ``memory_lookup`` fetched after delivery (``load_lookup_follows``) —
+  and ``grounded_or_lookup`` additionally credits the newest eligible delivery
+  per same-transport id-fetch (``load_lookup_follows``) —
   and the exact ``update_retrieval_weights`` arithmetic including
   ``apply_retrieval_weight_floors``. Updates are ordered
   by ``feedback_applied_at`` (batch-internal order: newest event first, like
@@ -50,7 +50,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -60,7 +60,7 @@ from typing import Any
 
 from living_memory.relations import correction_sql, current_relation_sql, register_file_evidence, semantic_relation_sql
 from living_memory.config import MemoryConfig
-from living_memory.feedback import _method_signals, ungrounded_negative_signals
+from living_memory.feedback import _LOOKUP_CREDIT_EVENT_LIMIT, _method_signals, ungrounded_negative_signals
 from living_memory.grounding import (
     DEFAULT_MIN_CONTAINMENT,
     build_idf,
@@ -120,11 +120,12 @@ class ReplayResult:
     containment: float = 0.0
     #: A same-transport ``memory_lookup`` id-fetch of this node landed after
     #: the event, within the lookup window (``load_lookup_follows``). The
-    #: usage signal the ``grounded_or_lookup`` credit rule adds to grounding;
-    #: never part of any label.
+    #: window statistic can count several deliveries per fetch.
     looked_up: bool = False
     #: Recorded live qualification, independent of the relevance label.
     withheld: str | None = None
+    #: This delivery owns at least one admitted lookup in the retained history.
+    owns_lookup: bool = False
 
     @property
     def graph_only(self) -> bool:
@@ -281,6 +282,79 @@ def _parse_instant(raw: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
+def _assign_lookup_owners(
+    connection: sqlite3.Connection,
+    events: Sequence[ReplayEvent],
+    follows: Mapping[tuple[str, str], list[datetime]],
+    window: timedelta,
+    limit: datetime | None,
+) -> dict[str, int]:
+    """Resolve each request against the transport history available at its time.
+
+    Read raw recalls because open, empty and unusable events all occupy slots
+    in the live candidate cap. An owner missing from replay cannot pass its
+    lookup to an older replayable event.
+    """
+    requests: dict[str, list[tuple[datetime, str]]] = defaultdict(list)
+    replay_results: dict[tuple[str, str], ReplayResult] = {}
+    for event in events:
+        for result in event.results:
+            replay_results.setdefault((event.id, result.node_id), result)
+    for (transport, node_id), instants in follows.items():
+        requests[transport].extend(
+            (instant.replace(microsecond=0), node_id) for instant in instants
+            if limit is None or instant <= limit
+        )
+
+    counts = {"owned_results": 0, "owner_outside_replay_rows": 0, "unknown_owner_rows": 0}
+    if not any(event.transport_session_id for event in events):
+        return counts
+    for transport, fetches in requests.items():
+        rows = connection.execute(
+            """SELECT id, created_at, results FROM recall_events
+               WHERE transport_session_id = ? ORDER BY created_at, rowid""",
+            (transport,),
+        )
+        recent: deque[tuple[datetime, str, set[str] | None]] = deque(
+            maxlen=_LOOKUP_CREDIT_EVENT_LIMIT
+        )
+        row = next(rows, None)
+        for instant, node_id in sorted(fetches):
+            while row is not None:
+                try:
+                    created = _parse_instant(row["created_at"]).replace(microsecond=0)
+                except ValueError:
+                    row = next(rows, None)
+                    continue
+                if created > instant:
+                    break
+                try:
+                    body = json.loads(row["results"])
+                    ids = {r["node_id"] for r in body if isinstance(r, dict)
+                           and isinstance(r.get("node_id"), str)} if isinstance(body, list) else set()
+                except (ValueError, TypeError):
+                    ids = None
+                recent.append((created, row["id"], ids))
+                row = next(rows, None)
+            earliest = instant - window
+            for created, event_id, ids in reversed(recent):
+                if created < earliest:
+                    break
+                if ids is None:
+                    counts["unknown_owner_rows"] += 1
+                    break
+                if node_id in ids:
+                    owner = replay_results.get((event_id, node_id))
+                    if owner is None:
+                        counts["owner_outside_replay_rows"] += 1
+                    elif not owner.owns_lookup:
+                        owner.owns_lookup = True
+                        counts["owned_results"] += 1
+                    break
+        rows.close()
+    return counts
+
+
 def load_lookup_follows(
     connection: sqlite3.Connection,
     events: Sequence[ReplayEvent],
@@ -313,7 +387,16 @@ def load_lookup_follows(
     for event in events:
         for result in event.results:
             result.looked_up = False
+            result.owns_lookup = False
     stats: dict[str, Any] = {
+        "ownership_basis": (
+            "Newest eligible delivery in retained transport history, assuming the requested "
+            "id was returned and same-second recalls existed at lookup time. Missing recalls "
+            "or lookup rows limit reconstruction. Replay reinforces only closed events."
+        ),
+        "owned_results": 0,
+        "owner_outside_replay_rows": 0,
+        "unknown_owner_rows": 0,
         "table_present": False,
         "window_seconds": float(window_seconds),
         "not_after": normalize_cutoff(not_after) if not_after else None,
@@ -373,6 +456,7 @@ def load_lookup_follows(
 
     window = timedelta(seconds=float(window_seconds))
     limit = _parse_instant(not_after) if not_after else None
+    stats.update(_assign_lookup_owners(connection, events, follows, window, limit))
     for event in events:
         if not event.transport_session_id:
             continue
@@ -1000,8 +1084,8 @@ def grounded_or_lookup_credit(result: ReplayResult, signal: float) -> dict[str, 
     Mirrors the live policy pair ``LM_RECALL_CREDIT_POLICY=grounded`` plus
     ``LM_LOOKUP_CREDIT_POLICY=delivered``: a delivered result earns credit
     when the closing trace grounds it (``result.grounded``) or when a
-    same-transport ``memory_lookup`` fetched it after delivery
-    (``result.looked_up``, set by ``load_lookup_follows``); everything else
+    same-transport lookup selected it as the newest eligible delivery
+    (``result.owns_lookup``, set by ``load_lookup_follows``); everything else
     stays neutral. One proportional credit per result whichever signal fired,
     which is the live ledger's at-most-once-per-(event, node) rule, so the
     overlap between the two signals is deduplicated by construction.
@@ -1014,7 +1098,7 @@ def grounded_or_lookup_credit(result: ReplayResult, signal: float) -> dict[str, 
     stream only.
     """
 
-    if not (result.grounded or result.looked_up):
+    if not (result.grounded or result.owns_lookup):
         return None
     return proportional_credit(result, signal)
 
