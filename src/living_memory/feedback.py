@@ -559,7 +559,10 @@ def apply_pending_recall_feedback(
         if observed_grounding is not None and resolved:
             verdicts = observed_grounding.ground(
                 event_index,
-                {node.id: node.content for _rank, result, node in resolved if not result.get("withheld")},
+                {
+                    node.id: node.content for _rank, result, node in resolved
+                    if not result.get("withheld")
+                },
             )
 
         for rank, result, node in resolved:

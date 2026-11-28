@@ -133,6 +133,20 @@ def test_replay_counts_grounding_lookups_overlap_and_union() -> None:
     assert report["per_host"]["sfx"][0]["pairs"] == pooled["pairs"]
 
 
+@pytest.mark.parametrize("qualification", [
+    {"withheld": "below_threshold"}, {"delivery": {"kind": "below_threshold"}},
+])
+def test_only_lookup_confirms_a_withheld_reference(qualification: dict) -> None:
+    text = "checkpoint cursor offset"
+    lookup = [{"same_transport": True, "lag_seconds": 1.0}]
+    record = _record("test", "e", text, [("reference", text, 1.0, lookup)], query_cosine=1.0)
+    record["results"][0].update(qualification)
+    pooled, = replay.replay([record], thresholds=[0.0], related=0.5, unrelated=0.3,
+                             lookup_window=60, same_transport=True)["pooled"]
+    assert pooled["pairs"] == {"n": 1, "hit": 0, "share": 0.0}
+    assert pooled["lookups"]["lookup_only_pairs"] == 1
+
+
 def test_markdown_render_lists_every_threshold(tmp_path: Path) -> None:
     records = [
         _record("alt", "e", "note", [("n", "content", 0.4, [])], query_cosine=0.4)

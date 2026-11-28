@@ -226,7 +226,7 @@ def load_consumed(
         if stored_fingerprint and str(stored_fingerprint) != computed:
             fingerprint_mismatch += 1
         trace = nodes.get(trace_id)
-        missing_result_nodes += len(set(result_ids).difference(nodes))
+        missing_result_nodes += sum(node_id not in nodes for node_id in set(result_ids))
         if trace is None:
             missing_trace += 1
             grounded_ids: tuple[str, ...] = ()

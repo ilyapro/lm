@@ -25,7 +25,7 @@ not. :func:`load_cohort_nodes` therefore filters by window, ``agent`` and a
 what makes a run reproducible: the live database keeps growing, and a recall
 event recorded after a window closed can only ever *add* consumption to it.
 
-GROUNDED variant. Raw consumption counts every later appearance of the ID,
+GROUNDED variant. Raw consumption counts nodes whose ID appears later,
 including a withheld reference. Grounding additionally requires that the
 result was qualified (no withheld reason) and that
 the consuming event was closed by the cutoff by a ``memory_remember`` trace (a non-null
@@ -961,7 +961,7 @@ def run_metric(
     notes.append(
         "grounded.rate divides by distinct nodes appearing in later closed events, "
         "including withheld references: it measures qualified grounded delivery "
-        "among those closed appearances"
+        "among those nodes"
     )
     notes.append(
         "dividing grounded consumption by the whole cohort understates it "
