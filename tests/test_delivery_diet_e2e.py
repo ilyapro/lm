@@ -209,7 +209,10 @@ def test_duplicate_content_and_exact_lookup(
 ) -> None:
     async def scenario() -> None:
         mcp, store = _server(tmp_path)
-        ids = {store.append_trace(body, {"scope": RECALL_SCOPE}).id for _ in range(2)}
+        ids = {
+            store.create_node(level=level, content=body, context={"scope": RECALL_SCOPE}).id
+            for level in ("trace", "concept")
+        }
         async with Client(mcp) as client:
             for bearer_class in ("full", "session_duplicate"):
                 response = await _recall(client, "amber report", scope=RECALL_SCOPE, view=view)
