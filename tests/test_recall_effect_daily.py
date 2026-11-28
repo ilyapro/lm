@@ -394,6 +394,43 @@ def test_cli_reads_read_only_and_writes_json_and_md(tmp_path):
     assert "2026-09-23" in md and "Leak check 2026-09-23" in md and "`S_AB`" in md
 
 
+def test_cli_reads_one_wal_snapshot_during_feedback_commit(tmp_path, monkeypatch):
+    db = tmp_path / "lm.sqlite3"
+    writer = make_db(db)
+    try:
+        assert writer.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
+        add_event(writer, "e", "S", "2026-09-23T10:00:00Z", ["a"])
+        writer.commit()
+
+        output = tmp_path / "report.json"
+        args = [
+            "--db", str(db), "--host-label", "fx", "--since", "2026-09-23", "--until", "2026-09-23",
+            "--no-default-receipts", "--json", str(output),
+        ]
+        load_events = red.load_events
+
+        def load_then_close_event(*args):
+            events = load_events(*args)
+            with writer:
+                writer.execute("UPDATE recall_events SET feedback_applied=1 WHERE id='e'")
+                credit(writer, "e", "a", "grounded")
+            return events
+
+        with monkeypatch.context() as patch:
+            patch.setattr(red, "load_events", load_then_close_event)
+            assert red.main(args) == 0
+        day = json.loads(output.read_text())["days"][0]
+        assert day["metrics"]["never_closed_events"] == 1
+        assert day["never_closed"]["per_basis"]["grounded"]["used_delivered_nodes"] == 0
+
+        assert red.main(args) == 0
+        day = json.loads(output.read_text())["days"][0]
+        assert day["metrics"]["closed_events"] == 1
+        assert day["closed"]["per_basis"]["grounded"]["used_delivered_nodes"] == 1
+    finally:
+        writer.close()
+
+
 def test_open_ro_refuses_writes(tmp_path):
     db = tmp_path / "lm.sqlite3"
     make_db(db).close()

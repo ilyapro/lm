@@ -545,6 +545,7 @@ def build_report(
 ) -> dict[str, Any]:
     conn = open_ro(db)
     try:
+        conn.execute("BEGIN")
         events = load_events(conn, since, until)
         event_ids = {ev["id"] for ev in events}
         sessions = {ev["session"] for ev in events}
