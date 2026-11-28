@@ -367,8 +367,9 @@ def load_cohort_nodes(
     elif selector.agent is not None:
         clauses.append("agent = ?")
         params.append(selector.agent)
+    columns = "id, created_at, context" if selector.context_key is not None else "id, created_at"
     sql = (
-        "SELECT id, created_at, context FROM nodes WHERE "
+        f"SELECT {columns} FROM nodes WHERE "
         + " AND ".join(clauses)
         + " ORDER BY created_at ASC, id ASC"
     )
