@@ -484,10 +484,10 @@ class:
   budget. A passage cut to fit ends with `…`.
 * `session_duplicate` — this version's complete content or the exact excerpt
   now offered was included in an earlier response on this transport session;
-  `content` is a one-line preview (~160 chars).
+  `content` carries the complete source up to 160 characters and is empty above that limit.
 * `twin_duplicate` — byte-identical content with the same scope and recorded
   source identity as a higher-ranked result. One twin bears the content;
-  the others carry a preview and `content_ref.duplicate_of`.
+  the others use the same duplicate content limit and carry `content_ref.duplicate_of`.
 
 Similarity helps retrieve and rank candidates. It does not establish that two
 claims are identical, release a result slot as a duplicate, or create a

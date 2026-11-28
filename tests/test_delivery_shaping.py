@@ -29,14 +29,13 @@ from living_memory.delivery import (
     ELLIPSIS,
     FULL_NODE_DIET_ENV,
     LADDER_COMPLETE,
-    PREVIEW_MAX_CHARS,
+    DUPLICATE_MAX_CHARS,
     PROVENANCE_VALUE_CHARS_ENV,
     SESSION_DEDUP_ENV,
     SNIPPET_CHARS_ENV,
     SNIPPET_LADDER_ENV,
     SPARSE_ENV,
     STATS_COMPACTION_ENV,
-    _one_line_preview,
     context_value_max_chars_from_env,
     full_node_diet_enabled_from_env,
     provenance_value_max_chars_from_env,
@@ -281,7 +280,7 @@ def test_session_dedup_stubs_previously_delivered_node() -> None:
 
     entry = shaped[0]
     assert entry["delivery"] == DELIVERY_SESSION_DUPLICATE
-    assert entry["node"]["content"] == "first line of the delivered node"
+    assert entry["node"]["content"] == content
     assert entry["content_ref"] == {
         "node_id": "seen-1",
         "fetch": 'memory_lookup(node_id="seen-1")',
@@ -310,7 +309,7 @@ def test_session_dedup_beats_snippet_for_long_delivered_content() -> None:
 
     entry = shaped[0]
     assert entry["delivery"] == DELIVERY_SESSION_DUPLICATE
-    assert entry["node"]["content"] == "lead sentence of a long node."
+    assert entry["node"]["content"] == ""
     assert entry["content_ref"]["full_content_chars"] == len(long_content)
 
 
@@ -353,7 +352,7 @@ def test_twin_of_snippeted_bearer_stays_twin() -> None:
     shaped = shape(results, snippet_max=1200)
 
     assert deliveries(shaped) == [DELIVERY_SNIPPET, DELIVERY_TWIN_DUPLICATE]
-    assert len(shaped[1]["node"]["content"]) <= PREVIEW_MAX_CHARS
+    assert len(shaped[1]["node"]["content"]) <= DUPLICATE_MAX_CHARS
     assert shaped[1]["content_ref"]["duplicate_of"] == "bearer"
 
 
@@ -433,71 +432,31 @@ def test_content_exactly_at_limit_stays_full() -> None:
     assert shaped[0]["node"]["content"] == content
 
 
-# --- preview extraction ---------------------------------------------------
+@pytest.mark.parametrize("size", [DUPLICATE_MAX_CHARS, DUPLICATE_MAX_CHARS + 1])
+def test_duplicate_inline_limit(size: int) -> None:
+    content = "字" * size
+    shaped = shape([make_result(make_node("seen", content))], delivered={"seen"})
+    assert shaped[0]["node"]["content"] == (content if size == DUPLICATE_MAX_CHARS else "")
 
 
-def test_preview_short_first_line_verbatim() -> None:
-    content = "First line summary.\nrest of the body\nmore lines"
-    shaped = shape([make_result(make_node("n1", content))], delivered={"n1"})
-
-    assert shaped[0]["node"]["content"] == "First line summary."
-
-
-def test_preview_strips_leading_blank_lines_and_padding() -> None:
-    content = "\n\n  Real first line  \nmore body"
-    shaped = shape([make_result(make_node("n1", content))], delivered={"n1"})
-
-    assert shaped[0]["node"]["content"] == "Real first line"
-
-
-def test_preview_long_first_line_hard_capped() -> None:
-    content = "p" * 400 + "\nrest"
-    shaped = shape([make_result(make_node("n1", content))], delivered={"n1"})
-
-    preview = shaped[0]["node"]["content"]
-    assert preview == "p" * (PREVIEW_MAX_CHARS - len(ELLIPSIS)) + ELLIPSIS
-    assert len(preview) == PREVIEW_MAX_CHARS
-
-
-def test_preview_long_first_line_cut_at_sentence() -> None:
-    content = "s" * 100 + ". " + "t" * 100 + "\nsecond line"
-    shaped = shape([make_result(make_node("n1", content))], delivered={"n1"})
-
-    assert shaped[0]["node"]["content"] == "s" * 100 + ELLIPSIS
-
-
-@pytest.mark.parametrize(("content", "expected"), [
-    ("\n\r\t\u3000", ""),
-    ("\u2003\n\xa0A\rB\u2028C\x1cD\r\nE", "A\rB\u2028C\x1cD"),
-    ("字" * PREVIEW_MAX_CHARS + "\u2007" * 4096 + "\nrest", "字" * PREVIEW_MAX_CHARS),
-    ("字" * PREVIEW_MAX_CHARS + "\u2007" * 4096 + "Z", "字" * (PREVIEW_MAX_CHARS - 1) + ELLIPSIS),
-    ("x" + "\u2003" * 4096 + "z\nrest", "x" + ELLIPSIS),
-], ids=["blank", "literal-lf", "padded-limit", "past-limit", "internal-padding"])
-def test_preview_uses_trimmed_first_literal_line(content: str, expected: str) -> None:
-    shaped = shape([make_result(make_node("n1", content))], delivered={"n1"})
-
-    assert shaped[0]["node"]["content"] == expected
-
-
-@pytest.mark.parametrize("separator", ["\n", ""])
-def test_preview_does_not_allocate_the_discarded_text(separator: str) -> None:
-    content = "First" + separator + "x" * (1 << 20) + "\n"
+def test_duplicate_shaping_does_not_allocate_the_discarded_text() -> None:
+    content = "First\n" + "x" * (1 << 20)
+    results = [make_result(make_node(node_id, content)) for node_id in ("seen", "twin")]
+    history = delivered_history(results, {"seen"})
+    history.digest(content)  # Measure shaping after the content identity is known.
     tracemalloc.start()
     try:
-        preview = _one_line_preview(content)
+        shaped = shape_recall_results(
+            results, delivery_history=history, snippet_max_chars=1200,
+            context_value_max_chars=160, session_dedup=True,
+        )
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
 
-    assert len(preview) <= PREVIEW_MAX_CHARS
+    assert deliveries(shaped) == [DELIVERY_SESSION_DUPLICATE, DELIVERY_TWIN_DUPLICATE]
+    assert all(entry["node"]["content"] == "" for entry in shaped)
     assert peak < len(content) // 8
-
-
-def test_preview_never_contains_newline() -> None:
-    content = "alpha beta\ngamma delta"
-    shaped = shape([make_result(make_node("n1", content))], delivered={"n1"})
-
-    assert "\n" not in shaped[0]["node"]["content"]
 
 
 # --- backward-compat key invariants ---------------------------------------

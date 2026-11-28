@@ -257,10 +257,10 @@ production frequency, copy costs, fleet savings or judge quality.
 
 `memory_recall(query=...)` returns knowledge directly in `results`: identity,
 content, delivery class, re-fetch reference, and validity/corrections. Read
-`results[i].content` and use its `id` for feedback. When an excerpt or duplicate
-preview is insufficient, pass `content_ref.node_id` to `memory_lookup` for
+`results[i].content` and use its `id` for feedback. Duplicates carry complete text up to 160 characters and empty content for longer
+sources. For a duplicate reference or a partial excerpt, pass `content_ref.node_id` to `memory_lookup` for
 complete content and current validity. Schema recipes retain complete content;
-duplicate previews still provide `content_ref` access to the whole recipe.
+duplicates still provide `content_ref` access to the whole recipe.
 
 Both recall views and exact-id lookup include `superseded` and `superseded_by`
 on each result (beside `node` in diagnostic recall). `superseded: true` means

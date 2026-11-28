@@ -270,7 +270,7 @@ def test_same_session_double_recall_stubs_second_call(
     assert stub["delivery"] == "session_duplicate"
     assert stub["id"] == full["id"]
     assert set(stub) == set(full)  # every node key survives
-    assert stub["content"] == DEDUP_CONTENT.split("\n")[0]  # one-line preview
+    assert stub["content"] == DEDUP_CONTENT
     assert stub["content_ref"]["node_id"] == full["id"]
     assert stub["content_ref"]["full_content_chars"] == len(DEDUP_CONTENT)
 

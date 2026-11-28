@@ -41,8 +41,8 @@ nothing below changes.
 Diagnostic diet, applied per full-view entry (each lever has its own valve):
 
 * Stubs and snippets preserve every key of the full node dict
-  (``resources.node_to_dict``); ``content`` is never absent — stubs carry a
-  one-line preview (~160 chars), snippets the truncated text; non-full
+  (``resources.node_to_dict``). Duplicate stubs carry the complete content
+  up to 160 characters and empty content above that limit. Non-full
   results always gain a ``content_ref`` for re-fetching full content and validity.
 * Provenance is summarized on every delivery class: ``prior_recalls``
   collapses to ``{"count": n}`` and any other oversized provenance value is
@@ -140,7 +140,7 @@ DEFAULT_PROVENANCE_VALUE_MAX_CHARS = 160
 # Budget 0 delivers complete content at that ladder position.
 LADDER_COMPLETE = 0
 DEFAULT_SNIPPET_LADDER = (2400, 1000, 700, 500, 300, 200)
-PREVIEW_MAX_CHARS = 160
+DUPLICATE_MAX_CHARS = 160
 ELLIPSIS = "…"
 
 _DISABLED_FLAGS = frozenset({"0", "false", "no", "off"})
@@ -148,8 +148,6 @@ _LADDER_OFF_FLAGS = frozenset({"off", "false", "no", "none", "uniform"})
 _CLEAN_BOUNDARIES = ("\n\n", "\n", ". ", " ")
 _SPARSE_SCORE_KEYS = ("score", "bm25_score", "vector_score", "graph_score", "trigger_score")
 _SPARSE_NULL_NODE_KEYS = ("agent", "task", "decay_reason")
-_NONSPACE = re.compile(r"\S")
-_NEWLINE_OR_NONSPACE = re.compile(r"[\n\S]")
 _WORD = re.compile(r"[^\W_]+", re.UNICODE)
 _EVIDENCE_RECORD = re.compile(r"(?m)^- ([A-Za-z0-9]{12,}): ")
 
@@ -414,7 +412,6 @@ def shape_recall_results(
         elif twin_of is not None:
             delivery = DELIVERY_TWIN_DUPLICATE
             stub_bearer = twin_of
-            node_dict["content"] = _one_line_preview(content)
         else:
             budget = _bearer_budget(bearer_position, snippet_ladder, snippet_max_chars)
             if node_id not in recipe_bearers and LADDER_COMPLETE < budget < full_chars:
@@ -432,10 +429,12 @@ def shape_recall_results(
                 delivery = DELIVERY_FULL
             if offered is None:
                 delivery = DELIVERY_SESSION_DUPLICATE
-                node_dict["content"] = _one_line_preview(content)
             else:
                 node_dict["content"] = offered
                 bearer_position += 1
+
+        if delivery in (DELIVERY_TWIN_DUPLICATE, DELIVERY_SESSION_DUPLICATE) and full_chars > DUPLICATE_MAX_CHARS:
+            node_dict["content"] = ""
 
         if view == "knowledge":
             entry = node_dict
@@ -871,38 +870,13 @@ def _json_chars(value: Any) -> int:
     return len(json.dumps(value, ensure_ascii=False, default=str))
 
 
-def _one_line_preview(content: str, max_chars: int = PREVIEW_MAX_CHARS) -> str:
-    if max_chars < 0:
-        return ELLIPSIS
-    first = _NONSPACE.search(content)
-    if first is None:
-        return ""
-    start = first.start()
-    limit = min(start + max_chars, len(content))
-    newline = content.find("\n", start, limit)
-    if newline >= 0:
-        return _rstrip_slice(content, start, newline)
-
-    # Padding beyond the limit only counts if the same line has more text.
-    following = _NEWLINE_OR_NONSPACE.search(content, limit)
-    if following is None or content[following.start()] == "\n":
-        return _rstrip_slice(content, start, limit)
-    return _truncate_at_boundary(content, max_chars, start=start)
-
-
-def _rstrip_slice(text: str, start: int, end: int) -> str:
-    while end > start and text[end - 1].isspace():
-        end -= 1
-    return text[start:end]
-
-
-def _truncate_at_boundary(text: str, max_chars: int, *, start: int = 0) -> str:
+def _truncate_at_boundary(text: str, max_chars: int) -> str:
     budget = max(0, max_chars - len(ELLIPSIS))
-    end = min(start + budget, len(text))
-    floor = start + budget // 2
+    end = min(budget, len(text))
+    floor = budget // 2
     for boundary in _CLEAN_BOUNDARIES:
-        cut = text.rfind(boundary, start, end)
+        cut = text.rfind(boundary, 0, end)
         if cut >= floor:
             end = cut
             break
-    return _rstrip_slice(text, start, end) + ELLIPSIS
+    return text[:end].rstrip() + ELLIPSIS
