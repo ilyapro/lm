@@ -542,6 +542,7 @@ class MemoryRecallService:
         # can hold one snapshot, one goldset, and one code path fixed and vary
         # nothing but the graph channel's entry from query space.
         self.anchor_seeding = bool(anchor_seeding)
+        self.include_candidate_embeddings = True
         self._chunk_index: dict[str, _ScopeChunkIndex] = {}
         self._chunk_gathers: dict[int, _ChunkGatherPlan] = {}
         self._anchor_vectors: _AnchorVectorCache | None = None
@@ -1304,13 +1305,14 @@ class MemoryRecallService:
         return self.feedback.apply(result, useful=useful, signal=signal, scope=scope)
 
     def _load_candidate_nodes(
-        self, ids: Iterable[str], plan: ScopePlan, shared_nodes: dict[str, Node] | None,
+        self, ids: Iterable[str], plan: ScopePlan, shared_nodes: dict[str, Node] | None = None,
     ) -> dict[str, Node]:
+        if shared_nodes is not None:
+            ids = (node_id for node_id in ids if node_id not in shared_nodes)
+        fetched = self.store.get_recall_nodes(ids, plan, include_embedding=self.include_candidate_embeddings)
         if shared_nodes is None:
-            return self.store.get_recall_nodes(ids, plan)
-        missing = [node_id for node_id in ids if node_id not in shared_nodes]
-        if missing:
-            shared_nodes.update(self.store.get_recall_nodes(missing, plan))
+            return fetched
+        shared_nodes.update(fetched)
         return shared_nodes
 
     def _collect_bm25(
@@ -1689,7 +1691,7 @@ class MemoryRecallService:
         if not anchor_seeds:
             return {}
         missing = [node_id for node_id in anchor_seeds if node_id not in candidates]
-        fetched = self.store.get_recall_nodes(missing, plan) if missing else {}
+        fetched = self._load_candidate_nodes(missing, plan) if missing else {}
         admitted: dict[str, float] = {}
         for node_id, activation in anchor_seeds.items():
             existing = candidates.get(node_id)
@@ -1733,7 +1735,10 @@ class MemoryRecallService:
         # Keep surviving identities in the reader's order without reloading
         # bodies already selected by another channel in this recall.
         identities = self.store.get_node_scopes(scores)
-        missing = self.store.get_nodes(node_id for node_id in identities if node_id not in candidates)
+        missing = self.store.get_nodes(
+            (node_id for node_id in identities if node_id not in candidates),
+            include_embedding=self.include_candidate_embeddings,
+        )
         for node_id in identities:
             candidate = candidates.get(node_id)
             if candidate is None:
@@ -2009,7 +2014,7 @@ class MemoryRecallService:
                     admitted = self.store.get_recall_node_ids(needed_neighbor_ids, plan)
                     source_admission.update((nid, nid in admitted) for nid in needed_neighbor_ids)
                 else:
-                    fetched_nodes = self.store.get_recall_nodes(needed_neighbor_ids, plan)
+                    fetched_nodes = self._load_candidate_nodes(needed_neighbor_ids, plan)
                     for nid in needed_neighbor_ids:
                         node_cache[nid] = fetched_nodes.get(nid)
 

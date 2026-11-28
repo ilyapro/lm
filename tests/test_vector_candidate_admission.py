@@ -342,7 +342,7 @@ def test_healthy_vector_only_recall_matches_full_body_reader(tmp_path, monkeypat
         residual = service.last_residual
         assert actual and residual
         assert all(item.bm25_score == 0 and item.vector_score > 0 for item in [*actual, *residual])
-        monkeypatch.setattr(store, "get_recall_nodes", lambda ids, plan: store.get_nodes(ids))
+        monkeypatch.setattr(store, "get_recall_nodes", lambda ids, plan, **kwargs: store.get_nodes(ids, **kwargs))
         assert recall(service, scope) == actual
         assert service.last_residual == residual
 

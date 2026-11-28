@@ -297,6 +297,8 @@ def create_mcp_server(
             os.environ.get("LM_EXPOSE_OPERATOR_TOOLS", "") == "1"
         )
     recall_service = MemoryRecallService(store)
+    # Tool and prompt output omit node vectors. Ranking and maps read chunk vectors.
+    recall_service.include_candidate_embeddings = False
     recall_service._share_embedder_with_store()
     _register_tools(mcp, store, runtime_lock, recall_service, expose_attest=expose_attest)
     _configure_tool_list_visibility(

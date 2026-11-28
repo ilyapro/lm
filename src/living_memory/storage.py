@@ -1712,19 +1712,22 @@ class MemoryStore:
                     nodes[node.id] = node
         return nodes
 
-    def get_recall_nodes(self, node_ids: Iterable[str], plan: ScopePlan) -> dict[str, Node]:
+    def get_recall_nodes(
+        self, node_ids: Iterable[str], plan: ScopePlan, *, include_embedding: bool = True,
+    ) -> dict[str, Node]:
         """Materialize live candidates admitted by the current recall plan.
 
         Admission and body selection share one SQL statement per batch, so an
         excluded node's body is neither returned nor decoded. Exact readers
         retain their independent full-node and decayed-history contracts.
         """
+        decode = _node_from_row if include_embedding else _node_for_output
         nodes: dict[str, Node] = {}
         # A decoder failure must close the suspended batch even if its caller
         # retains the exception traceback (and therefore this generator).
         with closing(self._recall_node_rows(node_ids, plan, columns="*")) as rows:
             for row in rows:
-                node = _node_from_row(row)
+                node = decode(row)
                 nodes[node.id] = node
                 del row
         return nodes

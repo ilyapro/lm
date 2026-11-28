@@ -169,7 +169,7 @@ def test_body_admission_rechecks_live_scope_and_scores_surviving_source(tmp_path
         decode = storage._node_from_row
         decoded = []
 
-        def change_then_admit(ids, plan):
+        def change_then_admit(ids, plan, **kwargs):
             ids = list(ids)
             assert ids == [rejected.id, survivor.id]
             if mutation == "remove":
@@ -181,7 +181,7 @@ def test_body_admission_rechecks_live_scope_and_scores_surviving_source(tmp_path
                     f"UPDATE nodes SET {column} = ?, provenance = '[]' WHERE id = ?",
                     (value, rejected.id),
                 )
-            return admit(ids, plan)
+            return admit(ids, plan, **kwargs)
 
         def count(row):
             decoded.append(row["id"])
@@ -208,7 +208,7 @@ def test_discovery_and_bodies_share_snapshot_but_next_collection_reads_current_s
         plan = resolve_scope(scope=None if broad else SCOPE, ambient_context={"project": "lexical"})
         admit = store.get_recall_nodes
 
-        def concurrent_write(ids, plan):
+        def concurrent_write(ids, plan, **kwargs):
             assert store.connection.in_transaction
             with writer.transaction():
                 if mutation == "remove":
@@ -222,7 +222,7 @@ def test_discovery_and_bodies_share_snapshot_but_next_collection_reads_current_s
                     }[mutation]
                     writer.connection.execute(f"UPDATE nodes SET {column} = ? WHERE id = ?",
                                               (value, original.id))
-            return admit(ids, plan)
+            return admit(ids, plan, **kwargs)
 
         with monkeypatch.context() as patch:
             patch.setattr(store, "get_recall_nodes", concurrent_write)
