@@ -122,7 +122,10 @@ def test_native_excluded_neighbor_preserves_full_delivery_and_credit(native, tmp
 
 
 @pytest.mark.parametrize("selected", ["root", "neighbor"])
-def test_native_selected_corruption_fails_without_event_access_or_credit(native, selected):
+@pytest.mark.parametrize(("column", "invalid", "error"), [
+    ("provenance", "[]", TypeError), ("embedding", "[1,]", ValueError),
+])
+def test_native_selected_corruption_fails_without_event_access_or_credit(native, selected, column, invalid, error):
     with native("selected.sqlite3") as (mcp, store, _, guard):
         alpha = mcp.tools["memory_remember"](QUERY, context={"scope": SCOPE})["node"]["id"]
         beta = mcp.tools["memory_remember"](
@@ -134,17 +137,17 @@ def test_native_selected_corruption_fails_without_event_access_or_credit(native,
         with guard:
             before = list(store.connection.iterdump())
             target = alpha if selected == "root" else beta
-            provenance = store.connection.execute("SELECT provenance FROM nodes WHERE id = ?", (target,)).fetchone()[0]
+            original = store.connection.execute(f"SELECT {column} FROM nodes WHERE id = ?", (target,)).fetchone()[0]
             with store.transaction():
-                store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (target,))
-        with pytest.raises(TypeError):
+                store.connection.execute(f"UPDATE nodes SET {column} = ? WHERE id = ?", (invalid, target))
+        with pytest.raises(error):
             mcp.tools["memory_recall"](
                 QUERY, scope=SCOPE, depth=0 if selected == "root" else 1, max_results=3, used=[alpha],
             )
         with guard:
             assert store.credited_node_ids(prior["recall_event_id"]) == set()
             with store.transaction():
-                store.connection.execute("UPDATE nodes SET provenance = ? WHERE id = ?", (provenance, target))
+                store.connection.execute(f"UPDATE nodes SET {column} = ? WHERE id = ?", (original, target))
             assert list(store.connection.iterdump()) == before
 
 
