@@ -7,7 +7,7 @@ Nodes are never removed physically here: every path in this module ends in
 
 The TTL anchor is what gives the live working set a ceiling. Anchoring on
 ``last_accessed`` — the behaviour that shipped first — makes a frequently read
-node immortal, because every recall bumps ``last_accessed``: the set of live
+node immortal, because qualified recall refreshes ``last_accessed``: the set of live
 traces then grows monotonically and only ever shrinks by hand. Anchoring on
 creation makes the ceiling arrive on its own, one trace at a time, while
 :data:`TTL_ANCHOR_ENV` keeps the old behaviour one env var away.

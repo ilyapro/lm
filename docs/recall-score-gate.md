@@ -80,7 +80,8 @@ every other rule:
 The withheld delivery class applies only while the gate is enabled.
 
 A withheld node retains its selected event entry and lookup reference, but its
-empty response body does not establish content delivery. If a later recall
+empty response body does not establish content delivery. Only qualified results
+update `access_count` and `last_accessed` when recall logs access. If a later recall
 selects it above the gate, session dedup permits its current text unless a
 separate full/snippet response already supplied that content.
 

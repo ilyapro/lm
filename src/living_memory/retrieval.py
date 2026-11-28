@@ -755,7 +755,7 @@ class MemoryRecallService:
                     summaries = event_results if event_results is not None and log_event else []
                     summaries.extend(_recall_result_summary(i, result) for i, result in enumerate(limited))
                     nodes, event_id = self.store.record_recall(
-                        nodes=[result.node for result in limited],
+                        nodes=[result.node for result in limited if not result.withheld],
                         log_access=log_access,
                         log_event=log_event,
                         query=query,
@@ -770,9 +770,11 @@ class MemoryRecallService:
                     )
                     assert event_id is None or isinstance(event_id, str)
                     self.last_recall_event_id = event_id
+                    accessed = iter(nodes)
                     limited = [
-                        replace(result, node=node, recall_event_id=self.last_recall_event_id)
-                        for result, node in zip(limited, nodes, strict=True)
+                        replace(result, node=result.node if result.withheld else next(accessed),
+                                recall_event_id=event_id)
+                        for result in limited
                     ]
                 yield limited
         except BaseException:
